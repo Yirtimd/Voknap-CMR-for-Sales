@@ -8,13 +8,17 @@ const emit = defineEmits<{ close: [] }>();
 
 const messagesEl = ref<HTMLElement | null>(null);
 
-const quickPrompts = [
-  "Дай сводку по CRM",
+const importantPrompts = [
   "Что нужно сделать сегодня?",
   "Найди риски в воронке",
   "Какие сделки без next action?",
-  "Создай задачу позвонить клиенту",
   "Подготовь план дня менеджера"
+];
+
+const recentPrompts = [
+  { text: "Дай сводку по CRM", time: "10:30" },
+  { text: "Какие сделки без next action?", time: "Вчера" },
+  { text: "Создай задачу позвонить клиенту", time: "Вчера" }
 ];
 
 watch(
@@ -43,28 +47,36 @@ function formatPayload(payload: Record<string, unknown>) {
 <template>
   <aside v-if="open" class="agent-sidebar">
     <header class="agent-sidebar-head">
-      <div>
-        <p class="eyebrow">Global AI Agent</p>
-        <h2>Агент продаж</h2>
+      <div class="agent-title">
+        <h2>AI Агент</h2>
+        <p>Глобальный помощник</p>
       </div>
-      <button class="secondary" type="button" @click="emit('close')">Close</button>
+      <button class="secondary agent-close" type="button" @click="emit('close')">Close</button>
     </header>
 
-    <section class="agent-context">
-      <div><strong>{{ crmStore.openTasks.value.length }}</strong><small>Open tasks</small></div>
-      <div><strong>{{ crmStore.deals.value.length }}</strong><small>Deals</small></div>
-      <div><strong>{{ crmStore.money(crmStore.totalPipeline.value) }}</strong><small>Pipeline</small></div>
+    <section class="agent-card agent-summary">
+      <header>
+        <strong>Сводка по CRM</strong>
+        <button type="button" @click="send('Дай сводку по CRM')">›</button>
+      </header>
+      <div class="agent-context">
+        <div><strong>{{ crmStore.openTasks.value.length }}</strong><small>Open tasks</small></div>
+        <div><strong>{{ crmStore.deals.value.length }}</strong><small>Deals</small></div>
+        <div><strong>{{ crmStore.money(crmStore.totalPipeline.value) }}</strong><small>Pipeline</small></div>
+      </div>
     </section>
 
-    <section class="agent-quick">
+    <section class="agent-card agent-important">
+      <h3>Что важно</h3>
       <button
-        v-for="prompt in quickPrompts"
+        v-for="prompt in importantPrompts"
         :key="prompt"
-        class="secondary"
         type="button"
         @click="send(prompt)"
       >
-        {{ prompt }}
+        <span class="prompt-icon">⌘</span>
+        <strong>{{ prompt }}</strong>
+        <span>›</span>
       </button>
     </section>
 
@@ -74,6 +86,15 @@ function formatPayload(payload: Record<string, unknown>) {
         <p>{{ message.content }}</p>
       </article>
       <p v-if="!crmStore.agentHistory.value.length" class="empty">Истории пока нет. Выберите быстрый запрос или напишите сообщение.</p>
+    </section>
+
+    <section class="agent-card agent-recent">
+      <h3>Недавние запросы</h3>
+      <button v-for="prompt in recentPrompts" :key="prompt.text" type="button" @click="send(prompt.text)">
+        <span class="prompt-icon doc">□</span>
+        <strong>{{ prompt.text }}</strong>
+        <small>{{ prompt.time }}</small>
+      </button>
     </section>
 
     <section v-if="crmStore.agentActions.value.length" class="agent-actions">
@@ -91,9 +112,12 @@ function formatPayload(payload: Record<string, unknown>) {
       </article>
     </section>
 
-    <form class="agent-composer" @submit.prevent="send()">
-      <textarea v-model="crmStore.agentForm.value.message" placeholder="Спросить глобального агента..." rows="3"></textarea>
-      <button type="submit" :disabled="crmStore.isLoading.value">Send</button>
+    <form class="agent-card agent-composer" @submit.prevent="send()">
+      <div class="composer-shell">
+        <textarea v-model="crmStore.agentForm.value.message" placeholder="Спросите что угодно..." rows="2"></textarea>
+        <button type="submit" :disabled="crmStore.isLoading.value">›</button>
+      </div>
+      <small>AI может ошибаться</small>
     </form>
   </aside>
 </template>

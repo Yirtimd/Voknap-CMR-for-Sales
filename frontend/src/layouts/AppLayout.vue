@@ -35,7 +35,7 @@ function logout() {
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell" :class="{ 'agent-open': isAgentOpen }">
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-mark"><img :src="voknapLogo" alt="Voknap" /></span>
@@ -73,6 +73,7 @@ function logout() {
       <span>‹</span>
     </button>
 
+    <div v-if="isAgentOpen" class="agent-backdrop" @click="isAgentOpen = false"></div>
     <GlobalAgentSidebar :open="isAgentOpen" @close="isAgentOpen = false" />
   </main>
 </template>
