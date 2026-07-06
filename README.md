@@ -1,20 +1,22 @@
 # CMR Sales App
 
-Фаза 01: foundation.
+AI-first CRM platform for sales teams.
 
-Что уже есть:
-- FastAPI backend;
-- users;
-- tenants;
-- memberships;
-- JWT login;
-- tenant isolation через `X-Tenant-Id`;
-- health check;
-- базовое создание компании вместе с owner-пользователем.
+The system is built around the company workspace: companies, activity timeline,
+deals, tasks, knowledge, RAG, AI agent actions, connectors, templates, analytics,
+and tenant administration.
 
-## Локальный запуск
+## Stack
 
-Установить зависимости:
+- Backend: FastAPI, SQLAlchemy, Alembic
+- Database: PostgreSQL
+- Frontend: Vue 3, Vue Router, Vite
+- Auth: JWT
+- Multitenancy: `X-Tenant-Id`
+
+## Local Setup
+
+Install backend dependencies:
 
 ```bash
 cd cmr_sales_app
@@ -23,19 +25,31 @@ source .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
 
-Альтернатива для editable-install:
+Alternative editable install:
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-Запустить:
+Start PostgreSQL:
+
+```bash
+docker compose up -d postgres
+```
+
+Run migrations:
+
+```bash
+alembic upgrade head
+```
+
+Start backend:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Документация API:
+API docs:
 
 ```text
 http://localhost:8000/docs
@@ -43,7 +57,7 @@ http://localhost:8000/docs
 
 ## Frontend
 
-В отдельном терминале:
+In another terminal:
 
 ```bash
 cd cmr_sales_app/frontend
@@ -51,95 +65,73 @@ npm install
 npm run dev
 ```
 
-Открыть:
+Open:
 
 ```text
 http://localhost:5173
 ```
 
-Frontend MVP содержит:
+Current workspace navigation:
 
-- регистрацию компании;
-- вход;
-- Vue Router routes: `/login`, `/dashboard`, `/companies`, `/companies/:id`, `/leads`, `/deals`, `/timeline`, `/tasks`, `/knowledge`, `/agent`, `/connectors`, `/templates`, `/production`, `/settings`;
-- dashboard с метриками;
-- company workspace;
-- создание контактов и лидов;
-- список лидов;
-- создание воронки;
-- создание сделок;
-- kanban по этапам;
-- перенос сделки между этапами;
-- единая activity timeline;
-- создание и закрытие задач;
-- база знаний и RAG-вопросы;
-- AI агент с подтверждаемыми действиями;
-- коннекторы и CSV import/export;
-- шаблоны внедрения под типы компаний;
-- production overview, audit, flags, limits, export;
-- настройки tenant;
-- заметки к лидам и сделкам.
+- Home
+- Companies
+- Deals
+- Tasks
+- Inbox
+- Knowledge
+- Analytics
+- Settings
 
-## Переменные
+## Environment
 
-По умолчанию используется PostgreSQL.
-
-Запуск БД:
-
-```bash
-docker compose up -d postgres
-```
-
-Миграции:
-
-```bash
-source .venv/bin/activate
-alembic upgrade head
-```
-
-Подключение:
+Default local database URL:
 
 ```bash
 export DATABASE_URL="postgresql+psycopg://cmr:cmr@localhost:5432/cmr"
 ```
 
-SQLite больше не является целевой dev-базой. Можно использовать только для быстрых локальных тестов через явный `DATABASE_URL=sqlite:///...`.
+SQLite is no longer the target development database. It can still be used only
+for quick isolated tests with an explicit `DATABASE_URL=sqlite:///...`.
 
-Обязательно поменять в production:
+Change this before production:
 
 ```bash
 export SECRET_KEY="long-random-secret"
 ```
 
-## Демо-данные для проверки интерфейса
+## Demo Data
 
-После миграций можно заполнить базу тестовыми данными:
+After migrations, seed the database with demo data for UI testing:
 
 ```bash
 python scripts/seed_demo.py
 ```
 
-Демо-вход:
+Demo login:
 
 - email: `demo@cmr.local`
 - password: `password123`
 
-Скрипт пересоздает только demo-tenant `demo-sales-ai`, поэтому его можно запускать повторно во время тестирования.
+The seed script recreates only the demo tenant `demo-sales-ai`, so it can be
+run repeatedly during interface testing.
 
-## Быстрый сценарий
+## API Quick Check
 
 1. `POST /auth/register-company`
 2. `POST /auth/login`
-3. Взять `access_token`.
-4. В запросы добавить:
+3. Copy `access_token`.
+4. Add headers to requests:
    - `Authorization: Bearer <token>`
    - `X-Tenant-Id: <tenant_id>`
-5. Проверить `GET /me`.
+5. Verify `GET /me`.
 
-## Фаза 02: CRM core
+## CRM Core
 
-После авторизации доступны endpoints:
+Backend endpoints:
 
+- `POST /sales/companies`
+- `GET /sales/companies`
+- `GET /sales/companies/{company_id}`
 - `POST /sales/contacts`
 - `GET /sales/contacts`
 - `POST /sales/leads`
@@ -156,17 +148,67 @@ python scripts/seed_demo.py
 - `POST /sales/notes`
 - `GET /sales/notes`
 
-Минимальный порядок проверки:
+Minimal test flow:
 
-1. Создать pipeline.
-2. Взять `stage_id` первого этапа.
-3. Создать contact.
-4. Создать lead с `contact_id`.
-5. Создать deal с `lead_id` и `stage_id`.
-6. Создать task по сделке.
-7. Создать note по lead или deal.
+1. Create a company.
+2. Create a pipeline.
+3. Take the first `stage_id`.
+4. Create a contact.
+5. Create a lead with `contact_id`.
+6. Create a deal with `lead_id` and `stage_id`.
+7. Create a task for the deal.
+8. Create a note for the lead or deal.
 
-## Фаза 04: RAG
+## Activity Timeline
+
+Backend endpoints:
+
+- `GET /activities`
+- `POST /activities`
+
+The timeline stores a unified activity feed across companies, contacts, deals,
+tasks, notes, system events, and AI actions.
+
+Supported activity types include:
+
+- `EMAIL`
+- `CALL`
+- `MEETING`
+- `TASK`
+- `NOTE`
+- `DEAL_STAGE_CHANGED`
+- `FILE`
+- `COMMENT`
+- `SYSTEM`
+- `AI_ACTION`
+- `AI_SUMMARY_UPDATED`
+
+## Company Workspace
+
+Company is the main CRM object.
+
+The company card includes:
+
+- Overview
+- Timeline
+- Contacts
+- Deals
+- Tasks
+- Files
+- Knowledge
+- AI Summary
+- AI Insights
+- Change History
+- AI Assistant
+
+Frontend:
+
+```text
+http://localhost:5173/companies
+http://localhost:5173/companies/{company_id}
+```
+
+## RAG
 
 Backend endpoints:
 
@@ -182,14 +224,15 @@ Frontend:
 http://localhost:5173/knowledge
 ```
 
-Локально RAG работает без внешнего API через deterministic local embeddings. Это удобно для проверки потока:
+Local RAG works without external APIs through deterministic local embeddings.
+This is useful for checking the full product flow:
 
-1. Добавить документ.
-2. Выполнить поиск.
-3. Задать вопрос.
-4. Проверить ответ и источники.
+1. Add a document.
+2. Run search.
+3. Ask a question.
+4. Check the answer and citations.
 
-Для OpenAI embeddings:
+For OpenAI embeddings:
 
 ```bash
 export OPENAI_API_KEY="..."
@@ -197,9 +240,10 @@ export EMBEDDING_PROVIDER="openai"
 export EMBEDDING_MODEL="text-embedding-3-small"
 ```
 
-Текущий MVP хранит embeddings как JSON, чтобы одинаково работать на SQLite и PostgreSQL. Production-следующий шаг: `pgvector`, hybrid search, reranker.
+The current implementation stores embeddings as JSON for portability. The
+production target is PostgreSQL with `pgvector`, hybrid search, and reranking.
 
-## Фаза 05: AI agent
+## AI Agent
 
 Backend endpoints:
 
@@ -209,30 +253,27 @@ Backend endpoints:
 - `POST /ai-agent/actions/{action_id}/confirm`
 - `POST /ai-agent/actions/{action_id}/reject`
 
-Frontend:
+The AI agent is not a standalone workspace tab. It is embedded into daily work,
+company cards, deal context, and knowledge workflows.
+
+Current capabilities:
+
+- answers with RAG context;
+- summarizes CRM state;
+- proposes task creation;
+- proposes deal stage changes;
+- does not mutate CRM data without user confirmation.
+
+Example prompts:
 
 ```text
-http://localhost:5173/agent
+Give me a CRM summary
+Create a task to call the client
+Move the deal to Proposal
+What should I do after a new inbound lead?
 ```
 
-Что умеет MVP:
-
-- отвечает по базе знаний через RAG;
-- дает сводку по CRM;
-- предлагает создать задачу;
-- предлагает перенести сделку на этап;
-- не меняет CRM без подтверждения пользователя.
-
-Примеры сообщений:
-
-```text
-Дай сводку по CRM
-Создай задачу позвонить клиенту
-Перенеси сделку Первая сделка на этап КП
-Что делать после новой заявки?
-```
-
-## Фаза 06: Connectors
+## Connectors
 
 Backend endpoints:
 
@@ -243,19 +284,13 @@ Backend endpoints:
 - `GET /connectors/csv/export`
 - `GET /connectors/runs`
 
-Frontend:
+Current capabilities:
 
-```text
-http://localhost:5173/connectors
-```
-
-Что умеет MVP:
-
-- показывает реестр коннекторов;
-- подключает connector account;
-- импортирует контакты и лиды из CSV;
-- экспортирует лиды в CSV;
-- хранит историю синхронизаций.
+- connector registry;
+- connector account creation;
+- CSV contact and lead import;
+- CSV export;
+- sync run history.
 
 CSV columns:
 
@@ -271,7 +306,7 @@ Planned connectors:
 - amoCRM;
 - 1C.
 
-## Фаза 07: Company templates
+## Company Templates
 
 Backend endpoints:
 
@@ -279,29 +314,23 @@ Backend endpoints:
 - `POST /templates/apply`
 - `GET /templates/applied`
 
-Frontend:
+Current capabilities:
 
-```text
-http://localhost:5173/templates
-```
+- industry template registry;
+- template application to the current tenant;
+- pipeline and stage creation;
+- playbook creation in the knowledge base;
+- applied template history.
 
-Что умеет MVP:
+Available templates:
 
-- показывает отраслевые шаблоны;
-- применяет шаблон к текущей компании;
-- создает воронку и этапы;
-- добавляет playbook в базу знаний;
-- хранит историю примененных шаблонов.
+- B2B services;
+- wholesale trade;
+- real estate;
+- online education;
+- manufacturing.
 
-Доступные шаблоны:
-
-- B2B услуги;
-- оптовая торговля;
-- недвижимость;
-- онлайн-образование;
-- производство.
-
-## Фаза 08: Production foundation
+## Production Foundation
 
 Backend endpoints:
 
@@ -316,93 +345,23 @@ Backend endpoints:
 - `PUT /production/plan`
 - `GET /production/export`
 
-Frontend:
+Current capabilities:
 
-```text
-http://localhost:5173/production
-```
+- tenant-level counts;
+- plan and limit storage;
+- feature flag management;
+- audit log;
+- JSON tenant data export;
+- readiness API.
 
-Что умеет MVP:
+Before real production:
 
-- показывает counts по tenant;
-- хранит тариф и лимиты;
-- управляет feature flags;
-- показывает audit log;
-- делает JSON export tenant data;
-- проверяет readiness API.
-
-Что еще нужно перед настоящим production:
-
-- Alembic migrations;
-- PostgreSQL + pgvector;
-- полноценный RBAC;
-- rate limits;
-- background jobs;
-- object storage;
-- monitoring;
-- error tracking;
-- backups;
-- CI/CD.
-
-## Phase 09: Activity Timeline
-
-Backend endpoints:
-
-- `GET /activities`
-- `POST /activities`
-
-Frontend:
-
-```text
-http://localhost:5173/timeline
-```
-
-Что умеет MVP:
-
-- хранит единую ленту действий;
-- поддерживает типы `EMAIL`, `CALL`, `MEETING`, `TASK`, `NOTE`, `DEAL_STAGE_CHANGED`, `FILE`, `COMMENT`, `SYSTEM`, `AI_ACTION`;
-- автоматически пишет activity при создании контакта, лида, сделки, задачи, заметки;
-- автоматически пишет activity при переносе сделки;
-- автоматически пишет activity при подтвержденном AI-действии;
-- позволяет вручную добавить activity из UI.
-
-Важно:
-
-- `company_id` уже есть в модели, но пока nullable;
-- отдельная сущность Company будет добавлена следующим слоем.
-
-## Phase 10: Company Workspace
-
-Backend endpoints:
-
-- `POST /sales/companies`
-- `GET /sales/companies`
-- `GET /sales/companies/{company_id}`
-
-Frontend:
-
-```text
-http://localhost:5173/companies
-http://localhost:5173/companies/{company_id}
-```
-
-Что умеет MVP:
-
-- компания стала отдельной сущностью;
-- есть список компаний;
-- есть карточка компании;
-- карточка показывает Overview;
-- Timeline;
-- Contacts;
-- Deals;
-- Tasks;
-- Knowledge placeholder;
-- Files placeholder;
-- AI Summary;
-- AI Insights;
-- History placeholder.
-
-Важно:
-
-- текущая связь контактов с компанией идет через `Contact.company_name == Company.name`;
-- следующий слой: добавить явный `company_id` в contacts/leads/deals/tasks через миграции.
+- enable `pgvector`;
+- add full RBAC;
+- add rate limits;
+- add background jobs;
+- add object storage;
+- add monitoring;
+- add error tracking;
+- add backups;
+- add CI/CD.
