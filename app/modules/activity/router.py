@@ -1,0 +1,75 @@
+import json
+from uuid import UUID
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.core.dependencies import CurrentTenant, get_current_tenant
+from app.modules.activity.models import Activity
+from app.modules.activity.schemas import ActivityCreate, ActivityResponse
+from app.modules.activity.service import ActivityService
+
+
+router = APIRouter()
+
+
+@router.get("", response_model=list[ActivityResponse])
+def list_activities(
+    company_id: UUID | None = None,
+    contact_id: UUID | None = None,
+    deal_id: UUID | None = None,
+    activity_type: str | None = None,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(get_current_tenant),
+) -> list[ActivityResponse]:
+    service = ActivityService(db)
+    return [
+        _activity_response(activity)
+        for activity in service.list(
+            tenant_id=tenant.id,
+            company_id=company_id,
+            contact_id=contact_id,
+            deal_id=deal_id,
+            activity_type=activity_type,
+            limit=limit,
+        )
+    ]
+
+
+@router.post("", response_model=ActivityResponse)
+def create_activity(
+    payload: ActivityCreate,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(get_current_tenant),
+) -> ActivityResponse:
+    service = ActivityService(db)
+    activity = service.create(
+        tenant_id=tenant.id,
+        created_by=tenant.user_id,
+        company_id=payload.company_id,
+        activity_type=payload.type,
+        title=payload.title,
+        description=payload.description,
+        contact_id=payload.contact_id,
+        deal_id=payload.deal_id,
+        metadata=payload.metadata,
+    )
+    return _activity_response(activity)
+
+
+def _activity_response(activity: Activity) -> ActivityResponse:
+    return ActivityResponse(
+        id=activity.id,
+        tenant_id=activity.tenant_id,
+        company_id=activity.company_id,
+        contact_id=activity.contact_id,
+        deal_id=activity.deal_id,
+        type=activity.type,
+        title=activity.title,
+        description=activity.description,
+        created_by=activity.created_by,
+        created_at=activity.created_at,
+        metadata=json.loads(activity.metadata_json),
+    )
