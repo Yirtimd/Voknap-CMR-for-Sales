@@ -43,6 +43,17 @@ Run migrations:
 alembic upgrade head
 ```
 
+Create/update developer access for local testing:
+
+```bash
+python scripts/dev_access.py
+```
+
+Developer login:
+
+- email: `owner@example.com`
+- password: `password123`
+
 Start backend:
 
 ```bash
@@ -109,7 +120,7 @@ python scripts/seed_demo.py
 
 Demo login:
 
-- email: `demo@cmr.local`
+- email: `demo@cmrsales.app`
 - password: `password123`
 
 The seed script recreates only the demo tenant `demo-sales-ai`, so it can be

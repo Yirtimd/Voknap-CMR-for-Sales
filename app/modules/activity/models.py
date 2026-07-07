@@ -20,6 +20,7 @@ class Activity(Base):
     contact_id: Mapped[UUID | None] = mapped_column(index=True)
     deal_id: Mapped[UUID | None] = mapped_column(index=True)
     type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    channel: Mapped[str | None] = mapped_column(String(40))
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[UUID | None] = mapped_column(index=True)

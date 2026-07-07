@@ -56,8 +56,20 @@ class KnowledgeService:
         title: str,
         text: str,
         source_type: str = "text",
+        company_id: UUID | None = None,
+        deal_id: UUID | None = None,
+        file_id: UUID | None = None,
+        visibility: str = "global",
     ) -> KnowledgeDocument:
-        document = KnowledgeDocument(tenant_id=tenant_id, title=title, source_type=source_type)
+        document = KnowledgeDocument(
+            tenant_id=tenant_id,
+            company_id=company_id,
+            deal_id=deal_id,
+            file_id=file_id,
+            title=title,
+            source_type=source_type,
+            visibility=visibility,
+        )
         self.db.add(document)
         self.db.flush()
 
@@ -79,22 +91,45 @@ class KnowledgeService:
         self.db.refresh(document)
         return document
 
-    def list_documents(self, tenant_id: UUID) -> list[KnowledgeDocument]:
-        return (
-            self.db.query(KnowledgeDocument)
-            .filter(KnowledgeDocument.tenant_id == tenant_id)
-            .order_by(KnowledgeDocument.created_at.desc())
-            .all()
-        )
+    def list_documents(
+        self,
+        tenant_id: UUID,
+        company_id: UUID | None = None,
+        deal_id: UUID | None = None,
+    ) -> list[KnowledgeDocument]:
+        query = self.db.query(KnowledgeDocument).filter(KnowledgeDocument.tenant_id == tenant_id)
+        if company_id is not None:
+            query = query.filter(KnowledgeDocument.company_id == company_id)
+        if deal_id is not None:
+            query = query.filter(KnowledgeDocument.deal_id == deal_id)
+        return query.order_by(KnowledgeDocument.created_at.desc()).all()
 
-    def search(self, tenant_id: UUID, query: str, limit: int = 6) -> list[RankedChunk]:
+    def search(
+        self,
+        tenant_id: UUID,
+        query: str,
+        limit: int = 6,
+        company_id: UUID | None = None,
+        deal_id: UUID | None = None,
+    ) -> list[RankedChunk]:
         query_embedding = self.embedding_service.embed(query)
-        rows = (
+        rows_query = (
             self.db.query(KnowledgeChunk, KnowledgeDocument)
             .join(KnowledgeDocument, KnowledgeDocument.id == KnowledgeChunk.document_id)
             .filter(KnowledgeChunk.tenant_id == tenant_id)
-            .all()
         )
+        if company_id is not None:
+            rows_query = rows_query.filter(
+                (KnowledgeDocument.visibility == "global") |
+                (KnowledgeDocument.company_id == company_id)
+            )
+        if deal_id is not None:
+            rows_query = rows_query.filter(
+                (KnowledgeDocument.visibility == "global") |
+                (KnowledgeDocument.deal_id == deal_id) |
+                (KnowledgeDocument.company_id == company_id)
+            )
+        rows = rows_query.all()
 
         ranked: list[RankedChunk] = []
         for chunk, document in rows:
@@ -104,8 +139,16 @@ class KnowledgeService:
 
         return sorted(ranked, key=lambda item: item.score, reverse=True)[:limit]
 
-    def answer(self, tenant_id: UUID, user_id: UUID, question: str, limit: int = 6) -> tuple[str, list[RankedChunk]]:
-        ranked_chunks = self.search(tenant_id=tenant_id, query=question, limit=limit)
+    def answer(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+        question: str,
+        limit: int = 6,
+        company_id: UUID | None = None,
+        deal_id: UUID | None = None,
+    ) -> tuple[str, list[RankedChunk]]:
+        ranked_chunks = self.search(tenant_id=tenant_id, query=question, limit=limit, company_id=company_id, deal_id=deal_id)
         if not ranked_chunks or ranked_chunks[0].score <= 0:
             answer = "Не нашел ответ в базе знаний компании."
             self._save_query(tenant_id, user_id, question, answer)

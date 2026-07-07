@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.modules.activity.service import ActivityService
 from app.modules.ai_agent.models import AgentAction, AgentMessage
 from app.modules.knowledge.service import KnowledgeService
-from app.modules.sales.models import Deal, Lead, Note, PipelineStage, Task
+from app.modules.sales.models import Company, Contact, CustomerInsight, Deal, Lead, NextAction, Note, PipelineStage, Task
 
 
 class AgentService:
@@ -16,7 +16,14 @@ class AgentService:
         self.db = db
         self.knowledge_service = KnowledgeService(db)
 
-    def chat(self, tenant_id: UUID, user_id: UUID, message: str) -> tuple[str, list[AgentAction], list[dict]]:
+    def chat(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+        message: str,
+        company_id: UUID | None = None,
+        deal_id: UUID | None = None,
+    ) -> tuple[str, list[AgentAction], list[dict]]:
         self._save_message(tenant_id, user_id, "user", message)
 
         lowered = message.lower()
@@ -40,7 +47,7 @@ class AgentService:
         elif self._looks_like_summary_request(lowered):
             answer = self._summarize_crm(tenant_id)
         else:
-            answer, sources = self._answer_from_knowledge(tenant_id, user_id, message)
+            answer, sources = self._answer_from_knowledge(tenant_id, user_id, message, company_id=company_id, deal_id=deal_id)
 
         self._save_message(tenant_id, user_id, "assistant", answer)
         return answer, actions, sources
@@ -62,6 +69,96 @@ class AgentService:
             .limit(30)
             .all()
         )
+
+    def company_copilot(self, tenant_id: UUID, user_id: UUID, company_id: UUID) -> dict | None:
+        company = (
+            self.db.query(Company)
+            .filter(Company.id == company_id, Company.tenant_id == tenant_id)
+            .one_or_none()
+        )
+        if company is None:
+            return None
+
+        contacts = self.db.query(Contact).filter(Contact.tenant_id == tenant_id, Contact.company_id == company.id).all()
+        deals = self.db.query(Deal).filter(Deal.tenant_id == tenant_id, Deal.company_id == company.id).all()
+        tasks = self.db.query(Task).filter(Task.tenant_id == tenant_id, Task.company_id == company.id).all()
+        activities = ActivityService(self.db).list(tenant_id=tenant_id, company_id=company.id, limit=20)
+        current_deal = deals[0] if deals else None
+        open_tasks = [task for task in tasks if task.done_at is None]
+        total_amount = sum(float(deal.amount or 0) for deal in deals)
+        last_activity = activities[0] if activities else None
+        days_since_activity = self._days_since(last_activity.created_at) if last_activity else 999
+
+        risk_score = self._deal_risk_score(current_deal, open_tasks, days_since_activity)
+        risk_level = "high" if risk_score >= 70 else "medium" if risk_score >= 35 else "low"
+        next_best_action = self._next_best_action(current_deal, contacts, open_tasks, days_since_activity)
+        summary = (
+            f"{company.name}: {len(contacts)} контактов, {len(deals)} сделок, "
+            f"{len(open_tasks)} открытых задач, pipeline {total_amount:,.0f} руб. "
+            f"AI фокус: {next_best_action}."
+        )
+        follow_up_draft = self._follow_up_draft(company, contacts, current_deal, next_best_action)
+        meeting_prep = self._meeting_prep(company, current_deal, activities)
+        insight = {
+            "health_score": max(0, min(100, 88 - risk_score // 2 + len(contacts) * 3)),
+            "health_label": "Risk" if risk_level == "high" else "Healthy",
+            "health_trend": "down" if risk_level == "high" else "up",
+            "risk_level": risk_level,
+            "success_chance": max(5, min(95, (current_deal.probability if current_deal and current_deal.probability else 45) - risk_score // 4)),
+            "success_chance_delta": -6 if risk_level == "high" else 4,
+            "ai_recommendations": [
+                {
+                    "type": "warning" if risk_level == "high" else "info",
+                    "title": "AI Deal Risk",
+                    "description": f"{risk_level}: {self._risk_reason(current_deal, open_tasks, days_since_activity)}",
+                },
+                {
+                    "type": "success",
+                    "title": "AI Next Best Action",
+                    "description": next_best_action,
+                },
+            ],
+        }
+
+        actions = [
+            self._ensure_pending_action(
+                tenant_id,
+                user_id,
+                "create_next_action",
+                {
+                    "company_id": str(company.id),
+                    "deal_id": str(current_deal.id) if current_deal else None,
+                    "contact_id": str(contacts[0].id) if contacts else None,
+                    "title": next_best_action,
+                    "description": "AI next best action generated from company activity, deal risk, and open tasks.",
+                    "priority": "high" if risk_level == "high" else "normal",
+                    "due_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+                },
+            ),
+            self._ensure_pending_action(
+                tenant_id,
+                user_id,
+                "update_customer_insight",
+                {
+                    "company_id": str(company.id),
+                    **insight,
+                },
+            ),
+        ]
+
+        return {
+            "summary": summary,
+            "next_best_action": next_best_action,
+            "deal_risk": {
+                "level": risk_level,
+                "score": risk_score,
+                "reason": self._risk_reason(current_deal, open_tasks, days_since_activity),
+            },
+            "follow_up_draft": follow_up_draft,
+            "meeting_prep": meeting_prep,
+            "insight": insight,
+            "actions": actions,
+        }
 
     def confirm_action(self, tenant_id: UUID, action_id: UUID) -> AgentAction | None:
         action = (
@@ -98,6 +195,88 @@ class AgentService:
                 commit=False,
             )
             action.result_json = json.dumps({"task_id": str(task.id), "title": task.title})
+        elif action.action_type == "create_next_action":
+            next_action = NextAction(
+                tenant_id=tenant_id,
+                company_id=UUID(payload["company_id"]),
+                deal_id=UUID(payload["deal_id"]) if payload.get("deal_id") else None,
+                contact_id=UUID(payload["contact_id"]) if payload.get("contact_id") else None,
+                assigned_to_id=action.user_id,
+                title=payload["title"],
+                description=payload.get("description"),
+                source="ai",
+                status="open",
+                priority=payload.get("priority", "normal"),
+                due_at=self._parse_datetime(payload.get("due_at")),
+            )
+            self.db.add(next_action)
+            self.db.flush()
+            company = (
+                self.db.query(Company)
+                .filter(Company.id == next_action.company_id, Company.tenant_id == tenant_id)
+                .one_or_none()
+            )
+            if company:
+                company.next_action_id = next_action.id
+            if next_action.deal_id:
+                deal = (
+                    self.db.query(Deal)
+                    .filter(Deal.id == next_action.deal_id, Deal.tenant_id == tenant_id)
+                    .one_or_none()
+                )
+                if deal:
+                    deal.next_action_id = next_action.id
+                    deal.next_step = next_action.title
+            ActivityService(self.db).create(
+                tenant_id=tenant_id,
+                created_by=action.user_id,
+                company_id=next_action.company_id,
+                deal_id=next_action.deal_id,
+                contact_id=next_action.contact_id,
+                activity_type="AI_ACTION",
+                title="AI next action confirmed",
+                description=next_action.title,
+                metadata={"action_id": str(action.id), "next_action_id": str(next_action.id)},
+                commit=False,
+            )
+            action.result_json = json.dumps({"next_action_id": str(next_action.id), "title": next_action.title})
+        elif action.action_type == "update_customer_insight":
+            company_id = UUID(payload["company_id"])
+            insight = (
+                self.db.query(CustomerInsight)
+                .filter(CustomerInsight.tenant_id == tenant_id, CustomerInsight.company_id == company_id)
+                .one_or_none()
+            )
+            if insight is None:
+                insight = CustomerInsight(tenant_id=tenant_id, company_id=company_id)
+                self.db.add(insight)
+            insight.health_score = payload.get("health_score")
+            insight.health_label = payload.get("health_label")
+            insight.health_trend = payload.get("health_trend")
+            insight.risk_level = payload.get("risk_level")
+            insight.success_chance = payload.get("success_chance")
+            insight.success_chance_delta = payload.get("success_chance_delta")
+            insight.ai_recommendations_json = json.dumps(payload.get("ai_recommendations", []), ensure_ascii=False)
+            insight.updated_at = datetime.now(timezone.utc)
+            company = (
+                self.db.query(Company)
+                .filter(Company.id == company_id, Company.tenant_id == tenant_id)
+                .one_or_none()
+            )
+            if company:
+                company.health_score = insight.health_score
+            ActivityService(self.db).create(
+                tenant_id=tenant_id,
+                created_by=action.user_id,
+                company_id=company_id,
+                activity_type="AI_ACTION",
+                channel="AI",
+                title="AI updated customer insight",
+                description=f"Health {insight.health_score}, risk {insight.risk_level}",
+                metadata={"action_id": str(action.id), "insight": payload},
+                commit=False,
+            )
+            action.result_json = json.dumps({"company_id": str(company_id), "health_score": insight.health_score})
         elif action.action_type == "move_deal":
             deal = (
                 self.db.query(Deal)
@@ -148,12 +327,29 @@ class AgentService:
             self.db.refresh(action)
         return action
 
-    def _answer_from_knowledge(self, tenant_id: UUID, user_id: UUID, message: str) -> tuple[str, list[dict]]:
-        answer, ranked_chunks = self.knowledge_service.answer(tenant_id, user_id, message, limit=5)
+    def _answer_from_knowledge(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+        message: str,
+        company_id: UUID | None = None,
+        deal_id: UUID | None = None,
+    ) -> tuple[str, list[dict]]:
+        answer, ranked_chunks = self.knowledge_service.answer(
+            tenant_id,
+            user_id,
+            message,
+            limit=5,
+            company_id=company_id,
+            deal_id=deal_id,
+        )
         sources = [
             {
                 "document_id": str(item.document.id),
                 "document_title": item.document.title,
+                "document_scope": item.document.visibility,
+                "company_id": str(item.document.company_id) if item.document.company_id else None,
+                "deal_id": str(item.document.deal_id) if item.document.deal_id else None,
                 "chunk_id": str(item.chunk.id),
                 "score": item.score,
                 "text": item.chunk.text[:500],
@@ -254,6 +450,104 @@ class AgentService:
     def _save_message(self, tenant_id: UUID, user_id: UUID, role: str, content: str) -> None:
         self.db.add(AgentMessage(tenant_id=tenant_id, user_id=user_id, role=role, content=content))
         self.db.commit()
+
+    def _ensure_pending_action(self, tenant_id: UUID, user_id: UUID, action_type: str, payload: dict) -> AgentAction:
+        payload_key = payload.get("company_id") or payload.get("deal_id") or ""
+        existing = (
+            self.db.query(AgentAction)
+            .filter(
+                AgentAction.tenant_id == tenant_id,
+                AgentAction.user_id == user_id,
+                AgentAction.action_type == action_type,
+                AgentAction.status == "pending",
+            )
+            .order_by(AgentAction.created_at.desc())
+            .all()
+        )
+        for action in existing:
+            current_payload = json.loads(action.payload_json)
+            current_key = current_payload.get("company_id") or current_payload.get("deal_id") or ""
+            if current_key == payload_key:
+                action.payload_json = json.dumps(payload, ensure_ascii=False)
+                self.db.commit()
+                self.db.refresh(action)
+                return action
+        action = AgentAction(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            action_type=action_type,
+            payload_json=json.dumps(payload, ensure_ascii=False),
+        )
+        self.db.add(action)
+        self.db.commit()
+        self.db.refresh(action)
+        return action
+
+    def _days_since(self, value: datetime) -> int:
+        checked = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return max(0, (datetime.now(timezone.utc) - checked).days)
+
+    def _deal_risk_score(self, deal: Deal | None, open_tasks: list[Task], days_since_activity: int) -> int:
+        score = 0
+        if deal is None:
+            return 75
+        if days_since_activity >= 7:
+            score += 35
+        if any(task.due_at and self._as_utc(task.due_at) < datetime.now(timezone.utc) for task in open_tasks):
+            score += 30
+        if deal.probability is not None and deal.probability < 45:
+            score += 20
+        if deal.expected_close_date and self._as_utc(deal.expected_close_date) < datetime.now(timezone.utc):
+            score += 25
+        return min(100, score)
+
+    def _risk_reason(self, deal: Deal | None, open_tasks: list[Task], days_since_activity: int) -> str:
+        if deal is None:
+            return "нет активной сделки"
+        if days_since_activity >= 7:
+            return "нет свежей активности больше недели"
+        if any(task.due_at and self._as_utc(task.due_at) < datetime.now(timezone.utc) for task in open_tasks):
+            return "есть просроченные задачи"
+        if deal.probability is not None and deal.probability < 45:
+            return "низкая вероятность закрытия"
+        return "риск контролируемый"
+
+    def _next_best_action(self, deal: Deal | None, contacts: list[Contact], open_tasks: list[Task], days_since_activity: int) -> str:
+        if open_tasks:
+            return open_tasks[0].title
+        if deal is None:
+            return "Создать первую сделку и связать ее с ключевым контактом"
+        if days_since_activity >= 3:
+            return "Связаться с клиентом и подтвердить следующий шаг"
+        if contacts:
+            return f"Подготовить follow-up для {contacts[0].name}"
+        return "Добавить ключевой контакт и назначить встречу"
+
+    def _follow_up_draft(self, company: Company, contacts: list[Contact], deal: Deal | None, next_action: str) -> str:
+        name = contacts[0].name if contacts else "коллеги"
+        deal_line = f"по сделке «{deal.title}»" if deal else "по обсуждению внедрения"
+        return (
+            f"{name}, добрый день. Возвращаюсь {deal_line}. "
+            f"Предлагаю следующий шаг: {next_action}. "
+            f"Готова согласовать удобное время и подготовить материалы по {company.name}."
+        )
+
+    def _meeting_prep(self, company: Company, deal: Deal | None, activities: list) -> str:
+        deal_part = f"Сделка: {deal.title}, сумма {float(deal.amount or 0):,.0f} руб." if deal else "Сделка еще не создана."
+        last_titles = ", ".join(activity.title for activity in activities[:3]) or "активностей пока нет"
+        return (
+            f"Цель встречи: подтвердить потребность и следующий шаг. "
+            f"{deal_part} Последние события: {last_titles}. "
+            f"Вопросы: текущая CRM, число менеджеров, интеграции, срок пилота, критерий успеха."
+        )
+
+    def _parse_datetime(self, value: str | None) -> datetime | None:
+        if not value:
+            return None
+        return datetime.fromisoformat(value)
+
+    def _as_utc(self, value: datetime) -> datetime:
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
     def _looks_like_task_request(self, lowered: str) -> bool:
         return "задач" in lowered or "напомни" in lowered or "создай task" in lowered

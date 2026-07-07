@@ -16,12 +16,25 @@ from app.modules.activity.models import Activity
 from app.modules.ai_agent.models import AgentAction, AgentMessage
 from app.modules.connectors.models import ConnectorAccount, ConnectorSyncRun
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeDocument, KnowledgeQuery
+from app.modules.knowledge.service import EmbeddingService
 from app.modules.production.models import AuditLog, FeatureFlag, TenantPlan
-from app.modules.sales.models import Company, Contact, Deal, Lead, Note, Pipeline, PipelineStage, Task
+from app.modules.sales.models import (
+    Company,
+    CompanyFile,
+    Contact,
+    CustomerInsight,
+    Deal,
+    Lead,
+    NextAction,
+    Note,
+    Pipeline,
+    PipelineStage,
+    Task,
+)
 
 
 DEMO_TENANT_SLUG = "demo-sales-ai"
-DEMO_USER_EMAIL = "demo@cmr.local"
+DEMO_USER_EMAIL = "demo@cmrsales.app"
 DEMO_USER_PASSWORD = "password123"
 
 
@@ -46,6 +59,9 @@ def remove_existing_demo(db: Session) -> None:
             AuditLog,
             FeatureFlag,
             TenantPlan,
+            CompanyFile,
+            CustomerInsight,
+            NextAction,
             Activity,
             Note,
             Task,
@@ -106,6 +122,11 @@ def create_company_pack(
         website=website,
         industry=industry,
         description=description,
+        status="active",
+        company_type="B2B",
+        health_score=min(96, 72 + stage_index * 4),
+        client_since=now() - timedelta(days=stage_index + 30),
+        owner_id=user.id,
         created_at=now() - timedelta(days=stage_index + 7),
     )
     db.add(company)
@@ -118,6 +139,10 @@ def create_company_pack(
         phone=contact_phone,
         email=contact_email,
         company_name=name,
+        role="CEO" if stage_index % 2 == 0 else "Менеджер",
+        can_call=True,
+        can_email=True,
+        can_open_more=True,
         created_at=now() - timedelta(days=stage_index + 6),
     )
     db.add(contact)
@@ -143,10 +168,36 @@ def create_company_pack(
         title=deal_title,
         amount=amount,
         status="won" if stages[stage_index].name == "Won" else "open",
+        probability=min(95, 35 + stage_index * 15),
+        expected_close_date=now() + timedelta(days=14 + stage_index * 7),
+        expected_next_event="Ожидаем: ответа клиента",
+        next_step=task_title,
+        risk_level="high" if due_shift_days < 0 else "medium",
+        forecast_category="commit" if stage_index >= 3 else "pipeline",
+        owner_id=user.id,
         created_at=now() - timedelta(days=stage_index + 4),
     )
     db.add(deal)
     db.flush()
+
+    next_action = NextAction(
+        tenant_id=tenant.id,
+        company_id=company.id,
+        deal_id=deal.id,
+        contact_id=contact.id,
+        assigned_to_id=user.id,
+        title=task_title,
+        description="Главное следующее действие для company workspace.",
+        source="ai" if stage_index % 2 == 0 else "manual",
+        status="open",
+        priority="high" if due_shift_days <= 1 else "normal",
+        due_at=now() + timedelta(days=due_shift_days),
+        created_at=now() - timedelta(days=1),
+    )
+    db.add(next_action)
+    db.flush()
+    company.next_action_id = next_action.id
+    deal.next_action_id = next_action.id
 
     db.add(
         Task(
@@ -156,6 +207,8 @@ def create_company_pack(
             deal_id=deal.id,
             title=task_title,
             description="Следующее действие создано для проверки рабочего интерфейса.",
+            status="open" if due_shift_days >= 0 else "done",
+            priority="high" if due_shift_days <= 1 else "normal",
             due_at=now() + timedelta(days=due_shift_days),
             done_at=None if due_shift_days >= 0 else now() - timedelta(hours=8),
             created_at=now() - timedelta(days=2),
@@ -172,13 +225,81 @@ def create_company_pack(
         )
     )
 
+    db.add(
+        CustomerInsight(
+            tenant_id=tenant.id,
+            company_id=company.id,
+            health_score=min(96, 72 + stage_index * 4),
+            health_label="Хороший",
+            health_trend="up" if stage_index != 0 else "flat",
+            risk_level="high" if due_shift_days < 0 else "medium",
+            success_chance=min(92, 52 + stage_index * 8),
+            success_chance_delta=4 - stage_index,
+            ai_recommendations_json=json.dumps(
+                [
+                    {
+                        "type": "warning" if due_shift_days < 0 else "info",
+                        "title": "Контроль следующего шага",
+                        "description": task_title,
+                    },
+                    {
+                        "type": "success",
+                        "title": "Сильный сигнал",
+                        "description": f"Сделка на этапе {stages[stage_index].name}",
+                    },
+                ],
+                ensure_ascii=False,
+            ),
+            updated_at=now() - timedelta(hours=2),
+        )
+    )
+
+    for index, (file_name, file_type, file_size) in enumerate(
+        (
+            (f"КП_{name.replace(' ', '_')}.pdf", "PDF", 2_400_000 + stage_index * 110_000),
+            (f"Discovery_{name.replace(' ', '_')}.xlsx", "XLSX", 1_100_000 + stage_index * 90_000),
+        )
+    ):
+        file = CompanyFile(
+            tenant_id=tenant.id,
+            company_id=company.id,
+            deal_id=deal.id,
+            contact_id=contact.id,
+            uploaded_by_id=user.id,
+            name=file_name,
+            file_type=file_type,
+            mime_type="application/pdf" if file_type == "PDF" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file_size=file_size,
+            storage_key=f"demo/{company.id}/{file_name}",
+            download_url=f"/demo-files/{company.id}/{index}",
+            created_at=now() - timedelta(days=index + 1),
+        )
+        db.add(file)
+        db.flush()
+        if index == 0:
+            add_knowledge_document(
+                db,
+                tenant,
+                title=f"Proposal knowledge: {name}",
+                text=(
+                    f"Proposal for {name}. Deal: {deal.title}. Amount: {amount}. "
+                    f"Next action: {task_title}. Risk level: {deal.risk_level}. "
+                    "This document is scoped to company and deal context."
+                ),
+                source_type="proposal",
+                company_id=company.id,
+                deal_id=deal.id,
+                file_id=file.id,
+                visibility="company",
+            )
+
     activity_rows = [
-        ("CALL", "Call completed", "Обсудили текущий процесс продаж и узкие места.", -3),
-        ("MEETING", "Discovery meeting", "Зафиксировали участников, сроки и критерии успеха.", -2),
-        ("AI_SUMMARY_UPDATED", "AI generated summary", "AI обновил краткую сводку компании.", -1),
-        ("DEAL_STAGE_CHANGED", f"Stage moved to {stages[stage_index].name}", "Сделка перешла на текущий этап.", 0),
+        ("CALL", "Call", "Call completed", "Обсудили текущий процесс продаж и узкие места.", -3),
+        ("MEETING", "Meeting", "Discovery meeting", "Зафиксировали участников, сроки и критерии успеха.", -2),
+        ("AI_SUMMARY_UPDATED", "AI", "AI generated summary", "AI обновил краткую сводку компании.", -1),
+        ("DEAL_STAGE_CHANGED", "CRM", f"Stage moved to {stages[stage_index].name}", "Сделка перешла на текущий этап.", 0),
     ]
-    for activity_type, title, text, shift in activity_rows:
+    for activity_type, channel, title, text, shift in activity_rows:
         db.add(
             Activity(
                 tenant_id=tenant.id,
@@ -186,6 +307,7 @@ def create_company_pack(
                 contact_id=contact.id,
                 deal_id=deal.id,
                 type=activity_type,
+                channel=channel,
                 title=title,
                 description=text,
                 created_by=user.id,
@@ -211,19 +333,7 @@ def create_knowledge(db: Session, tenant: Tenant, user: User) -> None:
         ),
     ]
     for title, text in documents:
-        document = KnowledgeDocument(tenant_id=tenant.id, title=title, source_type="text", status="ready")
-        db.add(document)
-        db.flush()
-        db.add(
-            KnowledgeChunk(
-                tenant_id=tenant.id,
-                document_id=document.id,
-                chunk_index=0,
-                text=text,
-                embedding_json=json.dumps([0.12, 0.24, 0.48, 0.96]),
-                token_estimate=len(text.split()),
-            )
-        )
+        add_knowledge_document(db, tenant, title=title, text=text, source_type="text", visibility="global")
 
     db.add(
         KnowledgeQuery(
@@ -233,6 +343,44 @@ def create_knowledge(db: Session, tenant: Tenant, user: User) -> None:
             answer="Создать компанию, контакт, сделку, next action и активность в timeline.",
         )
     )
+
+
+def add_knowledge_document(
+    db: Session,
+    tenant: Tenant,
+    *,
+    title: str,
+    text: str,
+    source_type: str,
+    visibility: str,
+    company_id=None,
+    deal_id=None,
+    file_id=None,
+) -> KnowledgeDocument:
+    document = KnowledgeDocument(
+        tenant_id=tenant.id,
+        company_id=company_id,
+        deal_id=deal_id,
+        file_id=file_id,
+        title=title,
+        source_type=source_type,
+        visibility=visibility,
+        status="ready",
+    )
+    db.add(document)
+    db.flush()
+    embedding = EmbeddingService()._local_embed(text)
+    db.add(
+        KnowledgeChunk(
+            tenant_id=tenant.id,
+            document_id=document.id,
+            chunk_index=0,
+            text=text,
+            embedding_json=json.dumps(embedding),
+            token_estimate=len(text.split()),
+        )
+    )
+    return document
 
 
 def create_platform_data(db: Session, tenant: Tenant, user: User) -> None:
@@ -304,7 +452,13 @@ def seed() -> None:
         remove_existing_demo(db)
 
         tenant = Tenant(name="Demo AI Sales OS", slug=DEMO_TENANT_SLUG, is_active=True)
-        user = User(email=DEMO_USER_EMAIL, full_name="Demo Sales Owner", password_hash=hash_password(DEMO_USER_PASSWORD), is_active=True)
+        user = User(
+            email=DEMO_USER_EMAIL,
+            full_name="Demo Sales Owner",
+            avatar_url="/avatars/demo-sales-owner.png",
+            password_hash=hash_password(DEMO_USER_PASSWORD),
+            is_active=True,
+        )
         db.add_all([tenant, user])
         db.flush()
         db.add(Membership(tenant_id=tenant.id, user_id=user.id, role="owner"))

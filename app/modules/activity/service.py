@@ -20,6 +20,7 @@ class ActivityService:
         company_id: UUID | None = None,
         contact_id: UUID | None = None,
         deal_id: UUID | None = None,
+        channel: str | None = None,
         metadata: dict | None = None,
         commit: bool = True,
     ) -> Activity:
@@ -29,6 +30,7 @@ class ActivityService:
             contact_id=contact_id,
             deal_id=deal_id,
             type=activity_type,
+            channel=channel,
             title=title,
             description=description,
             created_by=created_by,

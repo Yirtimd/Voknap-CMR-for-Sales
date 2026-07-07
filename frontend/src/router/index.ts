@@ -29,7 +29,7 @@ export const router = createRouter({
         { path: "deals", name: "deals", component: DealsPage, meta: { title: "Deals", eyebrow: "Pipeline" } },
         { path: "tasks", name: "tasks", component: TasksPage, meta: { title: "Tasks", eyebrow: "Execution" } },
         { path: "inbox", name: "inbox", component: InboxPage, meta: { title: "Inbox", eyebrow: "Communication Hub" } },
-        { path: "knowledge", name: "knowledge", component: KnowledgePage, meta: { title: "Knowledge", eyebrow: "RAG Base" } },
+        { path: "knowledge", name: "knowledge", component: KnowledgePage, meta: { title: "Company Brain", eyebrow: "Workspace AI" } },
         { path: "analytics", name: "analytics", component: AnalyticsPage, meta: { title: "Analytics", eyebrow: "Revenue intelligence" } },
         { path: "settings", name: "settings", component: SettingsPage, meta: { title: "Settings", eyebrow: "Administration" } },
         { path: "dashboard", redirect: "/home" },

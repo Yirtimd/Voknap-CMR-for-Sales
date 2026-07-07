@@ -8,6 +8,7 @@ import type {
   Activity,
   AuthResponse,
   Company,
+  CompanyCopilot,
   CompanyWorkspace,
   Contact,
   ConnectorAccount,
@@ -53,6 +54,7 @@ const knowledgeAnswer = ref<KnowledgeAskResponse | null>(null);
 const agentHistory = ref<AgentHistoryMessage[]>([]);
 const agentActions = ref<AgentAction[]>([]);
 const agentLastResponse = ref<AgentChatResponse | null>(null);
+const companyCopilot = ref<CompanyCopilot | null>(null);
 const connectorDefinitions = ref<ConnectorDefinition[]>([]);
 const connectorAccounts = ref<ConnectorAccount[]>([]);
 const connectorRuns = ref<ConnectorSyncRun[]>([]);
@@ -79,8 +81,27 @@ const pipelineForm = ref({ name: "Основная воронка", stages: "Н�
 const contactForm = ref({ company_id: "", name: "Иван Петров", phone: "+79990000000", email: "client@example.com", company_name: "Ромашка" });
 const companyForm = ref({ name: "Ромашка", website: "https://example.com", industry: "B2B", description: "Тестовая компания" });
 const leadForm = ref({ company_id: "", title: "Заявка с сайта", source: "site", contact_id: "" });
-const dealForm = ref({ company_id: "", title: "Первая сделка", amount: 50000, lead_id: "", stage_id: "" });
-const taskForm = ref({ company_id: "", title: "Позвонить клиенту", description: "Уточнить потребность", deal_id: "", due_at: "" });
+const dealForm = ref({
+  company_id: "",
+  title: "Первая сделка",
+  amount: 50000,
+  lead_id: "",
+  stage_id: "",
+  probability: 50,
+  expected_close_date: "",
+  expected_next_event: "Ответ клиента",
+  next_step: "Позвонить клиенту",
+  risk_level: "medium",
+  forecast_category: "pipeline"
+});
+const taskForm = ref({
+  company_id: "",
+  title: "Позвонить клиенту",
+  description: "Уточнить потребность",
+  deal_id: "",
+  priority: "normal",
+  due_at: ""
+});
 const noteForm = ref({ text: "Клиент интересуется внедрением CRM" });
 const knowledgeDocumentForm = ref({
   title: "Скрипт продаж",
@@ -150,7 +171,12 @@ async function run(action: () => Promise<void>, success: string) {
 function saveSession(auth: AuthResponse) {
   token.value = auth.access_token;
   tenants.value = auth.tenants;
-  tenantId.value = auth.tenants[0]?.id ?? "";
+  const savedTenantId = localStorage.getItem("cmr_tenant_id");
+  const preferredTenant =
+    auth.tenants.find((tenant) => tenant.id === savedTenantId) ??
+    auth.tenants.find((tenant) => tenant.slug === "developer-test") ??
+    auth.tenants[0];
+  tenantId.value = preferredTenant?.id ?? "";
   localStorage.setItem("cmr_token", token.value);
   localStorage.setItem("cmr_tenant_id", tenantId.value);
   localStorage.setItem("cmr_tenants", JSON.stringify(tenants.value));
@@ -237,6 +263,17 @@ async function loadCompanyWorkspace(companyId: string) {
     token.value,
     tenantId.value
   );
+}
+
+async function refreshCompanyCopilot(companyId: string) {
+  if (!isAuthed.value) return;
+  companyCopilot.value = await api<CompanyCopilot>(
+    `/ai-agent/companies/${companyId}/copilot`,
+    {},
+    token.value,
+    tenantId.value
+  );
+  await refreshAgent();
 }
 
 async function refreshKnowledge() {
@@ -612,6 +649,7 @@ export const crmStore = {
   agentHistory,
   agentActions,
   agentLastResponse,
+  companyCopilot,
   connectorDefinitions,
   connectorAccounts,
   connectorRuns,
@@ -656,6 +694,7 @@ export const crmStore = {
   refreshAll,
   createCompany,
   loadCompanyWorkspace,
+  refreshCompanyCopilot,
   refreshKnowledge,
   refreshAgent,
   refreshConnectors,

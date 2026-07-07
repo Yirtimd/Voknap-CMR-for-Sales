@@ -50,6 +50,7 @@ function nextAction(company: Company) {
 async function openCompany(company: Company) {
   selectedCompany.value = company;
   await crmStore.loadCompanyWorkspace(company.id);
+  await crmStore.refreshCompanyCopilot(company.id);
 }
 
 const filteredCompanies = computed(() => {

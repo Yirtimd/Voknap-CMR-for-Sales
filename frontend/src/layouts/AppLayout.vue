@@ -10,18 +10,19 @@ const router = useRouter();
 const route = useRoute();
 
 const navItems = [
-  { to: "/home", label: "Home" },
-  { to: "/companies", label: "Companies" },
-  { to: "/deals", label: "Deals" },
-  { to: "/tasks", label: "Tasks" },
-  { to: "/inbox", label: "Inbox" },
-  { to: "/knowledge", label: "Knowledge" },
-  { to: "/analytics", label: "Analytics" },
-  { to: "/settings", label: "Settings" }
+  { to: "/home", label: "Home", icon: "▣" },
+  { to: "/companies", label: "Companies", icon: "▥" },
+  { to: "/deals", label: "Deals", icon: "$" },
+  { to: "/tasks", label: "Tasks", icon: "☑" },
+  { to: "/inbox", label: "Inbox", icon: "✉" },
+  { to: "/knowledge", label: "Company Brain", icon: "◉" },
+  { to: "/analytics", label: "Analytics", icon: "▥" },
+  { to: "/settings", label: "Settings", icon: "⚙" }
 ];
 
 const pageTitle = computed(() => String(route.meta.title ?? "AI Sales Workspace"));
 const pageEyebrow = computed(() => String(route.meta.eyebrow ?? "Workspace"));
+const isHome = computed(() => route.path === "/home");
 const isAgentOpen = ref(false);
 
 onMounted(() => {
@@ -42,14 +43,29 @@ function logout() {
       </div>
 
       <nav class="nav">
-        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to">{{ item.label }}</RouterLink>
+        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to"><span>{{ item.icon }}</span>{{ item.label }}</RouterLink>
       </nav>
 
       <button class="secondary" type="button" @click="logout">Выйти</button>
     </aside>
 
     <section class="content">
-      <header class="topbar">
+      <header v-if="isHome" class="topbar home-topbar">
+        <h1>Home</h1>
+        <label class="home-search" aria-label="Поиск">
+          <span>⌕</span>
+          <input type="search" placeholder="Search deals, companies, tasks..." />
+          <kbd>⌘K</kbd>
+        </label>
+        <div class="home-top-actions">
+          <button type="button" class="secondary home-new-button"><span>+</span> New <span>⌄</span></button>
+          <button type="button" class="secondary home-bell" aria-label="Уведомления"><span>♧</span><b>3</b></button>
+          <button type="button" class="secondary home-avatar" aria-label="Профиль">DM</button>
+          <button type="button" class="secondary home-caret" aria-label="Меню">⌄</button>
+        </div>
+      </header>
+
+      <header v-else class="topbar">
         <div>
           <p class="eyebrow">{{ pageEyebrow }}</p>
           <h1>{{ pageTitle }}</h1>

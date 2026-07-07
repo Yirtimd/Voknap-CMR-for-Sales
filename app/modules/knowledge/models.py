@@ -16,8 +16,12 @@ class KnowledgeDocument(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
+    company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), index=True)
+    deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), index=True)
+    file_id: Mapped[UUID | None] = mapped_column(ForeignKey("files.id"), index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source_type: Mapped[str] = mapped_column(String(40), default="text")
+    visibility: Mapped[str] = mapped_column(String(40), default="global")
     status: Mapped[str] = mapped_column(String(40), default="ready")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
@@ -56,4 +60,3 @@ class KnowledgeQuery(Base):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-

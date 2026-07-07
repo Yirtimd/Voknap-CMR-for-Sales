@@ -18,7 +18,20 @@ export type Contact = {
   phone: string | null;
   email: string | null;
   company_name: string | null;
+  role?: string | null;
+  actions?: {
+    call: boolean;
+    email: boolean;
+    more: boolean;
+  };
   created_at?: string;
+};
+
+export type Owner = {
+  id: string | null;
+  name: string | null;
+  avatar_url: string | null;
+  initials: string | null;
 };
 
 export type Company = {
@@ -27,6 +40,14 @@ export type Company = {
   website: string | null;
   industry: string | null;
   description: string | null;
+  status: string;
+  status_label?: string | null;
+  company_type?: string | null;
+  health_score?: number | null;
+  client_since?: string | null;
+  source?: string | null;
+  owner?: Owner | null;
+  next_action_id?: string | null;
   created_at: string;
 };
 
@@ -61,6 +82,15 @@ export type Deal = {
   status: string;
   lead_id: string | null;
   stage_id: string;
+  probability?: number | null;
+  expected_close_date?: string | null;
+  expected_next_event?: string | null;
+  next_step?: string | null;
+  risk_level?: string | null;
+  forecast_category?: string | null;
+  owner_id?: string | null;
+  next_action_id?: string | null;
+  age_days?: number | null;
   created_at?: string;
 };
 
@@ -70,6 +100,8 @@ export type Task = {
   title: string;
   description: string | null;
   deal_id: string | null;
+  status: string;
+  priority: string;
   due_at: string | null;
   done_at: string | null;
   created_at?: string;
@@ -87,8 +119,12 @@ export type Note = {
 
 export type KnowledgeDocument = {
   id: string;
+  company_id?: string | null;
+  deal_id?: string | null;
+  file_id?: string | null;
   title: string;
   source_type: string;
+  visibility?: string;
   status: string;
   created_at: string;
   chunks_count: number;
@@ -98,6 +134,9 @@ export type KnowledgeSearchResult = {
   chunk_id: string;
   document_id: string;
   document_title: string;
+  document_scope?: string;
+  company_id?: string | null;
+  deal_id?: string | null;
   text: string;
   score: number;
   chunk_index: number;
@@ -122,6 +161,21 @@ export type AgentChatResponse = {
   answer: string;
   actions: AgentAction[];
   sources: Record<string, unknown>[];
+};
+
+export type CompanyCopilot = {
+  company_id: string;
+  summary: string;
+  next_best_action: string;
+  deal_risk: {
+    level: string;
+    score: number;
+    reason: string;
+  };
+  follow_up_draft: string;
+  meeting_prep: string;
+  insight: Record<string, unknown>;
+  actions: AgentAction[];
 };
 
 export type AgentHistoryMessage = {
@@ -231,6 +285,7 @@ export type Activity = {
   contact_id: string | null;
   deal_id: string | null;
   type: string;
+  channel: string | null;
   title: string;
   description: string | null;
   created_by: string | null;
@@ -238,13 +293,82 @@ export type Activity = {
   metadata: Record<string, unknown>;
 };
 
+export type CompanyHealth = {
+  score: number | null;
+  label: string | null;
+  trend: string | null;
+  risk_level: string | null;
+  success_chance: number | null;
+  success_chance_delta: number | null;
+  ai_recommendations: Array<{
+    type?: string;
+    title: string;
+    description?: string;
+  }>;
+};
+
+export type CompanyFile = {
+  id: string;
+  name: string;
+  file_type: string | null;
+  mime_type: string | null;
+  file_size: number | null;
+  uploaded_at: string;
+  download_url: string;
+};
+
+export type WorkspaceKnowledgeDocument = {
+  id: string;
+  title: string;
+  source_type: string;
+  visibility: string;
+  company_id: string | null;
+  deal_id: string | null;
+  file_id: string | null;
+  created_at: string;
+  chunks_count: number;
+};
+
+export type WorkspaceActivity = {
+  id: string;
+  type: string;
+  activity_type: string;
+  activity_icon: string;
+  channel: string | null;
+  title: string;
+  description: string | null;
+  author_name: string | null;
+  created_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type NextAction = {
+  id: string;
+  company_id: string;
+  deal_id: string | null;
+  contact_id: string | null;
+  assigned_to_id: string | null;
+  title: string;
+  description: string | null;
+  source: string;
+  status: string;
+  priority: string;
+  due_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+};
+
 export type CompanyWorkspace = {
   company: Company;
-  overview: Record<string, number>;
+  overview: Record<string, number | string | null>;
+  health: CompanyHealth;
+  next_action: NextAction | null;
   contacts: Contact[];
   deals: Deal[];
   tasks: Task[];
-  activities: Array<Record<string, unknown>>;
+  activities: WorkspaceActivity[];
+  files: CompanyFile[];
+  knowledge_documents: WorkspaceKnowledgeDocument[];
   ai_summary: string;
   ai_insights: string[];
 };

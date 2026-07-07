@@ -12,11 +12,34 @@ from app.modules.ai_agent.schemas import (
     AgentChatRequest,
     AgentChatResponse,
     AgentHistoryMessage,
+    CompanyCopilotResponse,
 )
 from app.modules.ai_agent.service import AgentService
 
 
 router = APIRouter()
+
+
+@router.get("/companies/{company_id}/copilot", response_model=CompanyCopilotResponse)
+def company_copilot(
+    company_id: UUID,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(get_current_tenant),
+) -> CompanyCopilotResponse:
+    service = AgentService(db)
+    result = service.company_copilot(tenant.id, tenant.user_id, company_id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    return CompanyCopilotResponse(
+        company_id=company_id,
+        summary=result["summary"],
+        next_best_action=result["next_best_action"],
+        deal_risk=result["deal_risk"],
+        follow_up_draft=result["follow_up_draft"],
+        meeting_prep=result["meeting_prep"],
+        insight=result["insight"],
+        actions=[_action_response(action) for action in result["actions"]],
+    )
 
 
 @router.post("/chat", response_model=AgentChatResponse)
@@ -30,6 +53,8 @@ def chat(
         tenant_id=tenant.id,
         user_id=tenant.user_id,
         message=payload.message,
+        company_id=payload.company_id,
+        deal_id=payload.deal_id,
     )
     return AgentChatResponse(
         answer=answer,
@@ -100,4 +125,3 @@ def _action_response(action: AgentAction) -> AgentActionResponse:
         created_at=action.created_at,
         confirmed_at=action.confirmed_at,
     )
-
