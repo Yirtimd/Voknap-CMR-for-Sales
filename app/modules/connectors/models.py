@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -20,7 +20,9 @@ class ConnectorAccount(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="connected")
     credentials_json: Mapped[str] = mapped_column(Text, default="{}")
+    credentials_encrypted: Mapped[bool] = mapped_column(Boolean, default=False)
     settings_json: Mapped[str] = mapped_column(Text, default="{}")
+    sync_cursor: Mapped[str | None] = mapped_column(String(255))
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
@@ -33,9 +35,16 @@ class ConnectorSyncRun(Base):
     account_id: Mapped[UUID] = mapped_column(ForeignKey("connector_accounts.id"), nullable=False)
     direction: Mapped[str] = mapped_column(String(40), nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="success")
+    job_type: Mapped[str] = mapped_column(String(80), default="sync")
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_count: Mapped[int] = mapped_column(default=0)
     updated_count: Mapped[int] = mapped_column(default=0)
     failed_count: Mapped[int] = mapped_column(default=0)
     message: Mapped[str | None] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(String(120))
+    error_details_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-

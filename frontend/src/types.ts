@@ -197,7 +197,9 @@ export type ConnectorAccount = {
   connector_code: string;
   title: string;
   status: string;
+  credentials_encrypted: boolean;
   settings: Record<string, unknown>;
+  sync_cursor: string | null;
   last_sync_at: string | null;
   created_at: string;
 };
@@ -207,11 +209,43 @@ export type ConnectorSyncRun = {
   account_id: string;
   direction: string;
   status: string;
+  job_type: string;
+  attempt: number;
+  max_attempts: number;
+  next_retry_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
   created_count: number;
   updated_count: number;
   failed_count: number;
   message: string | null;
+  error_code: string | null;
+  error_details: Record<string, unknown>;
   created_at: string;
+};
+
+export type CommunicationEvent = {
+  id: string;
+  tenant_id: string;
+  company_id: string | null;
+  contact_id: string | null;
+  deal_id: string | null;
+  activity_id: string | null;
+  connector_account_id: string | null;
+  channel: string;
+  direction: string;
+  status: string;
+  external_id: string | null;
+  sender: string | null;
+  recipient: string | null;
+  occurred_at: string;
+  subject: string;
+  body: string | null;
+  ai_summary: string | null;
+  metadata: Record<string, unknown>;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type CsvExportResponse = {

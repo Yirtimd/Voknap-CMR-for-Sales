@@ -294,7 +294,12 @@ function rejectCopilotAction(actionId: string) {
                   <p class="ref-card-label">Текущая сделка</p>
                   <h2>{{ currentDeal?.title ?? "Активная сделка" }}</h2>
                 </div>
-                <RouterLink class="ref-action" to="/deals">Открыть сделки</RouterLink>
+                <RouterLink
+                  class="ref-action"
+                  :to="currentDeal ? { path: '/deals', query: { deal: currentDeal.id, from: 'company' } } : '/deals'"
+                >
+                  Открыть сделку
+                </RouterLink>
               </div>
               <div class="pipeline-path">
                 <span class="done">Лид</span>

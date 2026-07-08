@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 
 import type { Deal } from "../types";
 import { crmStore } from "../stores/crm";
 
+const route = useRoute();
 const mode = ref<"kanban" | "table" | "list" | "forecast">("kanban");
 const selectedDeal = ref<Deal | null>(null);
 const showCreateDeal = ref(false);
@@ -75,6 +77,10 @@ function stageIndex(stageId: string) {
   return Math.max(0, crmStore.allStages.value.findIndex((stage) => stage.id === stageId));
 }
 
+function stageName(stageId: string) {
+  return crmStore.allStages.value.find((stage) => stage.id === stageId)?.name ?? "Stage";
+}
+
 function aiScore(deal: Deal) {
   if (typeof deal.probability === "number") return Math.min(98, Math.max(8, deal.probability));
   const total = Math.max(1, crmStore.allStages.value.length);
@@ -96,6 +102,30 @@ function openTasks(deal: Deal) {
   return crmStore.tasks.value.filter((task) => task.deal_id === deal.id && !task.done_at);
 }
 
+function dealTasks(deal: Deal) {
+  return crmStore.tasks.value.filter((task) => task.deal_id === deal.id);
+}
+
+function completedTasks(deal: Deal) {
+  return dealTasks(deal).filter((task) => task.done_at);
+}
+
+function taskProgress(deal: Deal) {
+  const tasks = dealTasks(deal);
+  if (tasks.length === 0) return 0;
+  return Math.round((completedTasks(deal).length / tasks.length) * 100);
+}
+
+function notesForDeal(deal: Deal) {
+  return crmStore.notes.value.filter((note) => note.deal_id === deal.id);
+}
+
+function documentsForDeal(deal: Deal) {
+  return crmStore.knowledgeDocuments.value.filter(
+    (document) => document.deal_id === deal.id || document.company_id === deal.company_id
+  );
+}
+
 function nextAction(deal: Deal) {
   return deal.next_step || openTasks(deal)[0]?.title || deal.expected_next_event || "Call client";
 }
@@ -104,6 +134,44 @@ function dueLabel(deal: Deal) {
   const task = openTasks(deal)[0];
   if (task?.due_at) return new Date(task.due_at).toLocaleDateString("en", { month: "short", day: "numeric" });
   return deal.expected_close_date ? "Close " + new Date(deal.expected_close_date).toLocaleDateString("en", { month: "short", day: "numeric" }) : "Today";
+}
+
+function dateLabel(value?: string | null) {
+  if (!value) return "Not set";
+  return new Date(value).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function aiReasons(deal: Deal) {
+  const reasons = [];
+  if (deal.risk_level === "high") reasons.push("High risk signal in pipeline");
+  if (openTasks(deal).length === 0) reasons.push("No active next task");
+  if (!deal.expected_close_date) reasons.push("Close date is not confirmed");
+  if (aiScore(deal) < 55) reasons.push("Probability needs recovery");
+  if (reasons.length === 0) reasons.push("Stage, next action and task coverage look aligned");
+  return reasons;
+}
+
+function timelineItems(deal: Deal) {
+  return [
+    ...dealTasks(deal).map((task) => ({
+      id: `task-${task.id}`,
+      title: task.done_at ? `${task.title} completed` : task.title,
+      meta: task.done_at ? dateLabel(task.done_at) : task.due_at ? `Due ${dateLabel(task.due_at)}` : "Task",
+      tone: task.done_at ? "done" : "open"
+    })),
+    ...notesForDeal(deal).map((note) => ({
+      id: `note-${note.id}`,
+      title: "Note added",
+      meta: note.created_at ? dateLabel(note.created_at) : note.text,
+      tone: "note"
+    })),
+    {
+      id: `deal-${deal.id}`,
+      title: "Deal created",
+      meta: deal.created_at ? dateLabel(deal.created_at) : companyName(deal.company_id),
+      tone: "base"
+    }
+  ].slice(0, 5);
 }
 
 function move(deal: Deal, event: Event) {
@@ -115,6 +183,15 @@ async function createDealFromModal() {
   await crmStore.createDeal();
   showCreateDeal.value = false;
 }
+
+watch(
+  [() => route.query.deal, () => crmStore.deals.value.length],
+  ([dealId]) => {
+    if (typeof dealId !== "string") return;
+    selectedDeal.value = crmStore.deals.value.find((deal) => deal.id === dealId) ?? selectedDeal.value;
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -253,56 +330,152 @@ async function createDealFromModal() {
       </article>
     </section>
 
-    <div v-if="selectedDeal" class="workspace-modal-backdrop" @click.self="selectedDeal = null">
-      <section class="deal-ai-panel">
-        <header>
-          <div>
+    <div v-if="selectedDeal" class="deal-modal-backdrop" @click.self="selectedDeal = null">
+      <section class="deal-modal-card" role="dialog" aria-modal="true" aria-label="Deal card">
+        <header class="deal-modal-header">
+          <div class="deal-title-block">
             <p class="eyebrow">Deal</p>
             <h2>{{ selectedDeal.title }}</h2>
-            <small>{{ companyName(selectedDeal.company_id) }} · {{ crmStore.money(selectedDeal.amount) }}</small>
+            <div class="deal-company-line">
+              <span>{{ companyName(selectedDeal.company_id) }}</span>
+              <span>{{ selectedDeal.status }}</span>
+              <span>{{ selectedDeal.forecast_category ?? "Pipeline" }}</span>
+            </div>
           </div>
-          <button class="secondary" type="button" @click="selectedDeal = null">Close</button>
+          <div class="deal-window-actions">
+            <button class="secondary icon-button" type="button" title="Link">↗</button>
+            <button class="secondary icon-button" type="button" title="Copy">⧉</button>
+            <button class="secondary icon-button" type="button" title="More">•••</button>
+            <button class="secondary icon-button" type="button" title="Close" @click="selectedDeal = null">×</button>
+          </div>
         </header>
 
-        <div class="deal-popup-grid">
-          <section class="deal-popup-main">
-            <div class="assistant-probability">
-              <span>AI Probability</span>
-              <strong>{{ aiScore(selectedDeal) }}%</strong>
+        <section class="deal-hero-metrics">
+          <article>
+            <span>Amount</span>
+            <strong>{{ crmStore.money(selectedDeal.amount) }}</strong>
+            <small>Expected income: {{ crmStore.money(Number(selectedDeal.amount ?? 0) * aiScore(selectedDeal) / 100) }}</small>
+          </article>
+          <article>
+            <span>Close probability</span>
+            <strong>{{ aiScore(selectedDeal) }}%</strong>
+            <small :class="{ positive: aiScore(selectedDeal) >= 60, negative: aiScore(selectedDeal) < 45 }">
+              {{ aiScore(selectedDeal) >= 60 ? "Stable signal" : "Needs attention" }}
+            </small>
+          </article>
+          <article>
+            <span>Stage</span>
+            <strong>{{ stageName(selectedDeal.stage_id) }}</strong>
+            <div class="stage-scale" aria-hidden="true">
+              <i
+                v-for="stage in crmStore.allStages.value"
+                :key="stage.id"
+                :class="{ active: stageIndex(stage.id) <= stageIndex(selectedDeal.stage_id) }"
+              ></i>
             </div>
-            <dl class="deal-popup-facts">
-              <div><dt>Stage</dt><dd>{{ crmStore.allStages.value.find((stage) => stage.id === selectedDeal?.stage_id)?.name ?? "Stage" }}</dd></div>
-              <div><dt>Status</dt><dd>{{ selectedDeal.status }}</dd></div>
-              <div><dt>Owner</dt><dd>Dmitry</dd></div>
-              <div><dt>Tasks</dt><dd>{{ openTasks(selectedDeal).length }} open</dd></div>
-            </dl>
-            <section class="deal-popup-next">
-              <h3>Next action</h3>
-              <strong>{{ nextAction(selectedDeal) }}</strong>
-              <span>{{ dueLabel(selectedDeal) }}</span>
-            </section>
-          </section>
+            <small>Expected close: {{ dateLabel(selectedDeal.expected_close_date) }}</small>
+          </article>
+        </section>
 
-          <section class="deal-popup-assistant">
-            <div>
-              <h3>Risks</h3>
-              <ul>
-                <li v-if="selectedDeal.risk_level === 'high'">High risk signal from pipeline.</li>
-                <li v-if="openTasks(selectedDeal).length === 0">No active task planned.</li>
-                <li v-if="!selectedDeal.expected_close_date">Close date is unclear.</li>
-                <li>Budget and decision path should be confirmed.</li>
-              </ul>
+        <section class="deal-ai-insight-card">
+          <div>
+            <h3>AI deal assessment</h3>
+            <p>Chance to win: <strong>{{ aiScore(selectedDeal) >= 70 ? "High" : aiScore(selectedDeal) >= 45 ? "Medium" : "Low" }}</strong></p>
+            <ul>
+              <li v-for="reason in aiReasons(selectedDeal)" :key="reason">{{ reason }}</li>
+            </ul>
+          </div>
+          <div>
+            <h3>What can increase the chance</h3>
+            <ul class="positive-list">
+              <li>Confirm budget and decision path</li>
+              <li>{{ nextAction(selectedDeal) }}</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="next-action-panel">
+          <div>
+            <p class="eyebrow">Next action</p>
+            <strong>{{ nextAction(selectedDeal) }}</strong>
+            <small>Due: {{ dueLabel(selectedDeal) }}</small>
+          </div>
+          <button type="button">Complete</button>
+          <button class="secondary icon-button" type="button" title="More">⌄</button>
+        </section>
+
+        <dl class="deal-context-strip">
+          <div><dt>Owner</dt><dd><span class="avatar-mini">D</span> Dmitry</dd></div>
+          <div><dt>Source</dt><dd>Website</dd></div>
+          <div><dt>Created</dt><dd>{{ dateLabel(selectedDeal.created_at) }}</dd></div>
+          <div><dt>Last activity</dt><dd>{{ timelineItems(selectedDeal)[0]?.meta ?? "No activity" }}</dd></div>
+          <div><dt>Deal type</dt><dd>{{ selectedDeal.lead_id ? "New business" : "Direct deal" }}</dd></div>
+        </dl>
+
+        <section class="deal-section-card">
+          <header>
+            <h3>Tasks <span>({{ completedTasks(selectedDeal).length }} of {{ dealTasks(selectedDeal).length }})</span></h3>
+            <div class="task-ring" :style="{ '--progress': `${taskProgress(selectedDeal)}%` }">{{ taskProgress(selectedDeal) }}%</div>
+          </header>
+          <div v-if="dealTasks(selectedDeal).length" class="deal-task-list">
+            <label v-for="task in dealTasks(selectedDeal)" :key="task.id" :class="{ done: task.done_at }">
+              <input type="checkbox" :checked="Boolean(task.done_at)" disabled />
+              <span>
+                <strong>{{ task.title }}</strong>
+                <small>{{ task.due_at ? `Due ${dateLabel(task.due_at)}` : task.priority }}</small>
+              </span>
+            </label>
+          </div>
+          <p v-else class="empty">No tasks yet. Add a next step to keep the deal moving.</p>
+        </section>
+
+        <section class="deal-section-card">
+          <header>
+            <h3>Timeline</h3>
+            <button class="secondary text-button" type="button">View all</button>
+          </header>
+          <ol class="deal-timeline">
+            <li v-for="item in timelineItems(selectedDeal)" :key="item.id" :class="item.tone">
+              <span></span>
+              <div>
+                <strong>{{ item.title }}</strong>
+                <small>{{ item.meta }}</small>
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <section class="deal-bottom-grid">
+          <article class="deal-section-card">
+            <header>
+              <h3>Notes</h3>
+              <button class="secondary text-button" type="button" @click="crmStore.createNote('deal', selectedDeal.id)">Add</button>
+            </header>
+            <div v-if="notesForDeal(selectedDeal).length" class="note-preview">
+              <strong>Latest note</strong>
+              <p>{{ notesForDeal(selectedDeal)[0].text }}</p>
+              <small>{{ dateLabel(notesForDeal(selectedDeal)[0].created_at) }}</small>
             </div>
-            <div>
-              <h3>Recommendation</h3>
-              <p>{{ nextAction(selectedDeal) }} today. Keep the buyer moving before the stage goes stale.</p>
+            <p v-else class="empty">No notes attached to this deal.</p>
+          </article>
+
+          <article class="deal-section-card">
+            <header>
+              <h3>Files</h3>
+              <button class="secondary text-button" type="button">View all</button>
+            </header>
+            <div v-if="documentsForDeal(selectedDeal).length" class="file-list">
+              <div v-for="document in documentsForDeal(selectedDeal).slice(0, 2)" :key="document.id">
+                <span>▣</span>
+                <div>
+                  <strong>{{ document.title }}</strong>
+                  <small>{{ document.source_type }} · {{ document.status }}</small>
+                </div>
+              </div>
             </div>
-            <div class="button-row">
-              <button type="button">Suggested email</button>
-              <button class="secondary" type="button">Generate proposal</button>
-            </div>
-          </section>
-        </div>
+            <p v-else class="empty">No files linked yet.</p>
+          </article>
+        </section>
       </section>
     </div>
 

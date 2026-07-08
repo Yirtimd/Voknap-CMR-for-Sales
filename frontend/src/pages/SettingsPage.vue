@@ -34,7 +34,18 @@ onMounted(async () => {
         <button type="submit">Подключить</button>
         <article v-for="account in crmStore.connectorAccounts.value" :key="account.id" class="list-row">
           <span>{{ account.title }}</span>
-          <small>{{ account.status }}</small>
+          <small>{{ account.status }} · {{ account.credentials_encrypted ? "encrypted" : "plain" }}</small>
+          <button class="secondary" type="button" @click="crmStore.syncConnectorAccount(account.id)">Sync</button>
+        </article>
+        <article v-for="run in crmStore.connectorRuns.value.slice(0, 5)" :key="run.id" class="list-row">
+          <span>{{ run.job_type }} / {{ run.status }}</span>
+          <small>{{ run.created_count }} created · attempt {{ run.attempt }}/{{ run.max_attempts }}</small>
+          <button
+            v-if="run.status === 'failed' || run.status === 'retry_scheduled'"
+            class="secondary"
+            type="button"
+            @click="crmStore.retryConnectorRun(run.id)"
+          >Retry</button>
         </article>
       </form>
 

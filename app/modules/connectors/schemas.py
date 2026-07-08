@@ -23,7 +23,9 @@ class ConnectorAccountResponse(BaseModel):
     connector_code: str
     title: str
     status: str
+    credentials_encrypted: bool = False
     settings: dict
+    sync_cursor: str | None = None
     last_sync_at: datetime | None
     created_at: datetime
 
@@ -37,13 +39,25 @@ class ConnectorSyncResponse(BaseModel):
     account_id: UUID
     direction: str
     status: str
+    job_type: str = "sync"
+    attempt: int = 1
+    max_attempts: int = 3
+    next_retry_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
     created_count: int
     updated_count: int
     failed_count: int
     message: str | None
+    error_code: str | None = None
+    error_details: dict = Field(default_factory=dict)
     created_at: datetime
+
+
+class ConnectorSyncRequest(BaseModel):
+    payload: dict = Field(default_factory=dict)
+
 
 class CsvExportResponse(BaseModel):
     filename: str
     csv_text: str
-

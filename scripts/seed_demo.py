@@ -14,6 +14,7 @@ from app.core.security import hash_password
 from app.modules.accounts.models import Membership, Tenant, User
 from app.modules.activity.models import Activity
 from app.modules.ai_agent.models import AgentAction, AgentMessage
+from app.modules.communication.models import CommunicationEvent
 from app.modules.connectors.models import ConnectorAccount, ConnectorSyncRun
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeDocument, KnowledgeQuery
 from app.modules.knowledge.service import EmbeddingService
@@ -51,6 +52,7 @@ def remove_existing_demo(db: Session) -> None:
         for model in (
             ConnectorSyncRun,
             ConnectorAccount,
+            CommunicationEvent,
             AgentAction,
             AgentMessage,
             KnowledgeQuery,
@@ -390,7 +392,9 @@ def create_platform_data(db: Session, tenant: Tenant, user: User) -> None:
         title="CSV import/export",
         status="connected",
         credentials_json="{}",
+        credentials_encrypted=True,
         settings_json=json.dumps({"delimiter": ","}),
+        sync_cursor="demo-csv-cursor",
         last_sync_at=now() - timedelta(hours=2),
     )
     db.add(account)
@@ -402,12 +406,54 @@ def create_platform_data(db: Session, tenant: Tenant, user: User) -> None:
             account_id=account.id,
             direction="import",
             status="success",
+            job_type="csv_import",
+            attempt=1,
+            max_attempts=3,
+            started_at=now() - timedelta(hours=2, minutes=1),
+            finished_at=now() - timedelta(hours=2),
             created_count=12,
             updated_count=4,
             failed_count=0,
             message="Demo import completed",
+            error_details_json="{}",
         )
     )
+    for code, title, status in (
+        ("email", "Demo Email inbox", "connected"),
+        ("calendar", "Demo Calendar", "connected"),
+        ("telephony", "Demo Telephony", "placeholder"),
+        ("amocrm", "Demo amoCRM migration", "connected"),
+        ("bitrix24", "Demo Bitrix24 migration", "connected"),
+    ):
+        demo_account = ConnectorAccount(
+            tenant_id=tenant.id,
+            connector_code=code,
+            title=title,
+            status=status,
+            credentials_json="e30=",
+            credentials_encrypted=True,
+            settings_json=json.dumps({}),
+            sync_cursor=f"demo-{code}-cursor",
+            last_sync_at=now() - timedelta(days=1) if status == "connected" else None,
+        )
+        db.add(demo_account)
+        db.flush()
+        db.add(
+            ConnectorSyncRun(
+                tenant_id=tenant.id,
+                account_id=demo_account.id,
+                direction="inbound",
+                status="queued" if status == "placeholder" else "success",
+                job_type=f"{code}_sync",
+                attempt=1,
+                max_attempts=3,
+                created_count=0 if status == "placeholder" else 2,
+                updated_count=0,
+                failed_count=0,
+                message=f"{title} ready",
+                error_details_json="{}",
+            )
+        )
 
     for role, content in (
         ("user", "Дай сводку по приоритетным сделкам"),
@@ -444,6 +490,82 @@ def create_platform_data(db: Session, tenant: Tenant, user: User) -> None:
             payload_json=json.dumps({"source": "scripts/seed_demo.py"}),
         )
     )
+
+
+def create_communication_events(db: Session, tenant: Tenant, user: User) -> None:
+    contacts = db.query(Contact).filter(Contact.tenant_id == tenant.id).order_by(Contact.created_at.asc()).all()
+    for index, contact in enumerate(contacts[:5]):
+        company = db.query(Company).filter(Company.id == contact.company_id).one()
+        deal = (
+            db.query(Deal)
+            .filter(Deal.tenant_id == tenant.id, Deal.company_id == company.id)
+            .order_by(Deal.created_at.desc())
+            .first()
+        )
+        rows = [
+            (
+                "email",
+                "inbound",
+                f"Re: {deal.title if deal else 'CRM project'}",
+                f"{contact.name} просит уточнить сроки внедрения, миграцию данных и следующий шаг по компании {company.name}.",
+                contact.email,
+                "sales@cmrsales.app",
+                -index,
+            ),
+            (
+                "call",
+                "inbound",
+                "Incoming sales call",
+                f"Клиент {company.name} подтвердил интерес и попросил назначить встречу с техническим специалистом.",
+                contact.phone,
+                "+7 495 000-00-00",
+                -index - 1,
+            ),
+            (
+                "calendar",
+                "inbound",
+                "Discovery meeting scheduled",
+                f"Встреча по требованиям {company.name}: интеграции, роли пользователей, RAG и отчетность.",
+                contact.email,
+                "calendar@cmrsales.app",
+                index + 1,
+            ),
+        ]
+        if index < 2:
+            rows.append(
+                (
+                    "telegram" if index == 0 else "whatsapp",
+                    "inbound",
+                    "Messenger request",
+                    f"{contact.name} написал в мессенджер и попросил короткую сводку по предложению.",
+                    contact.phone,
+                    "sales-manager",
+                    -index,
+                )
+            )
+        for channel, direction, subject, body, sender, recipient, shift in rows:
+            db.add(
+                CommunicationEvent(
+                    tenant_id=tenant.id,
+                    company_id=company.id,
+                    contact_id=contact.id,
+                    deal_id=deal.id if deal else None,
+                    channel=channel,
+                    direction=direction,
+                    status="linked",
+                    external_id=f"demo-{channel}-{contact.id}-{shift}",
+                    sender=sender,
+                    recipient=recipient,
+                    occurred_at=now() + timedelta(days=shift),
+                    subject=subject,
+                    body=body,
+                    ai_summary=f"{channel.upper()}: {subject}. {body}",
+                    metadata_json=json.dumps({"demo": True, "source": "seed_demo"}, ensure_ascii=False),
+                    created_by=user.id,
+                    created_at=now() + timedelta(days=shift),
+                    updated_at=now() + timedelta(days=shift),
+                )
+            )
 
 
 def seed() -> None:
@@ -492,6 +614,7 @@ def seed() -> None:
             )
 
         create_knowledge(db, tenant, user)
+        create_communication_events(db, tenant, user)
         create_platform_data(db, tenant, user)
         db.commit()
 

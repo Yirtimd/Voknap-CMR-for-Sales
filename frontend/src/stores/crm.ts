@@ -10,6 +10,7 @@ import type {
   Company,
   CompanyCopilot,
   CompanyWorkspace,
+  CommunicationEvent,
   Contact,
   ConnectorAccount,
   ConnectorDefinition,
@@ -58,6 +59,7 @@ const companyCopilot = ref<CompanyCopilot | null>(null);
 const connectorDefinitions = ref<ConnectorDefinition[]>([]);
 const connectorAccounts = ref<ConnectorAccount[]>([]);
 const connectorRuns = ref<ConnectorSyncRun[]>([]);
+const communicationEvents = ref<CommunicationEvent[]>([]);
 const csvExport = ref<CsvExportResponse | null>(null);
 const companyTemplates = ref<CompanyTemplate[]>([]);
 const appliedTemplates = ref<AppliedTemplate[]>([]);
@@ -134,6 +136,17 @@ const activityForm = ref({
   type: "COMMENT",
   title: "Комментарий",
   description: "Короткая заметка в timeline",
+  contact_id: "",
+  deal_id: ""
+});
+const communicationEventForm = ref({
+  channel: "email",
+  direction: "inbound",
+  sender: "client@example.com",
+  recipient: "sales@cmrsales.app",
+  subject: "Новый входящий запрос",
+  body: "Клиент просит уточнить стоимость, сроки внедрения и следующий шаг.",
+  company_id: "",
   contact_id: "",
   deal_id: ""
 });
@@ -234,6 +247,7 @@ async function refreshAll() {
   dealForm.value.company_id ||= firstCompanyId;
   taskForm.value.company_id ||= firstCompanyId;
   activityForm.value.company_id ||= firstCompanyId;
+  communicationEventForm.value.company_id ||= firstCompanyId;
   contacts.value = contactList;
   leads.value = leadList;
   pipelines.value = pipelineList;
@@ -263,6 +277,68 @@ async function loadCompanyWorkspace(companyId: string) {
     token.value,
     tenantId.value
   );
+}
+
+async function refreshCommunication() {
+  if (!isAuthed.value) return;
+  communicationEvents.value = await api<CommunicationEvent[]>("/communication/events", {}, token.value, tenantId.value);
+}
+
+async function createCommunicationEvent() {
+  await run(async () => {
+    await api<CommunicationEvent>(
+      "/communication/events",
+      post(emptyToNull(communicationEventForm.value)),
+      token.value,
+      tenantId.value
+    );
+    await refreshCommunication();
+    await refreshActivities();
+  }, "Входящее событие создано");
+}
+
+async function linkCommunicationEvent(event: CommunicationEvent) {
+  await run(async () => {
+    await api<CommunicationEvent>(
+      `/communication/events/${event.id}/link`,
+      post(
+        {
+          company_id: event.company_id,
+          contact_id: event.contact_id,
+          deal_id: event.deal_id
+        },
+        "PATCH"
+      ),
+      token.value,
+      tenantId.value
+    );
+    await refreshCommunication();
+  }, "Коммуникация привязана");
+}
+
+async function createActivityFromCommunication(eventId: string) {
+  await run(async () => {
+    await api<CommunicationEvent>(
+      `/communication/events/${eventId}/activity`,
+      post({}),
+      token.value,
+      tenantId.value
+    );
+    await refreshCommunication();
+    await refreshActivities();
+  }, "Activity создана из коммуникации");
+}
+
+async function refreshCommunicationSummary(eventId: string) {
+  await run(async () => {
+    await api<CommunicationEvent>(
+      `/communication/events/${eventId}/summary`,
+      post({}),
+      token.value,
+      tenantId.value
+    );
+    await refreshCommunication();
+  }, "AI summary обновлен");
 }
 
 async function refreshCompanyCopilot(companyId: string) {
@@ -398,6 +474,32 @@ async function createConnectorAccount() {
     );
     await refreshConnectors();
   }, "Коннектор подключен");
+}
+
+async function syncConnectorAccount(accountId: string) {
+  await run(async () => {
+    await api<ConnectorSyncRun>(
+      `/connectors/accounts/${accountId}/sync`,
+      post({ payload: {} }),
+      token.value,
+      tenantId.value
+    );
+    await refreshAll();
+    await refreshConnectors();
+  }, "Синхронизация запущена");
+}
+
+async function retryConnectorRun(runId: string) {
+  await run(async () => {
+    await api<ConnectorSyncRun>(
+      `/connectors/runs/${runId}/retry`,
+      post({}),
+      token.value,
+      tenantId.value
+    );
+    await refreshAll();
+    await refreshConnectors();
+  }, "Retry выполнен");
 }
 
 async function importCsv() {
@@ -653,6 +755,7 @@ export const crmStore = {
   connectorDefinitions,
   connectorAccounts,
   connectorRuns,
+  communicationEvents,
   csvExport,
   companyTemplates,
   appliedTemplates,
@@ -681,6 +784,7 @@ export const crmStore = {
   featureFlagForm,
   planForm,
   activityForm,
+  communicationEventForm,
   isAuthed,
   activeTenant,
   allStages,
@@ -698,6 +802,7 @@ export const crmStore = {
   refreshKnowledge,
   refreshAgent,
   refreshConnectors,
+  refreshCommunication,
   refreshTemplates,
   refreshProduction,
   refreshActivities,
@@ -716,6 +821,12 @@ export const crmStore = {
   confirmAgentAction,
   rejectAgentAction,
   createConnectorAccount,
+  syncConnectorAccount,
+  retryConnectorRun,
+  createCommunicationEvent,
+  linkCommunicationEvent,
+  createActivityFromCommunication,
+  refreshCommunicationSummary,
   importCsv,
   exportCsv,
   applyCompanyTemplate,

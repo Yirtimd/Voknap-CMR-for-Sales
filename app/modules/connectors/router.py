@@ -11,6 +11,7 @@ from app.modules.connectors.schemas import (
     ConnectorAccountCreate,
     ConnectorAccountResponse,
     ConnectorDefinitionResponse,
+    ConnectorSyncRequest,
     ConnectorSyncResponse,
     CsvExportResponse,
     CsvImportRequest,
@@ -67,6 +68,30 @@ def import_csv(
     return _run_response(service.import_csv_leads(tenant.id, account_id, payload.csv_text))
 
 
+@router.post("/accounts/{account_id}/sync", response_model=ConnectorSyncResponse)
+def sync_account(
+    account_id: UUID,
+    payload: ConnectorSyncRequest,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(get_current_tenant),
+) -> ConnectorSyncResponse:
+    service = ConnectorService(db)
+    return _run_response(service.sync_account(tenant.id, account_id, payload.payload))
+
+
+@router.post("/runs/{run_id}/retry", response_model=ConnectorSyncResponse)
+def retry_run(
+    run_id: UUID,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(get_current_tenant),
+) -> ConnectorSyncResponse:
+    service = ConnectorService(db)
+    run = service.retry_run(tenant.id, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connector run not found")
+    return _run_response(run)
+
+
 @router.get("/csv/export", response_model=CsvExportResponse)
 def export_csv(
     db: Session = Depends(get_db),
@@ -91,7 +116,9 @@ def _account_response(account: ConnectorAccount) -> ConnectorAccountResponse:
         connector_code=account.connector_code,
         title=account.title,
         status=account.status,
+        credentials_encrypted=account.credentials_encrypted,
         settings=json.loads(account.settings_json),
+        sync_cursor=account.sync_cursor,
         last_sync_at=account.last_sync_at,
         created_at=account.created_at,
     )
@@ -103,10 +130,17 @@ def _run_response(run: ConnectorSyncRun) -> ConnectorSyncResponse:
         account_id=run.account_id,
         direction=run.direction,
         status=run.status,
+        job_type=run.job_type,
+        attempt=run.attempt,
+        max_attempts=run.max_attempts,
+        next_retry_at=run.next_retry_at,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
         created_count=run.created_count,
         updated_count=run.updated_count,
         failed_count=run.failed_count,
         message=run.message,
+        error_code=run.error_code,
+        error_details=json.loads(run.error_details_json or "{}"),
         created_at=run.created_at,
     )
-

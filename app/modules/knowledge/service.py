@@ -159,20 +159,29 @@ class KnowledgeService:
         return answer, ranked_chunks
 
     def _grounded_answer(self, question: str, ranked_chunks: list[RankedChunk]) -> str:
-        if settings.openai_api_key:
+        llm_api_key = settings.llm_api_key or settings.openai_api_key
+        if llm_api_key:
             from openai import OpenAI
 
-            client = OpenAI(api_key=settings.openai_api_key)
+            client = OpenAI(api_key=llm_api_key, base_url=settings.llm_base_url)
             context = "\n\n".join(
                 f"[{index + 1}] {item.document.title}\n{item.chunk.text}"
                 for index, item in enumerate(ranked_chunks)
             )
-            response = client.responses.create(
-                model="gpt-4.1-mini",
-                input=(
+            prompt = (
                     "Ответь только по контексту компании. Если ответа нет, скажи, что не нашел в базе знаний.\n\n"
                     f"Вопрос: {question}\n\nКонтекст:\n{context}"
-                ),
+            )
+            if settings.llm_base_url:
+                response = client.chat.completions.create(
+                    model=settings.llm_model,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                return response.choices[0].message.content or ""
+
+            response = client.responses.create(
+                model=settings.llm_model,
+                input=prompt,
             )
             return response.output_text
 
