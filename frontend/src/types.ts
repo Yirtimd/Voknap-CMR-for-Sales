@@ -312,6 +312,114 @@ export type TenantExport = {
   data: Record<string, unknown>;
 };
 
+export type AnalyticsOverview = {
+  generated_at: string;
+  forecast: {
+    currency: string;
+    period_days: number;
+    open_pipeline: number;
+    due_in_period: number;
+    weighted_revenue: number;
+    commit_revenue: number;
+    best_case_revenue: number;
+    pipeline_revenue: number;
+    overdue_revenue: number;
+    won_revenue: number;
+    open_deals: number;
+  };
+  stage_conversion: Array<{
+    pipeline_id: string;
+    pipeline_name: string;
+    stage_id: string;
+    stage_name: string;
+    sort_order: number;
+    deal_count: number;
+    reached_count: number;
+    amount: number;
+    weighted_amount: number;
+    conversion_from_first: number;
+    conversion_from_previous: number;
+    stuck_count: number;
+  }>;
+  stuck_deals: Array<{
+    deal_id: string;
+    title: string;
+    company_id: string;
+    company_name: string;
+    stage_name: string;
+    owner_name: string | null;
+    amount: number;
+    weighted_amount: number;
+    days_in_stage: number;
+    last_activity_at: string | null;
+    risk_level: string;
+  }>;
+  task_sla: {
+    total: number;
+    open: number;
+    completed: number;
+    overdue: number;
+    completed_on_time: number;
+    completion_rate: number;
+    sla_rate: number;
+    average_resolution_hours: number | null;
+    by_owner: Array<{
+      owner_id: string;
+      owner_name: string;
+      total: number;
+      completed: number;
+      overdue: number;
+      sla_rate: number;
+    }>;
+  };
+  manager_activity: Array<{
+    manager_id: string;
+    manager_name: string;
+    activities: number;
+    calls: number;
+    emails: number;
+    meetings: number;
+    notes: number;
+    tasks_completed: number;
+    tasks_overdue: number;
+    open_deals: number;
+    pipeline_amount: number;
+    weighted_revenue: number;
+  }>;
+  company_health: Array<{
+    company_id: string;
+    company_name: string;
+    score: number;
+    label: string;
+    trend: string | null;
+    open_deals: number;
+    pipeline_amount: number;
+    overdue_tasks: number;
+    days_since_activity: number | null;
+    risk_level: string;
+    reasons: string[];
+  }>;
+  risk_map: {
+    high: number;
+    medium: number;
+    low: number;
+    revenue_at_risk: number;
+    deals: Array<{
+      deal_id: string;
+      title: string;
+      company_id: string;
+      company_name: string;
+      stage_name: string;
+      owner_name: string | null;
+      amount: number;
+      weighted_amount: number;
+      score: number;
+      level: string;
+      reasons: string[];
+    }>;
+  };
+};
+
 export type Activity = {
   id: string;
   tenant_id: string;

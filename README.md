@@ -16,6 +16,26 @@ and tenant administration.
 
 ## Local Setup
 
+### Quick start
+
+After installing backend and frontend dependencies once:
+
+```bash
+make dev
+```
+
+This starts PostgreSQL, applies migrations, and runs backend and frontend with
+hot reload. Stop application processes with `Ctrl+C`. Useful commands:
+
+```bash
+make seed  # recreate demo workspace data
+make test  # run backend and frontend checks
+make stop  # stop Docker services
+```
+
+The application reads provider settings and secrets from `.env` in the project
+root. If `.env` is absent, configured application defaults are used.
+
 Install backend dependencies:
 
 ```bash
@@ -253,6 +273,30 @@ export EMBEDDING_MODEL="text-embedding-3-small"
 
 The current implementation stores embeddings as JSON for portability. The
 production target is PostgreSQL with `pgvector`, hybrid search, and reranking.
+
+## Analytics & Forecast
+
+Backend endpoint:
+
+```text
+GET /analytics/overview?forecast_days=90&stuck_days=14&activity_days=30
+```
+
+Tenant-scoped analytics includes:
+
+- pipeline forecast and weighted revenue;
+- conversion by pipeline stage;
+- stuck deals based on last stage movement;
+- task SLA and per-manager SLA;
+- manager activity and owned pipeline;
+- company health signals;
+- AI risk map and revenue at risk.
+
+Frontend:
+
+```text
+http://localhost:5173/analytics
+```
 
 ## AI Agent
 

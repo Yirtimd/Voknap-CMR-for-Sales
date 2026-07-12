@@ -1,152 +1,160 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import { crmStore } from "../stores/crm";
 
-onMounted(() => {
-  void crmStore.refreshAll();
+const loading = ref(false);
+const loadError = ref("");
+const data = computed(() => crmStore.analyticsOverview.value);
+
+async function loadAnalytics() {
+  loading.value = true;
+  loadError.value = "";
+  try {
+    await crmStore.refreshAnalytics();
+  } catch (caught) {
+    loadError.value = caught instanceof Error ? caught.message : "Analytics unavailable";
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(loadAnalytics);
+
+const forecast = computed(() => data.value?.forecast);
+const riskMap = computed(() => data.value?.risk_map);
+const taskSla = computed(() => data.value?.task_sla);
+
+const topRiskDeals = computed(() => riskMap.value?.deals.slice(0, 3) ?? []);
+const stuckDeals = computed(() => data.value?.stuck_deals.slice(0, 3) ?? []);
+const managerActivity = computed(() => data.value?.manager_activity ?? []);
+const unhealthyCompanies = computed(() => data.value?.company_health.filter((company) => company.risk_level !== "low").slice(0, 3) ?? []);
+
+const bottleneckStage = computed(() => {
+  const stages = data.value?.stage_conversion ?? [];
+  return [...stages].sort((left, right) => right.stuck_count - left.stuck_count || left.conversion_from_previous - right.conversion_from_previous)[0];
 });
 
-const wonDeals = computed(() => crmStore.deals.value.filter((deal) => deal.status === "won"));
-const openDeals = computed(() => crmStore.deals.value.filter((deal) => deal.status !== "won"));
-const lostDeals = computed(() => crmStore.deals.value.filter((deal) => deal.status === "lost"));
-const totalWon = computed(() => wonDeals.value.reduce((sum, deal) => sum + Number(deal.amount ?? 0), 0));
-const lostRevenue = computed(() => lostDeals.value.reduce((sum, deal) => sum + Number(deal.amount ?? 0), 0));
-const weightedForecast = computed(() =>
-  openDeals.value.reduce((sum, deal) => sum + Number(deal.amount ?? 0) * (Number(deal.probability ?? 45) / 100), 0)
-);
-const planTarget = computed(() => Math.max(1, Math.round((totalWon.value + weightedForecast.value) / 0.82)));
-const goalProgress = computed(() => Math.min(98, Math.round(((totalWon.value + weightedForecast.value) / planTarget.value) * 100)));
-const winRate = computed(() => {
-  const closedCount = wonDeals.value.length + lostDeals.value.length;
-  return closedCount ? Math.round((wonDeals.value.length / closedCount) * 100) : 41;
+const goalProgress = computed(() => {
+  const openPipeline = forecast.value?.open_pipeline ?? 0;
+  const weighted = forecast.value?.weighted_revenue ?? 0;
+  if (!openPipeline) return 0;
+  return Math.min(98, Math.round((weighted / openPipeline) * 100));
 });
-const avgCycle = computed(() => {
-  const ages = crmStore.deals.value.map((deal) => Number(deal.age_days ?? 0)).filter(Boolean);
-  return ages.length ? Math.round(ages.reduce((sum, age) => sum + age, 0) / ages.length) : 19;
+
+const avgResolution = computed(() => {
+  const value = taskSla.value?.average_resolution_hours;
+  return value == null ? "2.1h" : `${Math.round(value * 10) / 10}h`;
 });
-const responseTime = computed(() => (crmStore.openTasks.value.length > 8 ? "3.4h" : "2.1h"));
-const completedTasks = computed(() => crmStore.tasks.value.filter((task) => task.done_at).length);
-const meetingsThisWeek = computed(() => Math.max(6, Math.round(crmStore.notes.value.length * 1.8)));
+
+const meetingsThisWeek = computed(() => managerActivity.value.reduce((sum, manager) => sum + manager.meetings, 0));
+const completedTasks = computed(() => taskSla.value?.completed ?? 0);
+const periodDays = computed(() => forecast.value?.period_days ?? 90);
+
+const forecastPoints = computed(() => {
+  const source = [
+    forecast.value?.commit_revenue ?? 0,
+    forecast.value?.best_case_revenue ?? 0,
+    forecast.value?.weighted_revenue ?? 0,
+    forecast.value?.pipeline_revenue ?? 0,
+    forecast.value?.due_in_period ?? 0,
+    forecast.value?.open_pipeline ?? 0
+  ];
+  const max = Math.max(...source, 1);
+  return source.map((point, index) => {
+    const x = 10 + index * 56;
+    const y = 142 - (point / max) * 106;
+    return `${x},${Math.max(22, Math.round(y))}`;
+  }).join(" ");
+});
 
 const stageHealth = computed(() => {
-  const maxAmount = Math.max(...crmStore.dealsByStage.value.map((column) => Number(column.amount || 0)), 1);
-  const lowestFilledIndex = crmStore.dealsByStage.value
-    .map((column, index) => ({ index, amount: Number(column.amount || 0) }))
-    .filter((item) => item.amount > 0)
-    .sort((a, b) => a.amount - b.amount)[0]?.index ?? 2;
-
-  return crmStore.dealsByStage.value.map((column, index) => ({
-    ...column,
-    width: Math.max(12, Math.round((Number(column.amount || 0) / maxAmount) * 100)),
-    isBottleneck: index === lowestFilledIndex && crmStore.dealsByStage.value.length > 2
+  const stages = data.value?.stage_conversion ?? [];
+  const maxAmount = Math.max(...stages.map((stage) => stage.amount), 1);
+  return stages.map((stage) => ({
+    ...stage,
+    width: Math.max(4, Math.round((stage.amount / maxAmount) * 100)),
+    isBottleneck: stage.stage_id === bottleneckStage.value?.stage_id
   }));
 });
 
-const dealsAtRisk = computed(() => {
-  const riskWeight: Record<string, number> = { high: 68, medium: 31, low: 8 };
-
-  return [...openDeals.value]
-    .map((deal) => ({
-      ...deal,
-      risk: riskWeight[String(deal.risk_level ?? "medium")] ?? Math.max(8, 100 - Number(deal.probability ?? 50)),
-      company: crmStore.companies.value.find((company) => company.id === deal.company_id)?.name ?? deal.title
-    }))
-    .sort((a, b) => b.risk - a.risk)
-    .slice(0, 3);
-});
-
-const nextBestDeal = computed(() => dealsAtRisk.value[0] ?? openDeals.value[0]);
-const bottleneckStage = computed(() => stageHealth.value.find((stage) => stage.isBottleneck)?.stage.name ?? "КП");
-const forecastPoints = computed(() => {
-  const base = Math.max(weightedForecast.value, crmStore.totalPipeline.value * 0.38, 1);
-  return [
-    Math.round(base * 0.48),
-    Math.round(base * 0.62),
-    Math.round(base * 0.58),
-    Math.round(base * 0.78),
-    Math.round(base * 0.86),
-    Math.round(base * 0.82),
-    Math.round(base)
-  ];
-});
-const forecastPolyline = computed(() => {
-  const points = forecastPoints.value;
-  const max = Math.max(...points, 1);
-  const min = Math.min(...points);
-  const spread = Math.max(max - min, 1);
-
-  return points
-    .map((point, index) => {
-      const x = 14 + index * 45;
-      const y = 138 - ((point - min) / spread) * 82;
-      return `${x},${y}`;
-    })
-    .join(" ");
-});
+const nextBestDeal = computed(() => topRiskDeals.value[0] ?? stuckDeals.value[0]);
 
 const kpis = computed(() => [
   {
     label: "Pipeline",
-    value: crmStore.money(crmStore.totalPipeline.value),
-    trend: "+14%",
-    detail: "vs last month",
+    value: crmStore.money(forecast.value?.open_pipeline),
+    trend: `${forecast.value?.open_deals ?? 0} deals`,
+    detail: "active pipeline",
     direction: "up"
   },
   {
     label: "Revenue",
-    value: crmStore.money(totalWon.value + weightedForecast.value),
-    trend: "+18%",
+    value: crmStore.money(forecast.value?.weighted_revenue),
+    trend: `${periodDays.value}d`,
     detail: "weighted forecast",
     direction: "up"
   },
   {
     label: "Win Rate",
-    value: `${winRate.value}%`,
-    trend: "+6%",
-    detail: "closed deals",
+    value: `${goalProgress.value}%`,
+    trend: "AI weighted",
+    detail: "plan probability",
     direction: "up"
   },
   {
     label: "Avg Cycle",
-    value: `${avgCycle.value} days`,
-    trend: "-3d",
-    detail: "deal velocity",
+    value: avgResolution.value,
+    trend: `${taskSla.value?.overdue ?? 0} overdue`,
+    detail: "task velocity",
     direction: "down"
   }
 ]);
+
+function generatedAt(value?: string) {
+  return value ? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
+}
 </script>
 
 <template>
   <section class="analytics-page">
     <header class="analytics-head">
       <div>
-        <p class="eyebrow">Last sync: 2 min ago</p>
+        <p class="eyebrow">Generated {{ generatedAt(data?.generated_at) }}</p>
         <h2>Analytics</h2>
       </div>
       <div class="analytics-actions">
-        <button type="button" class="secondary">AI Summary</button>
-        <button type="button" aria-label="Refresh analytics" @click="crmStore.refreshAll">↻</button>
+        <button type="button" class="secondary" :disabled="loading">AI Summary</button>
+        <button type="button" aria-label="Refresh analytics" :disabled="loading" @click="loadAnalytics">
+          {{ loading ? "…" : "↻" }}
+        </button>
       </div>
     </header>
 
+    <p v-if="loadError" class="analytics-error">{{ loadError }}</p>
+
     <section class="analytics-top-grid">
-      <button v-for="kpi in kpis" :key="kpi.label" type="button" class="analytics-kpi">
+      <article v-for="kpi in kpis" :key="kpi.label" class="analytics-kpi" role="button" tabindex="0">
         <span>{{ kpi.label }}</span>
         <strong>{{ kpi.value }}</strong>
-        <small :class="kpi.direction">{{ kpi.trend }} {{ kpi.direction === "up" ? "↑" : "↓" }} · {{ kpi.detail }}</small>
-      </button>
+        <small :class="kpi.direction">{{ kpi.trend }} · {{ kpi.detail }}</small>
+      </article>
 
-      <button type="button" class="ai-summary-card">
+      <article class="ai-summary-card" role="button" tabindex="0">
         <span>AI Insights</span>
-        <strong>Этап «{{ bottleneckStage }}» стал узким местом</strong>
-        <small>{{ dealsAtRisk.length || 3 }} сделки требуют внимания · риск потери {{ crmStore.money(lostRevenue || weightedForecast * 0.21) }}</small>
+        <strong>
+          Этап «{{ bottleneckStage?.stage_name ?? "КП" }}» требует внимания
+        </strong>
+        <small>
+          {{ topRiskDeals.length || stuckDeals.length }} сделки в зоне риска · экспозиция
+          {{ crmStore.money(riskMap?.revenue_at_risk ?? 0) }}
+        </small>
         <div class="goal-line">
-          <span>Monthly goal</span>
+          <span>Weighted goal</span>
           <b>{{ goalProgress }}%</b>
         </div>
         <div class="goal-track"><i :style="{ width: `${goalProgress}%` }"></i></div>
-      </button>
+      </article>
     </section>
 
     <section class="analytics-main-grid">
@@ -154,9 +162,9 @@ const kpis = computed(() => [
         <div class="panel-title">
           <div>
             <p class="eyebrow">Revenue Forecast</p>
-            <h3>{{ crmStore.money(weightedForecast) }}</h3>
+            <h3>{{ crmStore.money(forecast?.weighted_revenue) }}</h3>
           </div>
-          <span>+18% vs last month</span>
+          <span>{{ periodDays }} days</span>
         </div>
         <div class="chart-frame">
           <svg viewBox="0 0 296 160" preserveAspectRatio="none" role="img" aria-label="Revenue forecast trend">
@@ -166,14 +174,14 @@ const kpis = computed(() => [
                 <stop offset="100%" stop-color="#0071e3" stop-opacity="0" />
               </linearGradient>
             </defs>
-            <path :d="`M14,146 L${forecastPolyline} L284,146 Z`" fill="url(#forecastFill)" />
-            <polyline :points="forecastPolyline" fill="none" stroke="#0071e3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
-            <line x1="14" y1="146" x2="284" y2="146" stroke="#d8d8dc" vector-effect="non-scaling-stroke" />
+            <path :d="`M10,148 L${forecastPoints} L290,148 Z`" fill="url(#forecastFill)" />
+            <polyline :points="forecastPoints" fill="none" stroke="#0071e3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+            <line x1="10" y1="148" x2="290" y2="148" stroke="#d8d8dc" vector-effect="non-scaling-stroke" />
           </svg>
         </div>
         <div class="forecast-legend">
-          <span>Now</span>
-          <span>Plan: {{ crmStore.money(planTarget) }}</span>
+          <span>Commit: {{ crmStore.money(forecast?.commit_revenue) }}</span>
+          <span>Pipeline: {{ crmStore.money(forecast?.pipeline_revenue) }}</span>
         </div>
       </section>
 
@@ -183,14 +191,15 @@ const kpis = computed(() => [
             <p class="eyebrow">Pipeline Health</p>
             <h3>Conversion Funnel</h3>
           </div>
-          <span>{{ bottleneckStage }} bottleneck</span>
+          <span>{{ bottleneckStage?.stage_name ?? "No bottleneck" }}</span>
         </div>
         <div class="funnel-list">
-          <article v-for="column in stageHealth" :key="column.stage.id" :class="{ bottleneck: column.isBottleneck }">
-            <span>{{ column.stage.name }}</span>
-            <div><i :style="{ width: `${column.width}%` }"></i></div>
-            <small>{{ column.deals.length }} · {{ crmStore.money(column.amount) }}</small>
+          <article v-for="stage in stageHealth" :key="stage.stage_id" :class="{ bottleneck: stage.isBottleneck }">
+            <span>{{ stage.stage_name }}</span>
+            <div><i :style="{ width: `${stage.width}%` }"></i></div>
+            <small>{{ stage.deal_count }} · {{ crmStore.money(stage.amount) }}</small>
           </article>
+          <p v-if="!stageHealth.length" class="empty">No pipeline data</p>
         </div>
       </section>
     </section>
@@ -202,20 +211,21 @@ const kpis = computed(() => [
             <p class="eyebrow">Top Deals at Risk</p>
             <h3>Deals at Risk</h3>
           </div>
-          <span>Lost revenue: {{ crmStore.money(lostRevenue || weightedForecast * 0.21) }}</span>
+          <span>Lost revenue: {{ crmStore.money(riskMap?.revenue_at_risk ?? 0) }}</span>
         </div>
-        <article v-for="deal in dealsAtRisk" :key="deal.id" class="risk-row">
-          <i :class="String(deal.risk_level ?? 'medium')"></i>
-          <span>{{ deal.company }}</span>
-          <small>{{ deal.risk }}% risk</small>
-          <strong>{{ crmStore.money(Number(deal.amount ?? 0)) }}</strong>
-        </article>
-        <article v-if="!dealsAtRisk.length" class="risk-row">
-          <i class="low"></i>
-          <span>Нет рисковых сделок</span>
-          <small>pipeline stable</small>
-          <strong>{{ crmStore.money(0) }}</strong>
-        </article>
+        <RouterLink v-for="deal in topRiskDeals" :key="deal.deal_id" to="/deals" class="risk-row">
+          <i :class="deal.level"></i>
+          <span>{{ deal.company_name }}</span>
+          <small>{{ deal.score }}% risk</small>
+          <strong>{{ crmStore.money(deal.amount) }}</strong>
+        </RouterLink>
+        <RouterLink v-for="deal in stuckDeals" v-if="!topRiskDeals.length" :key="deal.deal_id" to="/deals" class="risk-row">
+          <i :class="deal.risk_level"></i>
+          <span>{{ deal.company_name }}</span>
+          <small>{{ deal.days_in_stage }} days</small>
+          <strong>{{ crmStore.money(deal.amount) }}</strong>
+        </RouterLink>
+        <p v-if="!topRiskDeals.length && !stuckDeals.length" class="empty compact">No open deals at risk</p>
       </section>
 
       <section class="analytics-panel activity-panel" role="button" tabindex="0">
@@ -224,19 +234,19 @@ const kpis = computed(() => [
             <p class="eyebrow">Team Activity</p>
             <h3>Deal Velocity</h3>
           </div>
-          <span>{{ avgCycle }} days avg cycle</span>
+          <span>{{ taskSla?.sla_rate ?? 0 }}% SLA</span>
         </div>
         <dl>
           <div>
             <dt>Completed tasks</dt>
-            <dd>{{ completedTasks || 28 }}</dd>
+            <dd>{{ completedTasks }}</dd>
           </div>
           <div>
             <dt>Response time</dt>
-            <dd>{{ responseTime }}</dd>
+            <dd>{{ avgResolution }}</dd>
           </div>
           <div>
-            <dt>Meetings this week</dt>
+            <dt>Meetings this period</dt>
             <dd>{{ meetingsThisWeek }}</dd>
           </div>
         </dl>
@@ -248,12 +258,30 @@ const kpis = computed(() => [
       </section>
     </section>
 
+    <section v-if="unhealthyCompanies.length" class="analytics-panel company-strip">
+      <div class="panel-title">
+        <div>
+          <p class="eyebrow">Company Health</p>
+          <h3>Accounts needing attention</h3>
+        </div>
+        <span>{{ unhealthyCompanies.length }} shown</span>
+      </div>
+      <RouterLink v-for="company in unhealthyCompanies" :key="company.company_id" :to="`/companies/${company.company_id}`" class="company-row">
+        <i :class="company.risk_level">{{ company.score }}</i>
+        <div>
+          <strong>{{ company.company_name }}</strong>
+          <small>{{ company.reasons.join(" · ") || company.label }}</small>
+        </div>
+        <b>{{ crmStore.money(company.pipeline_amount) }}</b>
+      </RouterLink>
+    </section>
+
     <section class="next-action">
       <div>
         <p class="eyebrow">AI Recommendation</p>
         <strong>
-          Добавьте КП для {{ nextBestDeal?.company ?? "ООО Ромашка" }} сегодня.
-          Вероятность закрытия вырастет с 54% до 73%.
+          Свяжитесь с {{ nextBestDeal?.company_name ?? "ключевым клиентом" }} сегодня.
+          Это снизит риск потери {{ crmStore.money(nextBestDeal?.amount ?? riskMap?.revenue_at_risk ?? 0) }}.
         </strong>
       </div>
       <RouterLink class="button-link" :to="nextBestDeal ? '/deals' : '/companies'">Open Deal →</RouterLink>
@@ -309,6 +337,14 @@ const kpis = computed(() => [
   padding: 0;
 }
 
+.analytics-error {
+  margin: 0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--danger);
+  background: #fff1f0;
+}
+
 .analytics-top-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(112px, 1fr)) minmax(260px, 1.25fr);
@@ -318,30 +354,26 @@ const kpis = computed(() => [
 .analytics-kpi,
 .ai-summary-card,
 .analytics-panel {
-  height: auto;
-  min-height: 0;
-  align-items: stretch;
-  justify-content: start;
+  min-width: 0;
   color: var(--text);
   text-align: left;
-  background: var(--surface-solid);
-  cursor: pointer;
-  font-weight: 500;
-  line-height: 1.35;
-  overflow: hidden;
 }
 
-.analytics-kpi:hover,
-.ai-summary-card:hover,
-.analytics-panel:hover {
-  border-color: #bfc7d5;
-  background: #fbfbfd;
-}
-
-.analytics-kpi {
+.analytics-kpi,
+.ai-summary-card {
   display: grid;
   gap: 6px;
   padding: 13px 14px;
+}
+
+.analytics-kpi span,
+.ai-summary-card > span,
+.forecast-legend,
+.risk-row small,
+.activity-panel dt,
+.ask-analytics small,
+.company-row small {
+  color: var(--muted);
 }
 
 .analytics-kpi span {
@@ -349,19 +381,9 @@ const kpis = computed(() => [
   line-height: 1.2;
 }
 
-.analytics-kpi span,
-.ai-summary-card span,
-.forecast-legend,
-.risk-row small,
-.activity-panel dt,
-.ask-analytics small {
-  color: var(--muted);
-}
-
 .analytics-kpi strong {
   font-size: clamp(18px, 1.25vw, 21px);
   line-height: 1.08;
-  letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 
@@ -369,7 +391,6 @@ const kpis = computed(() => [
 .ai-summary-card small {
   font-size: 11.5px;
   line-height: 1.3;
-  white-space: normal;
 }
 
 .analytics-kpi small.up {
@@ -378,12 +399,6 @@ const kpis = computed(() => [
 
 .analytics-kpi small.down {
   color: var(--brand);
-}
-
-.ai-summary-card {
-  display: grid;
-  gap: 8px;
-  padding: 14px 16px;
 }
 
 .ai-summary-card > span {
@@ -396,14 +411,14 @@ const kpis = computed(() => [
 .ai-summary-card strong {
   font-size: 13.5px;
   line-height: 1.25;
-  overflow-wrap: anywhere;
 }
 
 .goal-line,
 .forecast-legend,
 .panel-title,
 .risk-row,
-.activity-panel dl div {
+.activity-panel dl div,
+.company-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -443,8 +458,6 @@ const kpis = computed(() => [
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
-  width: 100%;
-  justify-items: stretch;
   padding: 16px;
 }
 
@@ -455,11 +468,10 @@ const kpis = computed(() => [
 
 .panel-title {
   align-items: flex-start;
-  min-width: 0;
 }
 
-.panel-title span {
-  flex: 0 0 auto;
+.panel-title > span {
+  width: auto;
   max-width: 48%;
   border-radius: 999px;
   padding: 5px 9px;
@@ -469,7 +481,6 @@ const kpis = computed(() => [
   font-weight: 700;
   line-height: 1.15;
   overflow-wrap: anywhere;
-  white-space: normal;
 }
 
 .panel-title h3 {
@@ -531,7 +542,6 @@ const kpis = computed(() => [
   color: var(--muted);
   font-size: 12px;
   text-align: right;
-  overflow-wrap: anywhere;
 }
 
 .funnel-list .bottleneck span,
@@ -540,7 +550,8 @@ const kpis = computed(() => [
   font-weight: 700;
 }
 
-.funnel-list .bottleneck i {
+.funnel-list .bottleneck i,
+.risk-row i.medium {
   background: var(--warning);
 }
 
@@ -549,31 +560,36 @@ const kpis = computed(() => [
   align-content: start;
 }
 
-.risk-row {
+.risk-row,
+.company-row {
   min-height: 42px;
   border-top: 1px solid var(--line-soft);
   padding-top: 10px;
+  color: inherit;
   font-size: 12.5px;
+  text-decoration: none;
 }
 
 .risk-row i {
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  background: var(--warning);
+  background: var(--success);
 }
 
 .risk-row i.high {
   background: var(--danger);
 }
 
-.risk-row i.low {
-  background: var(--success);
-}
-
-.risk-row span {
+.risk-row span,
+.company-row div {
   flex: 1;
   min-width: 0;
+}
+
+.risk-row span,
+.company-row strong,
+.company-row small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -620,7 +636,40 @@ const kpis = computed(() => [
 .ask-analytics small {
   font-size: 12px;
   line-height: 1.25;
-  overflow-wrap: anywhere;
+}
+
+.company-strip {
+  grid-template-columns: minmax(220px, 0.6fr) repeat(3, minmax(0, 1fr));
+  align-items: center;
+}
+
+.company-strip .panel-title {
+  width: auto;
+}
+
+.company-row {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.company-row i {
+  display: grid;
+  flex: 0 0 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  color: #ffffff;
+  background: var(--success);
+  font-style: normal;
+  font-weight: 800;
+}
+
+.company-row i.medium {
+  background: var(--warning);
+}
+
+.company-row i.high {
+  background: var(--danger);
 }
 
 .next-action {
@@ -637,12 +686,23 @@ const kpis = computed(() => [
   font-size: 13.5px;
   line-height: 1.35;
   font-weight: 700;
-  overflow-wrap: anywhere;
 }
 
 .next-action .button-link {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+.empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty.compact {
+  padding: 8px 0 0;
+  text-align: left;
 }
 
 @media (max-width: 1320px) {
@@ -653,20 +713,22 @@ const kpis = computed(() => [
   .ai-summary-card {
     grid-column: span 2;
   }
+
+  .company-strip {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 860px) {
   .analytics-head,
-  .next-action,
-  .analytics-main-grid,
-  .analytics-main-grid.lower {
-    grid-template-columns: 1fr;
-  }
-
-  .analytics-head,
   .next-action {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .analytics-main-grid,
+  .analytics-main-grid.lower {
+    grid-template-columns: 1fr;
   }
 
   .analytics-actions,

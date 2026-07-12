@@ -5,6 +5,7 @@ import type {
   AgentAction,
   AgentChatResponse,
   AgentHistoryMessage,
+  AnalyticsOverview,
   Activity,
   AuthResponse,
   Company,
@@ -69,6 +70,7 @@ const featureFlags = ref<FeatureFlag[]>([]);
 const tenantPlan = ref<TenantPlan | null>(null);
 const tenantExport = ref<TenantExport | null>(null);
 const activities = ref<Activity[]>([]);
+const analyticsOverview = ref<AnalyticsOverview | null>(null);
 
 const registerForm = ref({
   company_name: "Demo Company",
@@ -619,6 +621,16 @@ async function refreshActivities() {
   activities.value = await api<Activity[]>("/activities", {}, token.value, tenantId.value);
 }
 
+async function refreshAnalytics() {
+  if (!isAuthed.value) return;
+  analyticsOverview.value = await api<AnalyticsOverview>(
+    "/analytics/overview?forecast_days=90&stuck_days=14&activity_days=30",
+    {},
+    token.value,
+    tenantId.value
+  );
+}
+
 async function createActivity() {
   await run(async () => {
     await api<Activity>(
@@ -765,6 +777,7 @@ export const crmStore = {
   tenantPlan,
   tenantExport,
   activities,
+  analyticsOverview,
   registerForm,
   loginForm,
   pipelineForm,
@@ -806,6 +819,7 @@ export const crmStore = {
   refreshTemplates,
   refreshProduction,
   refreshActivities,
+  refreshAnalytics,
   createPipeline,
   createContact,
   createLead,

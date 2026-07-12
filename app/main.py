@@ -11,6 +11,7 @@ from app.modules.sales import models as sales_models
 from app.modules.templates import models as templates_models
 from app.modules.activity.router import router as activity_router
 from app.modules.ai_agent.router import router as ai_agent_router
+from app.modules.analytics.router import router as analytics_router
 from app.modules.auth.router import router as auth_router
 from app.modules.communication.router import router as communication_router
 from app.modules.connectors.router import router as connectors_router
@@ -50,6 +51,7 @@ app.include_router(activity_router, prefix="/activities", tags=["activities"])
 app.include_router(sales_router, prefix="/sales", tags=["sales"])
 app.include_router(knowledge_router, prefix="/knowledge", tags=["knowledge"])
 app.include_router(ai_agent_router, prefix="/ai-agent", tags=["ai-agent"])
+app.include_router(analytics_router, prefix="/analytics", tags=["analytics"])
 app.include_router(communication_router, prefix="/communication", tags=["communication"])
 app.include_router(connectors_router, prefix="/connectors", tags=["connectors"])
 app.include_router(templates_router, prefix="/templates", tags=["templates"])
