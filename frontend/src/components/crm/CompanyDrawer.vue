@@ -2,12 +2,19 @@
 import { computed, ref } from "vue";
 
 import { api, emptyToNull, post } from "../../api";
-import type { Activity, Company, CompanyFile, KnowledgeDocument, Task } from "../../types";
+import type { Activity, CommunicationEvent, Company, CompanyFile, KnowledgeDocument, NextAction, Task } from "../../types";
 import { crmStore } from "../../stores/crm";
 
 const props = defineProps<{ company: Company | null }>();
 const emit = defineEmits<{ close: [] }>();
 const isSaving = ref(false);
+const isNextActionEditorOpen = ref(false);
+const nextActionForm = ref({ title: "", description: "", due_at: "", priority: "high" });
+const drawerActionMode = ref<"call" | "email" | "meeting" | "task" | null>(null);
+const callForm = ref({ subject: "Звонок клиенту", body: "", phone: "" });
+const emailForm = ref({ subject: "Follow-up", body: "", recipient: "" });
+const meetingActionForm = ref({ subject: "Встреча с клиентом", body: "", occurred_at: "" });
+const drawerTaskForm = ref({ title: "Follow-up", description: "", due_at: "", priority: "high" });
 
 const workspace = computed(() =>
   props.company && crmStore.companyWorkspace.value?.company.id === props.company.id
@@ -29,7 +36,8 @@ const health = computed(() => workspace.value?.health.score ?? Math.min(98, 70 +
 const healthTrend = computed(() => (workspace.value?.health.trend === "down" ? "↘" : workspace.value?.health.trend === "flat" ? "→" : "↗"));
 const healthLabel = computed(() => workspace.value?.health.label ?? "Хороший");
 const pipeline = computed(() => deals.value.reduce((sum, deal) => sum + Number(deal.amount ?? 0), 0));
-const nextAction = computed(() => currentDeal.value?.next_step ?? openTasks.value[0]?.title ?? (deals.value.length ? "Отправить КП" : "Создать первую сделку"));
+const nextActionRecord = computed(() => workspace.value?.next_action ?? null);
+const nextAction = computed(() => nextActionRecord.value?.title ?? currentDeal.value?.next_step ?? openTasks.value[0]?.title ?? (deals.value.length ? "Отправить КП" : "Создать первую сделку"));
 const displayIndustry = computed(() => workspace.value?.company.industry ?? props.company?.industry ?? "Розничная торговля");
 const companyType = computed(() => workspace.value?.company.company_type ?? displayIndustry.value ?? "B2B");
 const clientSince = computed(() => workspace.value?.company.client_since ?? workspace.value?.company.created_at ?? props.company?.created_at);
@@ -198,6 +206,84 @@ function logNote() {
   void runDrawerAction(() => createActivity("COMMENT", "Message", "Note added", "Quick note from company modal."));
 }
 
+function openDrawerAction(mode: "call" | "email" | "meeting" | "task") {
+  drawerActionMode.value = mode;
+  callForm.value.phone = contacts.value[0]?.phone ?? "";
+  emailForm.value.recipient = contacts.value[0]?.email ?? "";
+  emailForm.value.body = copilot.value?.follow_up_draft ?? `Здравствуйте! Следующий шаг: ${nextAction.value}.`;
+  drawerTaskForm.value.title = nextAction.value;
+}
+
+async function saveCommunication(
+  channel: string,
+  subject: string,
+  body: string,
+  occurredAt?: string,
+  recipient?: string
+) {
+  const event = await api<CommunicationEvent>(
+    "/communication/events",
+    post(emptyToNull({
+      channel,
+      direction: "outbound",
+      sender: crmStore.me.value?.email ?? "",
+      recipient: recipient ?? "",
+      subject,
+      body,
+      occurred_at: occurredAt ?? "",
+      company_id: props.company?.id,
+      contact_id: contacts.value[0]?.id ?? "",
+      deal_id: currentDeal.value?.id ?? "",
+      metadata: { source: "company_drawer", draft: channel === "email" }
+    })),
+    crmStore.token.value,
+    crmStore.tenantId.value
+  );
+  await api<CommunicationEvent>(
+    `/communication/events/${event.id}/activity`,
+    post({}),
+    crmStore.token.value,
+    crmStore.tenantId.value
+  );
+}
+
+function saveCall() {
+  void runDrawerAction(async () => {
+    await saveCommunication("call", callForm.value.subject, callForm.value.body, undefined, callForm.value.phone);
+    drawerActionMode.value = null;
+  });
+}
+
+function saveEmailDraft() {
+  void runDrawerAction(async () => {
+    await saveCommunication("email", emailForm.value.subject, emailForm.value.body, undefined, emailForm.value.recipient);
+    drawerActionMode.value = null;
+  });
+}
+
+function saveMeeting() {
+  void runDrawerAction(async () => {
+    await saveCommunication("meeting", meetingActionForm.value.subject, meetingActionForm.value.body, meetingActionForm.value.occurred_at);
+    drawerActionMode.value = null;
+  });
+}
+
+function saveDrawerTask() {
+  void runDrawerAction(async () => {
+    await api<Task>(
+      "/sales/tasks",
+      post(emptyToNull({
+        ...drawerTaskForm.value,
+        company_id: props.company?.id,
+        deal_id: currentDeal.value?.id ?? ""
+      })),
+      crmStore.token.value,
+      crmStore.tenantId.value
+    );
+    drawerActionMode.value = null;
+  });
+}
+
 function addProposalFile() {
   if (!props.company) return;
   void runDrawerAction(async () => {
@@ -242,6 +328,56 @@ function confirmCopilotAction(actionId: string) {
 function rejectCopilotAction(actionId: string) {
   void runDrawerAction(() => crmStore.rejectAgentAction(actionId));
 }
+
+function completeNextAction() {
+  if (!nextActionRecord.value) return;
+  void runDrawerAction(async () => {
+    await api<NextAction>(
+      `/sales/next-actions/${nextActionRecord.value?.id}/done`,
+      post({ is_done: true }, "PATCH"),
+      crmStore.token.value,
+      crmStore.tenantId.value
+    );
+  });
+}
+
+function openNextActionEditor() {
+  nextActionForm.value = {
+    title: nextActionRecord.value?.title ?? nextAction.value,
+    description: nextActionRecord.value?.description ?? "",
+    due_at: nextActionRecord.value?.due_at?.slice(0, 16) ?? "",
+    priority: nextActionRecord.value?.priority ?? "high"
+  };
+  isNextActionEditorOpen.value = true;
+}
+
+function saveNextAction() {
+  if (!props.company) return;
+  void runDrawerAction(async () => {
+    const previousActionId = nextActionRecord.value?.id;
+    await api<NextAction>(
+      "/sales/next-actions",
+      post(emptyToNull({
+        ...nextActionForm.value,
+        company_id: props.company?.id,
+        deal_id: currentDeal.value?.id ?? "",
+        contact_id: contacts.value[0]?.id ?? "",
+        source: "manual"
+      })),
+      crmStore.token.value,
+      crmStore.tenantId.value
+    );
+    if (previousActionId) {
+      await api<NextAction>(
+        `/sales/next-actions/${previousActionId}/done`,
+        post({ is_done: true }, "PATCH"),
+        crmStore.token.value,
+        crmStore.tenantId.value
+      );
+    }
+    isNextActionEditorOpen.value = false;
+  });
+}
 </script>
 
 <template>
@@ -257,10 +393,11 @@ function rejectCopilotAction(actionId: string) {
           </div>
           <p class="ref-subline">{{ displayIndustry }} <span></span> Клиент с {{ formatDate(clientSince) }}</p>
           <div class="ref-actions">
-            <button type="button" class="ref-primary-action" :disabled="isSaving" @click="logCall"><span class="ui-icon phone"></span>Позвонить</button>
-            <button type="button" class="ref-action" :disabled="isSaving" @click="logEmail"><span class="ui-icon mail"></span>Email</button>
-            <button type="button" class="ref-action" :disabled="isSaving" @click="logMeeting"><span class="ui-icon calendar"></span>Встреча</button>
-            <button type="button" class="ref-action" :disabled="isSaving" @click="addQuickTask"><span class="ui-icon task"></span>Задача</button>
+            <button type="button" class="ref-primary-action" :disabled="isSaving" @click="openDrawerAction('call')"><span class="ui-icon phone"></span>Позвонить</button>
+            <button type="button" class="ref-action" :disabled="isSaving" @click="openDrawerAction('email')"><span class="ui-icon mail"></span>Generate Email</button>
+            <button type="button" class="ref-action" :disabled="isSaving" @click="openDrawerAction('meeting')"><span class="ui-icon calendar"></span>Встреча</button>
+            <button type="button" class="ref-action" :disabled="isSaving" @click="openDrawerAction('task')"><span class="ui-icon task"></span>Задача</button>
+            <RouterLink class="ref-action" :to="{ path: `/companies/${company.id}`, query: { tab: 'knowledge' } }"><span class="ui-icon file"></span>Knowledge</RouterLink>
             <button type="button" class="ref-action icon-only" :disabled="isSaving" @click="logNote">...</button>
           </div>
         </div>
@@ -278,6 +415,23 @@ function rejectCopilotAction(actionId: string) {
         </div>
       </header>
 
+      <section v-if="drawerActionMode" class="drawer-action-panel">
+        <header><h2>{{ drawerActionMode === "call" ? "Call" : drawerActionMode === "email" ? "Email draft" : drawerActionMode === "meeting" ? "Meeting" : "Task" }}</h2><button class="secondary" type="button" @click="drawerActionMode = null">Close</button></header>
+        <form v-if="drawerActionMode === 'call'" class="compact-form" @submit.prevent="saveCall">
+          <label>Телефон<input v-model="callForm.phone" type="tel" /></label><label>Тема<input v-model="callForm.subject" /></label><label>Результат<textarea v-model="callForm.body"></textarea></label>
+          <div class="button-row"><a v-if="callForm.phone" class="button-link" :href="`tel:${callForm.phone}`">Начать звонок</a><button type="submit">Сохранить результат</button></div>
+        </form>
+        <form v-else-if="drawerActionMode === 'email'" class="compact-form" @submit.prevent="saveEmailDraft">
+          <label>Получатель<input v-model="emailForm.recipient" type="email" /></label><label>Тема<input v-model="emailForm.subject" /></label><label>AI draft<textarea v-model="emailForm.body" rows="7"></textarea></label><button type="submit">Сохранить draft</button>
+        </form>
+        <form v-else-if="drawerActionMode === 'meeting'" class="compact-form" @submit.prevent="saveMeeting">
+          <label>Название<input v-model="meetingActionForm.subject" /></label><label>Дата<input v-model="meetingActionForm.occurred_at" type="datetime-local" required /></label><label>Повестка<textarea v-model="meetingActionForm.body"></textarea></label><button type="submit">Запланировать</button>
+        </form>
+        <form v-else class="compact-form" @submit.prevent="saveDrawerTask">
+          <label>Задача<input v-model="drawerTaskForm.title" /></label><label>Описание<textarea v-model="drawerTaskForm.description"></textarea></label><label>Срок<input v-model="drawerTaskForm.due_at" type="datetime-local" /></label><label>Приоритет<select v-model="drawerTaskForm.priority"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><button type="submit">Создать задачу</button>
+        </form>
+      </section>
+
       <main class="reference-body">
         <section class="reference-main">
           <div class="reference-top-grid">
@@ -285,7 +439,28 @@ function rejectCopilotAction(actionId: string) {
               <p class="ref-card-label"><span class="flame-dot"></span>Следующее действие</p>
               <h2>{{ nextAction }}</h2>
               <p>{{ lastContactAt }} после последнего контакта.</p>
-              <button type="button" class="call-split" :disabled="isSaving" @click="logCall"><span class="ui-icon phone"></span>Позвонить<span>⌄</span></button>
+              <form v-if="isNextActionEditorOpen" class="next-action-editor" @submit.prevent="saveNextAction">
+                <label>Действие<input v-model="nextActionForm.title" required minlength="2" /></label>
+                <label>Описание<textarea v-model="nextActionForm.description" rows="2"></textarea></label>
+                <div>
+                  <label>Срок<input v-model="nextActionForm.due_at" type="datetime-local" /></label>
+                  <label>Приоритет
+                    <select v-model="nextActionForm.priority">
+                      <option value="low">Low</option>
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="button-row">
+                  <button type="submit" :disabled="isSaving">Сохранить</button>
+                  <button class="secondary" type="button" @click="isNextActionEditorOpen = false">Отмена</button>
+                </div>
+              </form>
+              <div v-else class="button-row next-action-buttons">
+                <button v-if="nextActionRecord" type="button" class="call-split" :disabled="isSaving" @click="completeNextAction"><span class="ui-icon check"></span>Выполнено</button>
+                <button type="button" class="ref-action" :disabled="isSaving" @click="openNextActionEditor">{{ nextActionRecord ? "Заменить" : "Создать действие" }}</button>
+              </div>
             </section>
 
             <section class="ref-card deal-focus-card">

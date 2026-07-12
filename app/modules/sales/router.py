@@ -551,6 +551,22 @@ def set_next_action_done(
     next_action = _get_for_tenant(db, NextAction, tenant.id, next_action_id)
     next_action.status = "done" if payload.is_done else "open"
     next_action.completed_at = datetime.now(timezone.utc) if payload.is_done else None
+    company = _get_for_tenant(db, Company, tenant.id, next_action.company_id)
+    deal = (
+        _get_for_tenant(db, Deal, tenant.id, next_action.deal_id)
+        if next_action.deal_id
+        else None
+    )
+    if payload.is_done:
+        if company.next_action_id == next_action.id:
+            company.next_action_id = None
+        if deal and deal.next_action_id == next_action.id:
+            deal.next_action_id = None
+    else:
+        company.next_action_id = next_action.id
+        if deal:
+            deal.next_action_id = next_action.id
+            deal.next_step = next_action.title
     ActivityService(db).create(
         tenant_id=tenant.id,
         created_by=tenant.user_id,

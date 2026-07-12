@@ -24,7 +24,9 @@ import type {
   KnowledgeDocument,
   KnowledgeSearchResult,
   Lead,
+  Me,
   Note,
+  NextAction,
   Pipeline,
   AuditLog,
   FeatureFlag,
@@ -71,6 +73,8 @@ const tenantPlan = ref<TenantPlan | null>(null);
 const tenantExport = ref<TenantExport | null>(null);
 const activities = ref<Activity[]>([]);
 const analyticsOverview = ref<AnalyticsOverview | null>(null);
+const nextActions = ref<NextAction[]>([]);
+const me = ref<Me | null>(null);
 
 const registerForm = ref({
   company_name: "Demo Company",
@@ -114,7 +118,7 @@ const knowledgeDocumentForm = ref({
 });
 const knowledgeSearchForm = ref({ query: "Что делать после новой заявки?", limit: 6 });
 const knowledgeAskForm = ref({ question: "Что делать после новой заявки?", limit: 6 });
-const agentForm = ref({ message: "Дай сводку по CRM" });
+const agentForm = ref({ message: "Дай сводку по CRM", company_id: "", deal_id: "" });
 const connectorAccountForm = ref({ connector_code: "csv", title: "CSV import/export" });
 const csvImportForm = ref({
   account_id: "",
@@ -151,6 +155,16 @@ const communicationEventForm = ref({
   company_id: "",
   contact_id: "",
   deal_id: ""
+});
+const nextActionForm = ref({
+  company_id: "",
+  deal_id: "",
+  contact_id: "",
+  title: "Связаться с клиентом",
+  description: "",
+  source: "manual",
+  priority: "normal",
+  due_at: ""
 });
 
 const isAuthed = computed(() => token.value.length > 0 && tenantId.value.length > 0);
@@ -223,24 +237,34 @@ function logout() {
   tasks.value = [];
   notes.value = [];
   pipelines.value = [];
+  nextActions.value = [];
+  me.value = null;
   localStorage.clear();
+}
+
+async function refreshMe() {
+  if (!isAuthed.value) return;
+  me.value = await api<Me>("/me", {}, token.value, tenantId.value);
 }
 
 function saveTenantId() {
   localStorage.setItem("cmr_tenant_id", tenantId.value);
   void refreshAll();
+  void refreshMe();
+  void refreshCommunication();
 }
 
 async function refreshAll() {
   if (!isAuthed.value) return;
-  const [companyList, contactList, leadList, pipelineList, dealList, taskList, noteList] = await Promise.all([
+  const [companyList, contactList, leadList, pipelineList, dealList, taskList, noteList, nextActionList] = await Promise.all([
     api<Company[]>("/sales/companies", {}, token.value, tenantId.value),
     api<Contact[]>("/sales/contacts", {}, token.value, tenantId.value),
     api<Lead[]>("/sales/leads", {}, token.value, tenantId.value),
     api<Pipeline[]>("/sales/pipelines", {}, token.value, tenantId.value),
     api<Deal[]>("/sales/deals", {}, token.value, tenantId.value),
     api<Task[]>("/sales/tasks", {}, token.value, tenantId.value),
-    api<Note[]>("/sales/notes", {}, token.value, tenantId.value)
+    api<Note[]>("/sales/notes", {}, token.value, tenantId.value),
+    api<NextAction[]>("/sales/next-actions", {}, token.value, tenantId.value)
   ]);
   companies.value = companyList;
   const firstCompanyId = companyList[0]?.id ?? "";
@@ -256,6 +280,7 @@ async function refreshAll() {
   deals.value = dealList;
   tasks.value = taskList;
   notes.value = noteList;
+  nextActions.value = nextActionList;
   if (!dealForm.value.stage_id && allStages.value[0]) dealForm.value.stage_id = allStages.value[0].id;
 }
 
@@ -387,11 +412,12 @@ async function searchKnowledge() {
   }, "Поиск выполнен");
 }
 
-async function askKnowledge() {
+async function askKnowledge(context: { company_id?: string; deal_id?: string } = {}) {
+  const payload = emptyToNull({ ...knowledgeAskForm.value, ...context });
   await run(async () => {
     knowledgeAnswer.value = await api<KnowledgeAskResponse>(
       "/knowledge/ask",
-      post(knowledgeAskForm.value),
+      post(payload),
       token.value,
       tenantId.value
     );
@@ -409,15 +435,18 @@ async function refreshAgent() {
 }
 
 async function sendAgentMessage() {
+  const payload = emptyToNull({ ...agentForm.value });
   await run(async () => {
     agentLastResponse.value = await api<AgentChatResponse>(
       "/ai-agent/chat",
-      post({ message: agentForm.value.message }),
+      post(payload),
       token.value,
       tenantId.value
     );
     await refreshAgent();
   }, "AI агент ответил");
+  agentForm.value.company_id = "";
+  agentForm.value.deal_id = "";
 }
 
 async function confirmAgentAction(actionId: string) {
@@ -701,6 +730,33 @@ async function createTask() {
   }, "Задача создана");
 }
 
+async function createNextAction(payload: Partial<typeof nextActionForm.value> = {}) {
+  await run(async () => {
+    const source = { ...nextActionForm.value, ...payload };
+    await api<NextAction>(
+      "/sales/next-actions",
+      post(emptyToNull(source)),
+      token.value,
+      tenantId.value
+    );
+    await refreshAll();
+    if (source.company_id) await loadCompanyWorkspace(source.company_id);
+  }, "Следующее действие сохранено");
+}
+
+async function toggleNextAction(action: NextAction, isDone = action.status !== "done") {
+  await run(async () => {
+    await api<NextAction>(
+      `/sales/next-actions/${action.id}/done`,
+      post({ is_done: isDone }, "PATCH"),
+      token.value,
+      tenantId.value
+    );
+    await refreshAll();
+    await loadCompanyWorkspace(action.company_id);
+  }, isDone ? "Следующее действие выполнено" : "Следующее действие открыто");
+}
+
 async function toggleTask(task: Task) {
   await run(async () => {
     await api<Task>(
@@ -778,6 +834,8 @@ export const crmStore = {
   tenantExport,
   activities,
   analyticsOverview,
+  nextActions,
+  me,
   registerForm,
   loginForm,
   pipelineForm,
@@ -798,6 +856,7 @@ export const crmStore = {
   planForm,
   activityForm,
   communicationEventForm,
+  nextActionForm,
   isAuthed,
   activeTenant,
   allStages,
@@ -808,6 +867,7 @@ export const crmStore = {
   login,
   logout,
   saveTenantId,
+  refreshMe,
   refreshAll,
   createCompany,
   loadCompanyWorkspace,
@@ -826,6 +886,8 @@ export const crmStore = {
   createDeal,
   moveDeal,
   createTask,
+  createNextAction,
+  toggleNextAction,
   toggleTask,
   createNote,
   createKnowledgeDocument,

@@ -1,8 +1,18 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 
 import { crmStore } from "../stores/crm";
 import type { Task } from "../types";
+
+const route = useRoute();
+const createDrawer = ref<HTMLDetailsElement | null>(null);
+
+watch(
+  () => route.query.create,
+  (value) => { if (value === "1") requestAnimationFrame(() => { if (createDrawer.value) createDrawer.value.open = true; }); },
+  { immediate: true }
+);
 
 function companyName(companyId: string) {
   return crmStore.companies.value.find((company) => company.id === companyId)?.name ?? "Компания";
@@ -60,7 +70,7 @@ const groups = computed(() => {
       </section>
     </section>
 
-    <details class="panel create-drawer">
+    <details ref="createDrawer" class="panel create-drawer">
       <summary>New Task</summary>
       <form class="compact-form" @submit.prevent="crmStore.createTask">
         <label>Компания

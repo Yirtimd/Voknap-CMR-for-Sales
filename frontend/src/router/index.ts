@@ -8,6 +8,7 @@ import HomePage from "../pages/HomePage.vue";
 import InboxPage from "../pages/InboxPage.vue";
 import LoginPage from "../pages/LoginPage.vue";
 import KnowledgePage from "../pages/KnowledgePage.vue";
+import LeadsPage from "../pages/LeadsPage.vue";
 import AnalyticsPage from "../pages/AnalyticsPage.vue";
 import SettingsPage from "../pages/SettingsPage.vue";
 import TasksPage from "../pages/TasksPage.vue";
@@ -26,6 +27,7 @@ export const router = createRouter({
         { path: "home", name: "home", component: HomePage, meta: { title: "Home", eyebrow: "Daily workspace" } },
         { path: "companies", name: "companies", component: CompaniesPage, meta: { title: "Companies", eyebrow: "Company-first CRM" } },
         { path: "companies/:id", name: "company-workspace", component: CompanyWorkspacePage, meta: { title: "Company Card", eyebrow: "Workspace" } },
+        { path: "leads", name: "leads", component: LeadsPage, meta: { title: "Leads", eyebrow: "Demand pipeline" } },
         { path: "deals", name: "deals", component: DealsPage, meta: { title: "Deals", eyebrow: "Pipeline" } },
         { path: "tasks", name: "tasks", component: TasksPage, meta: { title: "Tasks", eyebrow: "Execution" } },
         { path: "inbox", name: "inbox", component: InboxPage, meta: { title: "Inbox", eyebrow: "Communication Hub" } },
@@ -33,7 +35,6 @@ export const router = createRouter({
         { path: "analytics", name: "analytics", component: AnalyticsPage, meta: { title: "Analytics", eyebrow: "Revenue intelligence" } },
         { path: "settings", name: "settings", component: SettingsPage, meta: { title: "Settings", eyebrow: "Administration" } },
         { path: "dashboard", redirect: "/home" },
-        { path: "leads", redirect: "/inbox" },
         { path: "timeline", redirect: "/companies" },
         { path: "agent", redirect: "/home" },
         { path: "connectors", redirect: "/settings" },

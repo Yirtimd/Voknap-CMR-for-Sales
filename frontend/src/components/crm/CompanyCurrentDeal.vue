@@ -52,7 +52,7 @@ const progress = computed(() => {
       </div>
       <section class="next-step-card">
         <span>Next Action</span>
-        <strong>Отправить КП</strong>
+        <strong>{{ workspace.next_action?.title ?? currentDeal.next_step ?? "Не назначено" }}</strong>
       </section>
     </template>
     <p v-else class="empty">No active deal. Create first opportunity for this company.</p>

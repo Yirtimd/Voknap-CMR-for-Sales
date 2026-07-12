@@ -127,7 +127,19 @@ function documentsForDeal(deal: Deal) {
 }
 
 function nextAction(deal: Deal) {
+  const action = crmStore.nextActions.value.find(
+    (item) => item.deal_id === deal.id && item.status === "open"
+  );
+  if (action) return action.title;
   return deal.next_step || openTasks(deal)[0]?.title || deal.expected_next_event || "Call client";
+}
+
+function completeSelectedNextAction() {
+  if (!selectedDeal.value) return;
+  const action = crmStore.nextActions.value.find(
+    (item) => item.deal_id === selectedDeal.value?.id && item.status === "open"
+  );
+  if (action) void crmStore.toggleNextAction(action, true);
 }
 
 function dueLabel(deal: Deal) {
@@ -185,8 +197,9 @@ async function createDealFromModal() {
 }
 
 watch(
-  [() => route.query.deal, () => crmStore.deals.value.length],
-  ([dealId]) => {
+  [() => route.query.deal, () => route.query.create, () => crmStore.deals.value.length],
+  ([dealId, create]) => {
+    if (create === "1") showCreateDeal.value = true;
     if (typeof dealId !== "string") return;
     selectedDeal.value = crmStore.deals.value.find((deal) => deal.id === dealId) ?? selectedDeal.value;
   },
@@ -400,7 +413,11 @@ watch(
             <strong>{{ nextAction(selectedDeal) }}</strong>
             <small>Due: {{ dueLabel(selectedDeal) }}</small>
           </div>
-          <button type="button">Complete</button>
+          <button
+            type="button"
+            :disabled="!crmStore.nextActions.value.some((item) => item.deal_id === selectedDeal?.id && item.status === 'open')"
+            @click="completeSelectedNextAction"
+          >Complete</button>
           <button class="secondary icon-button" type="button" title="More">⌄</button>
         </section>
 

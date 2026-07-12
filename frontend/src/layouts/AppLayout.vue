@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import voknapLogo from "../assets/voknap-logo.png";
@@ -12,6 +12,7 @@ const route = useRoute();
 const navItems = [
   { to: "/home", label: "Home", icon: "▣" },
   { to: "/companies", label: "Companies", icon: "▥" },
+  { to: "/leads", label: "Leads", icon: "◎" },
   { to: "/deals", label: "Deals", icon: "$" },
   { to: "/tasks", label: "Tasks", icon: "☑" },
   { to: "/inbox", label: "Inbox", icon: "✉" },
@@ -24,10 +25,71 @@ const pageTitle = computed(() => String(route.meta.title ?? "AI Sales Workspace"
 const pageEyebrow = computed(() => String(route.meta.eyebrow ?? "Workspace"));
 const isHome = computed(() => route.path === "/home");
 const isAgentOpen = ref(false);
+const searchQuery = ref("");
+const activePanel = ref<"search" | "new" | "notifications" | "profile" | "menu" | null>(null);
 
-onMounted(() => {
-  void crmStore.refreshAll();
+const searchResults = computed(() => {
+  const needle = searchQuery.value.trim().toLowerCase();
+  if (needle.length < 2) return [];
+  const companies = crmStore.companies.value
+    .filter((item) => [item.name, item.industry, item.website].some((value) => String(value ?? "").toLowerCase().includes(needle)))
+    .map((item) => ({ id: `company-${item.id}`, type: "Company", title: item.name, meta: item.industry ?? "Company", to: `/companies/${item.id}` }));
+  const deals = crmStore.deals.value
+    .filter((item) => [item.title, item.next_step, item.expected_next_event].some((value) => String(value ?? "").toLowerCase().includes(needle)))
+    .map((item) => ({ id: `deal-${item.id}`, type: "Deal", title: item.title, meta: crmStore.money(item.amount), to: `/deals?deal=${item.id}` }));
+  const leads = crmStore.leads.value
+    .filter((item) => [item.title, item.source, item.status].some((value) => String(value ?? "").toLowerCase().includes(needle)))
+    .map((item) => ({ id: `lead-${item.id}`, type: "Lead", title: item.title, meta: item.source ?? item.status, to: "/leads" }));
+  const tasks = crmStore.tasks.value
+    .filter((item) => [item.title, item.description].some((value) => String(value ?? "").toLowerCase().includes(needle)))
+    .map((item) => ({ id: `task-${item.id}`, type: "Task", title: item.title, meta: item.due_at ? new Date(item.due_at).toLocaleString("ru-RU") : "No due date", to: "/tasks" }));
+  return [...companies, ...leads, ...deals, ...tasks].slice(0, 10);
 });
+
+const notifications = computed(() => {
+  const now = Date.now();
+  const overdue = crmStore.tasks.value
+    .filter((task) => !task.done_at && task.due_at && new Date(task.due_at).getTime() < now)
+    .map((task) => ({ id: `task-${task.id}`, tone: "danger", title: "Просрочена задача", text: task.title, to: "/tasks" }));
+  const risks = crmStore.deals.value
+    .filter((deal) => deal.status === "open" && deal.risk_level === "high")
+    .map((deal) => ({ id: `deal-${deal.id}`, tone: "warning", title: "Сделка высокого риска", text: deal.title, to: `/deals?deal=${deal.id}` }));
+  const incoming = crmStore.communicationEvents.value
+    .filter((event) => event.direction === "inbound" && ["new", "received", "unread"].includes(event.status))
+    .map((event) => ({ id: `event-${event.id}`, tone: "info", title: "Новое входящее", text: event.subject, to: "/inbox" }));
+  return [...overdue, ...risks, ...incoming].slice(0, 10);
+});
+
+const initials = computed(() => {
+  const name = crmStore.me.value?.full_name ?? crmStore.activeTenant.value?.name ?? "User";
+  return name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+});
+
+function keyboardShortcut(event: KeyboardEvent) {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    activePanel.value = "search";
+    requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".home-search input")?.focus());
+  }
+  if (event.key === "Escape") activePanel.value = null;
+}
+
+onMounted(async () => {
+  await Promise.allSettled([crmStore.refreshAll(), crmStore.refreshMe(), crmStore.refreshCommunication()]);
+  window.addEventListener("keydown", keyboardShortcut);
+});
+
+onBeforeUnmount(() => window.removeEventListener("keydown", keyboardShortcut));
+
+function togglePanel(panel: Exclude<typeof activePanel.value, null>) {
+  activePanel.value = activePanel.value === panel ? null : panel;
+}
+
+function navigate(to: string) {
+  activePanel.value = null;
+  searchQuery.value = "";
+  void router.push(to);
+}
 
 function logout() {
   crmStore.logout();
@@ -54,14 +116,54 @@ function logout() {
         <h1>Home</h1>
         <label class="home-search" aria-label="Поиск">
           <span>⌕</span>
-          <input type="search" placeholder="Search deals, companies, tasks..." />
+          <input v-model="searchQuery" type="search" placeholder="Search deals, companies, tasks..." @focus="activePanel = 'search'" />
           <kbd>⌘K</kbd>
+          <section v-if="activePanel === 'search'" class="top-popover search-popover">
+            <p v-if="searchQuery.trim().length < 2" class="popover-empty">Введите минимум 2 символа</p>
+            <button v-for="item in searchResults" :key="item.id" type="button" class="popover-row" @click="navigate(item.to)">
+              <span>{{ item.type }}</span><div><strong>{{ item.title }}</strong><small>{{ item.meta }}</small></div>
+            </button>
+            <p v-if="searchQuery.trim().length >= 2 && !searchResults.length" class="popover-empty">Ничего не найдено</p>
+          </section>
         </label>
         <div class="home-top-actions">
-          <button type="button" class="secondary home-new-button"><span>+</span> New <span>⌄</span></button>
-          <button type="button" class="secondary home-bell" aria-label="Уведомления"><span>♧</span><b>3</b></button>
-          <button type="button" class="secondary home-avatar" aria-label="Профиль">DM</button>
-          <button type="button" class="secondary home-caret" aria-label="Меню">⌄</button>
+          <div class="top-action-wrap">
+            <button type="button" class="secondary home-new-button" @click="togglePanel('new')"><span>+</span> New <span>⌄</span></button>
+            <section v-if="activePanel === 'new'" class="top-popover action-popover">
+              <button type="button" @click="navigate('/companies?create=1')">New company</button>
+              <button type="button" @click="navigate('/leads')">New lead</button>
+              <button type="button" @click="navigate('/deals?create=1')">New deal</button>
+              <button type="button" @click="navigate('/tasks?create=1')">New task</button>
+              <button type="button" @click="navigate('/inbox')">Incoming event</button>
+            </section>
+          </div>
+          <div class="top-action-wrap">
+            <button type="button" class="secondary home-bell" aria-label="Уведомления" @click="togglePanel('notifications')"><span>♧</span><b v-if="notifications.length">{{ notifications.length }}</b></button>
+            <section v-if="activePanel === 'notifications'" class="top-popover notification-popover">
+              <header><strong>Notifications</strong><small>{{ notifications.length }}</small></header>
+              <button v-for="item in notifications" :key="item.id" type="button" class="popover-row" @click="navigate(item.to)">
+                <i :class="item.tone"></i><div><strong>{{ item.title }}</strong><small>{{ item.text }}</small></div>
+              </button>
+              <p v-if="!notifications.length" class="popover-empty">Новых уведомлений нет</p>
+            </section>
+          </div>
+          <div class="top-action-wrap">
+            <button type="button" class="secondary home-avatar" aria-label="Профиль" @click="togglePanel('profile')">{{ initials }}</button>
+            <section v-if="activePanel === 'profile'" class="top-popover profile-popover">
+              <strong>{{ crmStore.me.value?.full_name ?? "User" }}</strong>
+              <small>{{ crmStore.me.value?.email }}</small>
+              <small>{{ crmStore.me.value?.role }} · {{ crmStore.activeTenant.value?.name }}</small>
+              <button type="button" @click="navigate('/settings')">Profile settings</button>
+            </section>
+          </div>
+          <div class="top-action-wrap">
+            <button type="button" class="secondary home-caret" aria-label="Меню" @click="togglePanel('menu')">⌄</button>
+            <section v-if="activePanel === 'menu'" class="top-popover action-popover menu-popover">
+              <button type="button" @click="navigate('/settings')">Workspace settings</button>
+              <button type="button" @click="isAgentOpen = true; activePanel = null">AI Agent</button>
+              <button type="button" class="danger-item" @click="logout">Выйти</button>
+            </section>
+          </div>
         </div>
       </header>
 
@@ -93,3 +195,24 @@ function logout() {
     <GlobalAgentSidebar :open="isAgentOpen" @close="isAgentOpen = false" />
   </main>
 </template>
+
+<style scoped>
+.home-search, .top-action-wrap { position: relative; }
+.top-popover { position: absolute; z-index: 80; top: calc(100% + 8px); right: 0; width: 280px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: var(--surface-solid); box-shadow: 0 16px 40px rgb(0 0 0 / 14%); }
+.search-popover { right: auto; left: 0; width: 100%; min-width: 390px; }
+.top-popover button { width: 100%; justify-content: flex-start; border: 0; padding: 10px; color: var(--text); background: transparent; text-align: left; }
+.top-popover button:hover { background: var(--surface-muted); }
+.popover-row { display: flex; align-items: center; gap: 10px; }
+.popover-row > span { flex: 0 0 62px; color: var(--brand); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.popover-row > div { display: grid; min-width: 0; gap: 2px; }
+.popover-row small, .profile-popover small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover-empty { margin: 0; padding: 14px 10px; color: var(--muted); text-align: center; }
+.notification-popover header { display: flex; justify-content: space-between; padding: 8px 10px; }
+.popover-row i { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); }
+.popover-row i.danger { background: var(--danger); }
+.popover-row i.warning { background: var(--warning); }
+.profile-popover { display: grid; gap: 6px; padding: 14px; }
+.profile-popover button { margin-top: 6px; }
+.top-popover .danger-item { color: var(--danger); }
+@media (max-width: 760px) { .search-popover { min-width: 280px; } .top-popover { right: auto; left: 0; } }
+</style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 
 import CompanyDrawer from "../components/crm/CompanyDrawer.vue";
 import { crmStore } from "../stores/crm";
@@ -8,10 +9,29 @@ import type { Company } from "../types";
 const query = ref("");
 const sort = ref<"health" | "name" | "pipeline">("health");
 const selectedCompany = ref<Company | null>(null);
+const showCreateCompany = ref(false);
+const companyNameInput = ref<HTMLInputElement | null>(null);
+const route = useRoute();
 
 onMounted(() => {
   void crmStore.refreshAll();
 });
+
+watch(
+  () => route.query.create,
+  (value) => { if (value === "1") openCreateCompany(); },
+  { immediate: true }
+);
+
+function openCreateCompany() {
+  showCreateCompany.value = true;
+  requestAnimationFrame(() => companyNameInput.value?.focus());
+}
+
+async function createCompany() {
+  await crmStore.createCompany();
+  if (!crmStore.error.value) showCreateCompany.value = false;
+}
 
 function companyDeals(company: Company) {
   return crmStore.deals.value.filter((deal) => deal.company_id === company.id);
@@ -41,6 +61,10 @@ function companyInitial(company: Company) {
 }
 
 function nextAction(company: Company) {
+  const action = crmStore.nextActions.value.find(
+    (item) => item.company_id === company.id && item.status === "open"
+  );
+  if (action) return action.title;
   const task = companyTasks(company)[0];
   if (task) return task.title;
   if (!companyDeals(company).length) return "Создать первую сделку";
@@ -97,7 +121,7 @@ const averageHealth = computed(() => {
           <option value="name">Name</option>
         </select>
       </label>
-      <button type="button" class="new-company-button">+ New Company</button>
+      <button type="button" class="new-company-button" @click="openCreateCompany">+ New Company</button>
     </section>
 
     <section class="companies-metrics">
@@ -145,17 +169,28 @@ const averageHealth = computed(() => {
       <p v-if="!filteredCompanies.length" class="empty">Компаний не найдено</p>
     </section>
 
-    <details class="panel create-drawer companies-create">
-      <summary>New Company</summary>
-      <form class="compact-form" @submit.prevent="crmStore.createCompany">
-        <label>Название<input v-model="crmStore.companyForm.value.name" /></label>
-        <label>Сайт<input v-model="crmStore.companyForm.value.website" /></label>
-        <label>Отрасль<input v-model="crmStore.companyForm.value.industry" /></label>
-        <label>Описание<textarea v-model="crmStore.companyForm.value.description"></textarea></label>
-        <button type="submit">Создать</button>
-      </form>
-    </details>
+    <div v-if="showCreateCompany" class="workspace-modal-backdrop" @click.self="showCreateCompany = false">
+      <section class="panel company-create-modal" role="dialog" aria-modal="true" aria-labelledby="new-company-title">
+        <header class="panel-head">
+          <div><p class="eyebrow">Company</p><h2 id="new-company-title">New Company</h2></div>
+          <button class="secondary" type="button" @click="showCreateCompany = false">Close</button>
+        </header>
+        <form class="compact-form" @submit.prevent="createCompany">
+          <label>Название<input ref="companyNameInput" v-model="crmStore.companyForm.value.name" required minlength="2" /></label>
+          <label>Сайт<input v-model="crmStore.companyForm.value.website" /></label>
+          <label>Отрасль<input v-model="crmStore.companyForm.value.industry" /></label>
+          <label>Описание<textarea v-model="crmStore.companyForm.value.description"></textarea></label>
+          <button type="submit" :disabled="crmStore.isLoading.value">Создать</button>
+        </form>
+      </section>
+    </div>
 
     <CompanyDrawer :company="selectedCompany" @close="selectedCompany = null" />
   </section>
 </template>
+
+<style scoped>
+.company-create-modal { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; }
+.company-create-modal .panel-head { margin-bottom: 14px; }
+.company-create-modal h2 { margin: 0; }
+</style>

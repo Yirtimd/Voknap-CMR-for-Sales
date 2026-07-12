@@ -64,7 +64,7 @@ onMounted(() => {
           <h2>Good afternoon, Dmitry.</h2>
           <p>What would you like to know?</p>
 
-          <form class="brain-question" @submit.prevent="crmStore.askKnowledge">
+          <form class="brain-question" @submit.prevent="crmStore.askKnowledge()">
             <textarea
               v-model="crmStore.knowledgeAskForm.value.question"
               rows="3"

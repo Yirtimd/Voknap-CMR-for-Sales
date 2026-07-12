@@ -5,6 +5,9 @@ import type { CompanyWorkspace } from "../../types";
 import { crmStore } from "../../stores/crm";
 
 const props = defineProps<{ workspace: CompanyWorkspace }>();
+const emit = defineEmits<{
+  action: [value: "call" | "email" | "meeting" | "task"];
+}>();
 
 const openTasks = computed(() => props.workspace.tasks.filter((task) => !task.done_at).length);
 const health = computed(() => Math.min(98, 70 + props.workspace.contacts.length * 4 + props.workspace.deals.length * 6));
@@ -21,10 +24,10 @@ const health = computed(() => Math.min(98, 70 + props.workspace.contacts.length 
         <span :style="{ width: `${health}%` }"></span>
       </div>
       <div class="quick-actions">
-        <button type="button">Call</button>
-        <button class="secondary" type="button">Generate Email</button>
-        <button class="secondary" type="button">Meeting</button>
-        <button class="secondary" type="button">Task</button>
+        <button type="button" @click="emit('action', 'call')">Call</button>
+        <button class="secondary" type="button" @click="emit('action', 'email')">Generate Email</button>
+        <button class="secondary" type="button" @click="emit('action', 'meeting')">Meeting</button>
+        <button class="secondary" type="button" @click="emit('action', 'task')">Task</button>
       </div>
     </div>
     <dl class="workspace-kpis">

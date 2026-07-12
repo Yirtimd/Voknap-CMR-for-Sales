@@ -4,6 +4,14 @@ export type Tenant = {
   slug: string;
 };
 
+export type Me = {
+  user_id: string;
+  email: string;
+  full_name: string;
+  tenant_id: string;
+  role: string;
+};
+
 export type AuthResponse = {
   access_token: string;
   token_type: string;

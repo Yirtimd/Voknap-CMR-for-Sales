@@ -17,6 +17,7 @@ const route = useRoute();
 const activeTab = ref("overview");
 const actionMode = ref<"call" | "meeting" | "note" | "task" | "deal">("call");
 const isSaving = ref(false);
+const actionBar = ref<HTMLElement | null>(null);
 
 const workspace = computed(() => crmStore.companyWorkspace.value);
 const companyId = computed(() => String(route.params.id));
@@ -34,6 +35,16 @@ const tabs = [
   { code: "knowledge", label: "Knowledge" },
   { code: "history", label: "History" }
 ];
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    if (typeof tab === "string" && tabs.some((item) => item.code === tab)) {
+      activeTab.value = tab;
+    }
+  },
+  { immediate: true }
+);
 
 const activityForm = ref({
   title: "Call completed",
@@ -249,13 +260,36 @@ function formatDateTime(value?: string | null) {
 function fieldLabel(value: string) {
   return value.replace(/_/g, " ");
 }
+
+function askCompanyKnowledge() {
+  void crmStore.askKnowledge({
+    company_id: companyId.value,
+    deal_id: currentDeal.value?.id ?? ""
+  });
+}
+
+async function handleHeaderAction(action: "call" | "email" | "meeting" | "task") {
+  if (action === "email") {
+    crmStore.agentForm.value = {
+      message: `Сгенерируй follow-up email для компании ${workspace.value?.company.name ?? "клиента"}`,
+      company_id: companyId.value,
+      deal_id: currentDeal.value?.id ?? ""
+    };
+    activeTab.value = "overview";
+    await crmStore.sendAgentMessage();
+    requestAnimationFrame(() => document.querySelector(".company-workspace-v2 .ai-panel")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    return;
+  }
+  actionMode.value = action;
+  requestAnimationFrame(() => actionBar.value?.scrollIntoView({ behavior: "smooth", block: "center" }));
+}
 </script>
 
 <template>
   <section v-if="workspace" class="company-workspace-v2">
-    <CompanyCardHeader :workspace="workspace" />
+    <CompanyCardHeader :workspace="workspace" @action="handleHeaderAction" />
 
-    <section class="workspace-action-bar">
+    <section ref="actionBar" class="workspace-action-bar">
       <div class="quick-actions">
         <button type="button" :class="{ active: actionMode === 'call' }" @click="actionMode = 'call'">Call</button>
         <button type="button" :class="{ active: actionMode === 'meeting' }" @click="actionMode = 'meeting'">Meeting</button>
@@ -451,8 +485,9 @@ function fieldLabel(value: string) {
       </section>
       <section class="panel">
         <h2>Ask Knowledge</h2>
+        <p class="hint">Scope: {{ workspace.company.name }}{{ currentDeal ? ` · ${currentDeal.title}` : "" }}</p>
         <label>Question<textarea v-model="crmStore.knowledgeAskForm.value.question"></textarea></label>
-        <button type="button" @click="crmStore.askKnowledge">Ask</button>
+        <button type="button" @click="askCompanyKnowledge">Ask</button>
         <p v-if="crmStore.knowledgeAnswer.value" class="answer-text">{{ crmStore.knowledgeAnswer.value.answer }}</p>
       </section>
     </section>

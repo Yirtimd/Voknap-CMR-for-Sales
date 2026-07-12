@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import { crmStore } from "../stores/crm";
 import type { Activity, Deal, Task } from "../types";
@@ -56,26 +56,47 @@ function formatActivityTime(value: string | undefined, index: number) {
   return `${hours} ч назад`;
 }
 
-function isToday(value: string | null) {
+function inputDate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+const selectedDate = ref(inputDate(new Date()));
+const dateMenuOpen = ref(false);
+
+function isSelectedDate(value: string | null) {
   if (!value) return false;
   const due = new Date(value);
-  const today = new Date();
-  return !Number.isNaN(due.getTime()) && due.toDateString() === today.toDateString();
+  return !Number.isNaN(due.getTime()) && inputDate(due) === selectedDate.value;
+}
+
+function shiftSelectedDate(days: number) {
+  const value = new Date(`${selectedDate.value}T12:00:00`);
+  value.setDate(value.getDate() + days);
+  selectedDate.value = inputDate(value);
+}
+
+function selectToday() {
+  selectedDate.value = inputDate(new Date());
+  dateMenuOpen.value = false;
 }
 
 function dealProbability(deal: Deal) {
   return Math.max(12, Math.min(96, Number(deal.probability ?? 38)));
 }
 
-const todaysDate = computed(() => compactDate(new Date()));
+const todaysDate = computed(() => compactDate(new Date(`${selectedDate.value}T12:00:00`)));
 
 const openTasks = computed(() => crmStore.tasks.value.filter((task) => !task.done_at));
-const todayTasks = computed(() => openTasks.value.filter((task) => isToday(task.due_at)));
+const selectedTasks = computed(() => crmStore.tasks.value.filter((task) => isSelectedDate(task.due_at)));
+const todayTasks = computed(() => selectedTasks.value.filter((task) => !task.done_at));
 const signedDeals = computed(() => crmStore.deals.value.filter((deal) => deal.status === "won"));
 const activeDeals = computed(() => crmStore.deals.value.filter((deal) => deal.status !== "won"));
 
 const meetingsToday = computed(() =>
-  openTasks.value.filter((task) => /встреч|созвон|демо|презентац/i.test(`${task.title} ${task.description ?? ""}`)).length
+  selectedTasks.value.filter((task) => /встреч|созвон|демо|презентац/i.test(`${task.title} ${task.description ?? ""}`)).length
 );
 
 const riskDeals = computed<RiskDeal[]>(() =>
@@ -125,7 +146,7 @@ const aiMeta = computed(() => {
 });
 
 const todaysTimeline = computed<TimelineItem[]>(() => {
-  const tasks = openTasks.value.slice(0, 4);
+  const tasks = selectedTasks.value.slice(0, 4);
   if (!tasks.length) {
     return [
       {
@@ -133,9 +154,8 @@ const todaysTimeline = computed<TimelineItem[]>(() => {
         time: "10:00",
         icon: "✓",
         accent: "blue",
-        title: "Запланировать первый контакт",
-        meta: "Новая рабочая очередь",
-        amount: crmStore.money(crmStore.totalPipeline.value)
+        title: "На выбранную дату событий нет",
+        meta: todaysDate.value
       }
     ];
   }
@@ -157,7 +177,7 @@ const todaysTimeline = computed<TimelineItem[]>(() => {
   });
 });
 
-const nextBestTask = computed<Task | null>(() => openTasks.value[0] ?? null);
+const nextBestTask = computed<Task | null>(() => todayTasks.value[0] ?? openTasks.value[0] ?? null);
 const nextBestDeal = computed<Deal | null>(() => priorityDeals.value[0] ?? null);
 
 const activityItems = computed(() => {
@@ -204,18 +224,28 @@ const focusDeals = computed(() =>
         <h1>Доброе утро, Дмитрий!</h1>
         <p>Вот что важно на сегодня</p>
       </div>
-      <button type="button" class="home-date secondary">
-        <span>▣</span>
-        {{ todaysDate }}
-        <span>⌄</span>
-      </button>
+      <div class="home-date-wrap">
+        <button type="button" class="home-date secondary" @click="dateMenuOpen = !dateMenuOpen">
+          <span>▣</span>
+          {{ todaysDate }}
+          <span>⌄</span>
+        </button>
+        <section v-if="dateMenuOpen" class="home-date-menu">
+          <div class="date-nav">
+            <button type="button" class="secondary" aria-label="Предыдущий день" @click="shiftSelectedDate(-1)">‹</button>
+            <input v-model="selectedDate" type="date" aria-label="Рабочая дата" />
+            <button type="button" class="secondary" aria-label="Следующий день" @click="shiftSelectedDate(1)">›</button>
+          </div>
+          <button type="button" class="today-button" @click="selectToday">Сегодня</button>
+        </section>
+      </div>
     </section>
 
     <section class="home-kpi-grid" aria-label="Сводка на сегодня">
       <article class="home-kpi">
         <span class="home-icon blue">✓</span>
         <div>
-          <strong>{{ todayTasks.length || openTasks.length }}</strong>
+          <strong>{{ todayTasks.length }}</strong>
           <p>задач на сегодня</p>
           <RouterLink to="/tasks">Смотреть</RouterLink>
         </div>
@@ -223,7 +253,7 @@ const focusDeals = computed(() =>
       <article class="home-kpi">
         <span class="home-icon blue">▣</span>
         <div>
-          <strong>{{ meetingsToday || 2 }}</strong>
+          <strong>{{ meetingsToday }}</strong>
           <p>встречи</p>
           <RouterLink to="/tasks">Календарь</RouterLink>
         </div>
@@ -367,3 +397,13 @@ const focusDeals = computed(() =>
     </section>
   </section>
 </template>
+
+<style scoped>
+.home-date-wrap { position: relative; }
+.home-date-menu { position: absolute; z-index: 50; top: calc(100% + 8px); right: 0; display: grid; gap: 10px; min-width: 280px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--surface-solid); box-shadow: 0 16px 40px rgb(0 0 0 / 14%); }
+.date-nav { display: grid; grid-template-columns: 38px 1fr 38px; gap: 8px; }
+.date-nav button { width: 38px; padding: 0; }
+.date-nav input { min-width: 0; }
+.today-button { width: 100%; }
+@media (max-width: 560px) { .home-date-menu { right: auto; left: 0; min-width: 250px; } }
+</style>
