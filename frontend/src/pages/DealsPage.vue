@@ -1,15 +1,25 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import type { Deal } from "../types";
 import { crmStore } from "../stores/crm";
 
 const route = useRoute();
+const router = useRouter();
 const mode = ref<"kanban" | "table" | "list" | "forecast">("kanban");
 const selectedDeal = ref<Deal | null>(null);
 const showCreateDeal = ref(false);
 const search = ref("");
+const filters = ref({ stage: "", owner: "", company: "", minAmount: 0, risk: "", minScore: 0 });
+const viewSaved = ref(false);
+const showMoreMenu = ref(false);
+const showNextActionMenu = ref(false);
+const showAllTimeline = ref(false);
+const showAllFiles = ref(false);
+const draggedDealId = ref("");
+const dragOverStageId = ref("");
+const didDrag = ref(false);
 
 const modes = [
   { code: "kanban", label: "Kanban" },
@@ -18,17 +28,22 @@ const modes = [
   { code: "forecast", label: "Forecast" }
 ] as const;
 
-const filterLabels = ["Stage", "Owner", "Company", "Amount", "Tags", "AI Score"];
-
 const visibleDeals = computed(() => {
   const query = search.value.trim().toLowerCase();
-  if (!query) return crmStore.deals.value;
   return crmStore.deals.value.filter((deal) =>
-    [deal.title, companyName(deal.company_id), deal.next_step, deal.expected_next_event]
+    (!query || [deal.title, companyName(deal.company_id), deal.next_step, deal.expected_next_event]
       .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(query))
+      .some((value) => String(value).toLowerCase().includes(query))) &&
+    (!filters.value.stage || deal.stage_id === filters.value.stage) &&
+    (!filters.value.owner || deal.owner_id === filters.value.owner) &&
+    (!filters.value.company || deal.company_id === filters.value.company) &&
+    Number(deal.amount ?? 0) >= filters.value.minAmount &&
+    (!filters.value.risk || deal.risk_level === filters.value.risk) &&
+    aiScore(deal) >= filters.value.minScore
   );
 });
+
+const ownerIds = computed(() => [...new Set(crmStore.deals.value.map((deal) => deal.owner_id).filter(Boolean))] as string[]);
 
 const columns = computed(() =>
   crmStore.allStages.value.map((stage) => {
@@ -139,7 +154,39 @@ function completeSelectedNextAction() {
   const action = crmStore.nextActions.value.find(
     (item) => item.deal_id === selectedDeal.value?.id && item.status === "open"
   );
-  if (action) void crmStore.toggleNextAction(action, true);
+  if (action) {
+    void crmStore.toggleNextAction(action, true);
+    return;
+  }
+  const task = openTasks(selectedDeal.value)[0];
+  if (task) void crmStore.toggleTask(task);
+}
+
+function saveView() {
+  localStorage.setItem("cmr_deals_view", JSON.stringify({ filters: filters.value, mode: mode.value }));
+  viewSaved.value = true;
+  crmStore.ok.value = "Deals view saved";
+}
+
+async function copyDealLink() {
+  if (!selectedDeal.value) return;
+  await navigator.clipboard.writeText(`${window.location.origin}/deals?deal=${selectedDeal.value.id}`);
+  crmStore.ok.value = "Deal link copied";
+}
+
+async function copyDealSummary() {
+  if (!selectedDeal.value) return;
+  await navigator.clipboard.writeText(`${selectedDeal.value.title}\n${companyName(selectedDeal.value.company_id)}\n${crmStore.money(selectedDeal.value.amount)}\n${nextAction(selectedDeal.value)}`);
+  crmStore.ok.value = "Deal summary copied";
+}
+
+function openSelectedCompany() {
+  if (!selectedDeal.value) return;
+  const companyId = selectedDeal.value.company_id;
+  showMoreMenu.value = false;
+  showNextActionMenu.value = false;
+  selectedDeal.value = null;
+  void router.push(`/companies?company=${companyId}`);
 }
 
 function dueLabel(deal: Deal) {
@@ -165,6 +212,7 @@ function aiReasons(deal: Deal) {
 
 function timelineItems(deal: Deal) {
   return [
+    ...crmStore.activities.value.filter((activity) => activity.deal_id === deal.id).map((activity) => ({ id: `activity-${activity.id}`, title: activity.title, meta: activity.created_at ? dateLabel(activity.created_at) : activity.type, tone: "base" })),
     ...dealTasks(deal).map((task) => ({
       id: `task-${task.id}`,
       title: task.done_at ? `${task.title} completed` : task.title,
@@ -183,7 +231,7 @@ function timelineItems(deal: Deal) {
       meta: deal.created_at ? dateLabel(deal.created_at) : companyName(deal.company_id),
       tone: "base"
     }
-  ].slice(0, 5);
+  ];
 }
 
 function move(deal: Deal, event: Event) {
@@ -191,10 +239,73 @@ function move(deal: Deal, event: Event) {
   void crmStore.moveDeal(deal, stageId);
 }
 
+function openDeal(deal: Deal) {
+  if (didDrag.value) return;
+  selectedDeal.value = deal;
+}
+
+function onDealDragStart(deal: Deal, event: DragEvent) {
+  draggedDealId.value = deal.id;
+  dragOverStageId.value = deal.stage_id;
+  didDrag.value = true;
+  event.dataTransfer?.setData("text/plain", deal.id);
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+}
+
+function onDealDragOver(stageId: string, event: DragEvent) {
+  if (!draggedDealId.value) return;
+  event.preventDefault();
+  dragOverStageId.value = stageId;
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+}
+
+function onDealDragLeave(stageId: string, event: DragEvent) {
+  const nextTarget = event.relatedTarget as Node | null;
+  if (nextTarget && (event.currentTarget as HTMLElement).contains(nextTarget)) return;
+  if (dragOverStageId.value === stageId) dragOverStageId.value = "";
+}
+
+function onDealDrop(stageId: string, event: DragEvent) {
+  event.preventDefault();
+  const dealId = event.dataTransfer?.getData("text/plain") || draggedDealId.value;
+  const deal = crmStore.deals.value.find((item) => item.id === dealId);
+  if (deal && deal.stage_id !== stageId) void crmStore.moveDeal(deal, stageId);
+  dragOverStageId.value = "";
+  draggedDealId.value = "";
+}
+
+function onDealDragEnd() {
+  dragOverStageId.value = "";
+  draggedDealId.value = "";
+  window.setTimeout(() => {
+    didDrag.value = false;
+  }, 0);
+}
+
 async function createDealFromModal() {
   await crmStore.createDeal();
   showCreateDeal.value = false;
 }
+
+onMounted(async () => {
+  const saved = localStorage.getItem("cmr_deals_view");
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved) as { filters?: typeof filters.value; mode?: typeof mode.value };
+      if (parsed.filters) filters.value = parsed.filters;
+      if (parsed.mode) mode.value = parsed.mode;
+      viewSaved.value = true;
+    } catch { localStorage.removeItem("cmr_deals_view"); }
+  }
+  await Promise.allSettled([crmStore.refreshKnowledge(), crmStore.refreshActivities()]);
+});
+
+watch(selectedDeal, () => {
+  showMoreMenu.value = false;
+  showNextActionMenu.value = false;
+  showAllTimeline.value = false;
+  showAllFiles.value = false;
+});
 
 watch(
   [() => route.query.deal, () => route.query.create, () => crmStore.deals.value.length],
@@ -245,11 +356,16 @@ watch(
     </section>
 
     <section class="deals-filter-bar">
-      <div>
-        <span>Filters</span>
-        <button v-for="label in filterLabels" :key="label" class="filter-chip" type="button">{{ label }} ▼</button>
+      <div class="deal-filter-controls">
+        <span class="filter-label">Filters</span>
+        <select v-model="filters.stage" class="filter-chip"><option value="">All stages</option><option v-for="stage in crmStore.allStages.value" :key="stage.id" :value="stage.id">{{ stage.name }}</option></select>
+        <select v-model="filters.owner" class="filter-chip"><option value="">All owners</option><option v-for="ownerId in ownerIds" :key="ownerId" :value="ownerId">{{ ownerId.slice(0, 8) }}</option></select>
+        <select v-model="filters.company" class="filter-chip"><option value="">All companies</option><option v-for="company in crmStore.companies.value" :key="company.id" :value="company.id">{{ company.name }}</option></select>
+        <label class="filter-chip numeric-filter">Amount ≥<input v-model.number="filters.minAmount" type="number" min="0" /></label>
+        <select v-model="filters.risk" class="filter-chip"><option value="">All tags</option><option value="high">High risk</option><option value="medium">Medium risk</option><option value="low">Low risk</option></select>
+        <label class="filter-chip numeric-filter">AI ≥<input v-model.number="filters.minScore" type="number" min="0" max="100" /></label>
       </div>
-      <button class="secondary" type="button">Save View</button>
+      <button class="secondary save-view-button" type="button" @click="saveView">{{ viewSaved ? "View Saved" : "Save View" }}</button>
     </section>
 
     <div class="deals-view-row">
@@ -265,7 +381,15 @@ watch(
     </div>
 
     <div v-if="mode === 'kanban'" class="kanban deals-kanban">
-      <section v-for="column in columns" :key="column.stage.id" class="kanban-column deal-stage">
+      <section
+        v-for="column in columns"
+        :key="column.stage.id"
+        class="kanban-column deal-stage"
+        :class="{ 'drag-over': dragOverStageId === column.stage.id && draggedDealId }"
+        @dragover="onDealDragOver(column.stage.id, $event)"
+        @dragleave="onDealDragLeave(column.stage.id, $event)"
+        @drop="onDealDrop(column.stage.id, $event)"
+      >
         <header>
           <div>
             <strong>{{ column.stage.name }}</strong>
@@ -276,8 +400,11 @@ watch(
           v-for="deal in column.deals"
           :key="deal.id"
           class="deal-card rich-deal-card"
-          :class="scoreTone(deal)"
-          @click="selectedDeal = deal"
+          :class="[scoreTone(deal), { dragging: draggedDealId === deal.id }]"
+          draggable="true"
+          @click="openDeal(deal)"
+          @dragstart="onDealDragStart(deal, $event)"
+          @dragend="onDealDragEnd"
         >
           <div class="deal-card-topline">
             <div>
@@ -356,9 +483,12 @@ watch(
             </div>
           </div>
           <div class="deal-window-actions">
-            <button class="secondary icon-button" type="button" title="Link">↗</button>
-            <button class="secondary icon-button" type="button" title="Copy">⧉</button>
-            <button class="secondary icon-button" type="button" title="More">•••</button>
+            <button class="secondary icon-button" type="button" title="Link" @click="copyDealLink">↗</button>
+            <button class="secondary icon-button" type="button" title="Copy" @click="copyDealSummary">⧉</button>
+            <div class="deal-more-wrap">
+              <button class="secondary icon-button" type="button" title="More" @click="showMoreMenu = !showMoreMenu">•••</button>
+              <section v-if="showMoreMenu" class="deal-more-menu"><button type="button" @click="openSelectedCompany">Open company</button><button type="button" @click="crmStore.createNote('deal', selectedDeal.id); showMoreMenu = false">Add note</button><button type="button" @click="completeSelectedNextAction(); showMoreMenu = false">Complete next action</button></section>
+            </div>
             <button class="secondary icon-button" type="button" title="Close" @click="selectedDeal = null">×</button>
           </div>
         </header>
@@ -415,10 +545,13 @@ watch(
           </div>
           <button
             type="button"
-            :disabled="!crmStore.nextActions.value.some((item) => item.deal_id === selectedDeal?.id && item.status === 'open')"
+            :disabled="!crmStore.nextActions.value.some((item) => item.deal_id === selectedDeal?.id && item.status === 'open') && !openTasks(selectedDeal).length"
             @click="completeSelectedNextAction"
           >Complete</button>
-          <button class="secondary icon-button" type="button" title="More">⌄</button>
+          <div class="deal-more-wrap">
+            <button class="secondary icon-button" type="button" title="More" @click="showNextActionMenu = !showNextActionMenu">⌄</button>
+            <section v-if="showNextActionMenu" class="deal-more-menu"><button type="button" @click="crmStore.createNote('deal', selectedDeal.id); showNextActionMenu = false">Add note</button><button type="button" @click="openSelectedCompany">Open company</button><button type="button" @click="completeSelectedNextAction(); showNextActionMenu = false">Complete</button></section>
+          </div>
         </section>
 
         <dl class="deal-context-strip">
@@ -449,10 +582,10 @@ watch(
         <section class="deal-section-card">
           <header>
             <h3>Timeline</h3>
-            <button class="secondary text-button" type="button">View all</button>
+            <button class="secondary text-button" type="button" @click="showAllTimeline = !showAllTimeline">{{ showAllTimeline ? "Collapse" : "View all" }}</button>
           </header>
           <ol class="deal-timeline">
-            <li v-for="item in timelineItems(selectedDeal)" :key="item.id" :class="item.tone">
+            <li v-for="item in (showAllTimeline ? timelineItems(selectedDeal) : timelineItems(selectedDeal).slice(0, 5))" :key="item.id" :class="item.tone">
               <span></span>
               <div>
                 <strong>{{ item.title }}</strong>
@@ -479,10 +612,10 @@ watch(
           <article class="deal-section-card">
             <header>
               <h3>Files</h3>
-              <button class="secondary text-button" type="button">View all</button>
+              <button class="secondary text-button" type="button" @click="showAllFiles = !showAllFiles">{{ showAllFiles ? "Collapse" : "View all" }}</button>
             </header>
             <div v-if="documentsForDeal(selectedDeal).length" class="file-list">
-              <div v-for="document in documentsForDeal(selectedDeal).slice(0, 2)" :key="document.id">
+              <div v-for="document in (showAllFiles ? documentsForDeal(selectedDeal) : documentsForDeal(selectedDeal).slice(0, 2))" :key="document.id">
                 <span>▣</span>
                 <div>
                   <strong>{{ document.title }}</strong>

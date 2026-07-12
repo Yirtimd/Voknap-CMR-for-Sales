@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import CompanyDrawer from "../components/crm/CompanyDrawer.vue";
 import { crmStore } from "../stores/crm";
@@ -12,6 +12,7 @@ const selectedCompany = ref<Company | null>(null);
 const showCreateCompany = ref(false);
 const companyNameInput = ref<HTMLInputElement | null>(null);
 const route = useRoute();
+const router = useRouter();
 
 onMounted(() => {
   void crmStore.refreshAll();
@@ -22,6 +23,21 @@ watch(
   (value) => { if (value === "1") openCreateCompany(); },
   { immediate: true }
 );
+
+watch(
+  [() => route.query.company, () => crmStore.companies.value.length],
+  ([companyId]) => {
+    if (typeof companyId !== "string" || selectedCompany.value?.id === companyId) return;
+    const company = crmStore.companies.value.find((item) => item.id === companyId);
+    if (company) void openCompany(company);
+  },
+  { immediate: true }
+);
+
+function closeCompany() {
+  selectedCompany.value = null;
+  if (route.query.company) void router.replace("/companies");
+}
 
 function openCreateCompany() {
   showCreateCompany.value = true;
@@ -185,7 +201,7 @@ const averageHealth = computed(() => {
       </section>
     </div>
 
-    <CompanyDrawer :company="selectedCompany" @close="selectedCompany = null" />
+    <CompanyDrawer :company="selectedCompany" :initial-tab="typeof route.query.tab === 'string' ? route.query.tab : undefined" @close="closeCompany" />
   </section>
 </template>
 

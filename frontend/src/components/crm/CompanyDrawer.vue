@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 
 import { api, emptyToNull, post } from "../../api";
 import type { Activity, CommunicationEvent, Company, CompanyFile, KnowledgeDocument, NextAction, Task } from "../../types";
 import { crmStore } from "../../stores/crm";
 
-const props = defineProps<{ company: Company | null }>();
+const props = defineProps<{ company: Company | null; initialTab?: string }>();
 const emit = defineEmits<{ close: [] }>();
 const isSaving = ref(false);
 const isNextActionEditorOpen = ref(false);
@@ -15,6 +15,26 @@ const callForm = ref({ subject: "Звонок клиенту", body: "", phone: 
 const emailForm = ref({ subject: "Follow-up", body: "", recipient: "" });
 const meetingActionForm = ref({ subject: "Встреча с клиентом", body: "", occurred_at: "" });
 const drawerTaskForm = ref({ title: "Follow-up", description: "", due_at: "", priority: "high" });
+const activeTab = ref("overview");
+const tabs = [
+  { code: "overview", label: "Overview" },
+  { code: "timeline", label: "Timeline" },
+  { code: "contacts", label: "Contacts" },
+  { code: "deals", label: "Deals" },
+  { code: "tasks", label: "Tasks" },
+  { code: "files", label: "Files" },
+  { code: "knowledge", label: "Knowledge" },
+  { code: "history", label: "History" }
+];
+
+watch(
+  () => [props.company?.id, props.initialTab],
+  ([companyId, tab]) => {
+    if (!companyId) return;
+    activeTab.value = typeof tab === "string" && tabs.some((item) => item.code === tab) ? tab : "overview";
+  },
+  { immediate: true }
+);
 
 const workspace = computed(() =>
   props.company && crmStore.companyWorkspace.value?.company.id === props.company.id
@@ -32,6 +52,29 @@ const openTasks = computed(() => tasks.value.filter((task) => !task.done_at));
 const currentDeal = computed(() => deals.value[0]);
 const stages = computed(() => crmStore.allStages.value);
 const currentStage = computed(() => stages.value.find((stage) => stage.id === currentDeal.value?.stage_id));
+const fallbackStages = computed(() => currentStage.value ? [currentStage.value] : []);
+const dealStageRows = computed(() =>
+  deals.value.length
+    ? deals.value.map((deal) => ({
+        deal,
+        stages: stages.value.length ? stages.value : fallbackStages.value,
+        activeIndex: Math.max(0, (stages.value.length ? stages.value : fallbackStages.value).findIndex((stage) => stage.id === deal.stage_id))
+      }))
+    : []
+);
+const compactDealRows = computed(() =>
+  dealStageRows.value.slice(0, 4).map((row) => {
+    const stageCount = Math.max(1, row.stages.length);
+    const activeStage = row.stages[row.activeIndex];
+    const nextStage = row.stages[row.activeIndex + 1];
+    return {
+      ...row,
+      activeStageName: activeStage?.name ?? "Stage",
+      nextStageName: nextStage?.name ?? "Final",
+      progress: Math.round(((row.activeIndex + 1) / stageCount) * 100)
+    };
+  })
+);
 const health = computed(() => workspace.value?.health.score ?? Math.min(98, 70 + contacts.value.length * 4 + deals.value.length * 6));
 const healthTrend = computed(() => (workspace.value?.health.trend === "down" ? "↘" : workspace.value?.health.trend === "flat" ? "→" : "↗"));
 const healthLabel = computed(() => workspace.value?.health.label ?? "Хороший");
@@ -83,6 +126,13 @@ const copilotRecommendations = computed(() => {
   ];
 });
 const pendingCopilotActions = computed(() => (copilot.value?.actions ?? []).filter((action) => action.status === "pending"));
+const historyRows = computed(() =>
+  activities.value
+    .filter((activity) => Array.isArray(activity.metadata?.changes))
+    .flatMap((activity) =>
+      (activity.metadata.changes as Array<{ field: string; old: unknown; new: unknown }>).map((change) => ({ activity, change }))
+    )
+);
 
 const timelineRows = computed(() => {
   const fallback = [
@@ -284,6 +334,25 @@ function saveDrawerTask() {
   });
 }
 
+function toggleDrawerTask(task: Task) {
+  void runDrawerAction(async () => {
+    await api<Task>(
+      `/sales/tasks/${task.id}/done`,
+      post({ is_done: !task.done_at }, "PATCH"),
+      crmStore.token.value,
+      crmStore.tenantId.value
+    );
+  });
+}
+
+function askCompanyKnowledge() {
+  if (!props.company) return;
+  void crmStore.askKnowledge({
+    company_id: props.company.id,
+    deal_id: currentDeal.value?.id ?? ""
+  });
+}
+
 function addProposalFile() {
   if (!props.company) return;
   void runDrawerAction(async () => {
@@ -383,37 +452,113 @@ function saveNextAction() {
 <template>
   <div v-if="company" class="workspace-modal-backdrop" @click.self="close">
     <section v-if="workspace" class="reference-workspace" role="dialog" aria-modal="true">
-      <header class="reference-head">
-        <div class="reference-company">
-          <p class="ref-overline">Компания</p>
-          <div class="ref-title-line">
+      <header class="deal-modal-head">
+        <div>
+          <p class="deal-modal-label">Company</p>
+          <div class="deal-title-row">
             <h1>{{ workspace.company.name }}</h1>
-            <span class="ref-chip">{{ companyType }}</span>
-            <span class="ref-chip success">{{ workspace.company.status_label ?? workspace.company.status }}</span>
+            <button type="button" class="deal-inline-icon">☆</button>
+            <button type="button" class="deal-inline-icon" :disabled="isSaving" @click="logNote">...</button>
           </div>
-          <p class="ref-subline">{{ displayIndustry }} <span></span> Клиент с {{ formatDate(clientSince) }}</p>
-          <div class="ref-actions">
-            <button type="button" class="ref-primary-action" :disabled="isSaving" @click="openDrawerAction('call')"><span class="ui-icon phone"></span>Позвонить</button>
-            <button type="button" class="ref-action" :disabled="isSaving" @click="openDrawerAction('email')"><span class="ui-icon mail"></span>Generate Email</button>
-            <button type="button" class="ref-action" :disabled="isSaving" @click="openDrawerAction('meeting')"><span class="ui-icon calendar"></span>Встреча</button>
-            <button type="button" class="ref-action" :disabled="isSaving" @click="openDrawerAction('task')"><span class="ui-icon task"></span>Задача</button>
-            <RouterLink class="ref-action" :to="{ path: `/companies/${company.id}`, query: { tab: 'knowledge' } }"><span class="ui-icon file"></span>Knowledge</RouterLink>
-            <button type="button" class="ref-action icon-only" :disabled="isSaving" @click="logNote">...</button>
-          </div>
+          <p class="deal-subtitle"><span class="ui-icon building"></span>{{ currentDeal?.title ?? "Активная сделка" }} <span>•</span> {{ crmStore.money(pipeline || currentDeal?.amount || 0) }}</p>
         </div>
 
-        <dl class="reference-kpis">
-          <div><dt>Health</dt><dd>{{ health }} <span>{{ healthTrend }}</span></dd><small>{{ healthLabel }}</small></div>
-          <div><dt>Revenue</dt><dd>{{ crmStore.money(pipeline || 50000) }}</dd></div>
-          <div><dt>Open Tasks</dt><dd>{{ openTasks.length || 2 }}</dd></div>
-          <div><dt>Owner</dt><dd class="owner-kpi"><span class="avatar-mini">{{ ownerInitials }}</span> {{ ownerName }}</dd></div>
-        </dl>
-
-        <div class="reference-window-actions">
-          <button type="button" class="plain-icon">⋮</button>
-          <button type="button" class="plain-icon close-x" @click="close">×</button>
+        <div class="deal-window-actions">
+          <button type="button" class="ref-action icon-only" :disabled="isSaving" @click="logNote">...</button>
+          <button type="button" class="ref-action" @click="openDrawerAction('task')">Edit</button>
+          <button type="button" class="ref-action" @click="close">Close <span>×</span></button>
         </div>
       </header>
+
+      <section class="deal-modal-top">
+        <section class="deal-probability-card">
+          <p class="deal-card-label">AI Probability</p>
+          <div class="deal-probability-line">
+            <strong>{{ dealProbability ?? health }}%</strong>
+            <span>↑ {{ workspace.health.success_chance_delta ?? 12 }}%</span>
+          </div>
+          <div class="deal-probability-bar"><span :style="{ width: `${dealProbability ?? health}%` }"></span></div>
+          <small><span class="chance-dot"></span>{{ healthLabel }} chance</small>
+        </section>
+
+        <section class="deal-mini-card">
+          <p>Amount</p>
+          <strong>{{ crmStore.money(currentDeal?.amount ?? pipeline) }}</strong>
+          <small>Expected close</small>
+          <b><span class="ui-icon calendar"></span>{{ formatDate(currentDeal?.expected_close_date ?? currentDeal?.created_at ?? clientSince) }}</b>
+        </section>
+
+        <section class="deal-mini-card">
+          <p>Stage</p>
+          <strong>{{ currentStage?.name ?? "Proposal" }}</strong>
+          <span class="deal-status-pill">{{ currentDeal?.status ?? "Open" }}</span>
+        </section>
+
+        <section class="deal-mini-card">
+          <p>Owner</p>
+          <div class="deal-owner-row"><span class="avatar-mini">{{ ownerInitials }}</span><strong>{{ ownerName }}</strong></div>
+          <small>Sales</small>
+        </section>
+
+        <section class="deal-mini-card">
+          <p>Last activity</p>
+          <strong>{{ lastContactAt }}</strong>
+          <small><span class="green-dot"></span>{{ channelSummary }}</small>
+        </section>
+
+        <aside class="deal-next-card">
+          <p class="deal-card-label">Next action</p>
+          <div>
+            <span class="next-calendar">□</span>
+            <div>
+              <strong>{{ nextAction }}</strong>
+              <small>{{ formatDate(nextActionRecord?.due_at ?? clientSince) }}</small>
+            </div>
+          </div>
+          <footer>
+            <button type="button" :disabled="isSaving" @click="completeNextAction">✓ Mark as done</button>
+            <button type="button" class="secondary" @click="openNextActionEditor"><span class="ui-icon calendar"></span>Reschedule</button>
+          </footer>
+        </aside>
+
+        <section class="deal-stage-card compact-deals-progress">
+          <header>
+            <div>
+              <p class="deal-card-label">Deals progress</p>
+              <strong>{{ deals.length }} {{ deals.length === 1 ? "deal" : "deals" }}</strong>
+            </div>
+            <button type="button" @click="activeTab = 'deals'">View all</button>
+          </header>
+          <article v-for="row in compactDealRows.slice(0, 1)" :key="row.deal.id" class="compact-deal-progress-row">
+            <header>
+              <div>
+                <strong>{{ row.deal.title }}</strong>
+                <small>{{ row.activeStageName }} → {{ row.nextStageName }}</small>
+              </div>
+              <small>{{ crmStore.money(row.deal.amount) }}</small>
+            </header>
+            <div class="compact-deal-progress-meta">
+              <span class="deal-status-pill">{{ row.activeStageName }}</span>
+              <span>{{ row.progress }}%</span>
+            </div>
+            <div class="compact-deal-progress-line"><span :style="{ width: `${row.progress}%` }"></span></div>
+          </article>
+          <button v-if="deals.length > 1" type="button" class="more-deals-row" @click="activeTab = 'deals'">
+            + {{ deals.length - 1 }} more {{ deals.length - 1 === 1 ? "deal" : "deals" }}
+            <span>Open deals</span>
+          </button>
+          <p v-if="!dealStageRows.length" class="empty">У компании пока нет сделок</p>
+        </section>
+
+        <aside class="deal-open-tasks-card">
+          <header><p class="deal-card-label">Open Tasks ({{ openTasks.length || 1 }})</p><button type="button" @click="activeTab = 'tasks'">View all</button></header>
+          <article>
+            <span class="task-circle"></span>
+            <div><strong>{{ openTasks[0]?.title ?? "Подготовить демонстрацию" }}</strong><small>{{ openTasks[0]?.due_at ? formatDate(openTasks[0].due_at) : "Jul 10" }} • {{ ownerName }}</small></div>
+            <span class="priority">Medium</span>
+          </article>
+        </aside>
+      </section>
 
       <section v-if="drawerActionMode" class="drawer-action-panel">
         <header><h2>{{ drawerActionMode === "call" ? "Call" : drawerActionMode === "email" ? "Email draft" : drawerActionMode === "meeting" ? "Meeting" : "Task" }}</h2><button class="secondary" type="button" @click="drawerActionMode = null">Close</button></header>
@@ -432,148 +577,117 @@ function saveNextAction() {
         </form>
       </section>
 
-      <main class="reference-body">
-        <section class="reference-main">
-          <div class="reference-top-grid">
-            <section class="ref-card next-focus">
-              <p class="ref-card-label"><span class="flame-dot"></span>Следующее действие</p>
-              <h2>{{ nextAction }}</h2>
-              <p>{{ lastContactAt }} после последнего контакта.</p>
-              <form v-if="isNextActionEditorOpen" class="next-action-editor" @submit.prevent="saveNextAction">
-                <label>Действие<input v-model="nextActionForm.title" required minlength="2" /></label>
-                <label>Описание<textarea v-model="nextActionForm.description" rows="2"></textarea></label>
-                <div>
-                  <label>Срок<input v-model="nextActionForm.due_at" type="datetime-local" /></label>
-                  <label>Приоритет
-                    <select v-model="nextActionForm.priority">
-                      <option value="low">Low</option>
-                      <option value="normal">Normal</option>
-                      <option value="high">High</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="button-row">
-                  <button type="submit" :disabled="isSaving">Сохранить</button>
-                  <button class="secondary" type="button" @click="isNextActionEditorOpen = false">Отмена</button>
-                </div>
-              </form>
-              <div v-else class="button-row next-action-buttons">
-                <button v-if="nextActionRecord" type="button" class="call-split" :disabled="isSaving" @click="completeNextAction"><span class="ui-icon check"></span>Выполнено</button>
-                <button type="button" class="ref-action" :disabled="isSaving" @click="openNextActionEditor">{{ nextActionRecord ? "Заменить" : "Создать действие" }}</button>
-              </div>
-            </section>
+      <nav class="reference-tabs" aria-label="Company workspace sections">
+        <button v-for="tab in tabs" :key="tab.code" type="button" :class="{ active: activeTab === tab.code }" @click="activeTab = tab.code">{{ tab.label }}</button>
+      </nav>
 
-            <section class="ref-card deal-focus-card">
-              <div class="ref-card-head">
-                <div>
-                  <p class="ref-card-label">Текущая сделка</p>
-                  <h2>{{ currentDeal?.title ?? "Активная сделка" }}</h2>
-                </div>
-                <RouterLink
-                  class="ref-action"
-                  :to="currentDeal ? { path: '/deals', query: { deal: currentDeal.id, from: 'company' } } : '/deals'"
-                >
-                  Открыть сделку
-                </RouterLink>
-              </div>
-              <div class="pipeline-path">
-                <span class="done">Лид</span>
-                <span class="done">Квал.</span>
-                <span class="done">Встреча</span>
-                <span class="active">{{ currentStage?.name ?? "КП" }}</span>
-                <span>Переговоры</span>
-                <span>Договор</span>
-                <span>Выиграно</span>
-              </div>
-              <div class="deal-stat-grid">
-                <div><span>Стадия</span><strong>{{ currentStage?.name ?? "КП" }}</strong></div>
-                <div><span>Вероятность</span><strong>{{ dealProbability ?? 50 }}%</strong></div>
-                <div><span>Сумма</span><strong>{{ crmStore.money(currentDeal?.amount ?? 50000) }}</strong></div>
-              </div>
-              <footer class="deal-footer">
-                <span><span class="ui-icon calendar"></span>Следующий шаг: <strong>{{ nextAction }}</strong></span>
-                <span>{{ expectedNextEvent }}</span>
-              </footer>
-            </section>
-          </div>
-
-          <section class="ref-card history-card">
-            <div class="ref-card-head">
-              <p class="ref-card-label">История взаимодействий</p>
-              <button type="button" class="ref-action">Все активности⌄</button>
-            </div>
-            <article v-for="row in timelineRows" :key="row.id" class="history-row">
-              <time>{{ row.when }}</time>
-              <span class="history-node"></span>
-              <span class="ui-icon" :class="row.icon"></span>
-              <div>
-                <strong>{{ row.title }}</strong>
-                <small>{{ row.by }}</small>
-              </div>
-            </article>
-          </section>
-
-          <section class="ref-card fact-strip">
-            <div><span>Последний контакт</span><strong class="danger-text">{{ lastContactAt }}</strong><small>{{ lastContactPerson }}</small></div>
-            <div><span>Возраст сделки</span><strong>{{ currentDealAge }}</strong><small>с {{ formatDate(currentDeal?.created_at ?? clientSince) }}</small></div>
-            <div><span>Канал</span><strong>{{ channelSummary }}</strong><small>{{ activities.length }} активности</small></div>
-            <div><span>Источник</span><strong>{{ source }}</strong><small>Лид / компания</small></div>
-            <div><span>Индустрия</span><strong>{{ displayIndustry }}</strong><small>{{ companyType }}</small></div>
-          </section>
+      <main v-if="activeTab === 'overview'" class="deal-overview-grid">
+        <section class="deal-section-card deal-details-card">
+          <h2>Deal Details</h2>
+          <dl>
+            <div><dt>Type</dt><dd>New Business</dd></div>
+            <div><dt>Source</dt><dd>{{ source }}</dd></div>
+            <div><dt>Pipeline</dt><dd>Sales Pipeline</dd></div>
+            <div><dt>Tags</dt><dd><span class="detail-tag">CRM</span><span class="detail-tag">{{ companyType }}</span><span class="detail-tag">+1</span></dd></div>
+            <div><dt>Products</dt><dd>CRM Platform</dd></div>
+            <div><dt>Discount</dt><dd>10%</dd></div>
+            <div><dt>Forecast category</dt><dd>Commit</dd></div>
+            <div><dt>Probability (manual)</dt><dd>{{ dealProbability ?? 60 }}%</dd></div>
+          </dl>
         </section>
 
-        <aside class="reference-side">
-          <section class="ref-card compact-side">
-            <p class="ref-card-label sparkle">AI рекомендации</p>
-            <article v-if="copilot" class="side-recommendation info"><span class="round-icon">i</span><div><strong>AI Summary</strong><small>{{ copilot.summary }}</small></div><span>›</span></article>
-            <article v-for="item in copilotRecommendations" :key="item.title" class="side-recommendation" :class="item.type ?? 'info'"><span class="round-icon">i</span><div><strong>{{ item.title }}</strong><small>{{ item.description }}</small></div><span>›</span></article>
-            <article v-if="!copilotRecommendations.length" class="side-recommendation info"><span class="round-icon">i</span><div><strong>Нет рекомендаций</strong><small>Данных пока недостаточно</small></div><span>›</span></article>
-            <article v-for="action in pendingCopilotActions" :key="action.id" class="side-recommendation info">
-              <span class="round-icon">AI</span>
-              <div>
-                <strong>{{ String(action.action_type).replace(/_/g, " ") }}</strong>
-                <small>{{ String(action.payload.title ?? action.payload.risk_level ?? "AI action") }}</small>
-                <div class="button-row">
-                  <button type="button" class="secondary" :disabled="isSaving" @click="confirmCopilotAction(action.id)">Confirm</button>
-                  <button type="button" class="secondary" :disabled="isSaving" @click="rejectCopilotAction(action.id)">Reject</button>
-                </div>
-              </div>
-              <span>›</span>
-            </article>
-            <article v-if="workspace.health.success_chance != null" class="side-recommendation success"><span class="round-icon">↗</span><div><strong>Шанс на успех</strong><small>{{ workspace.health.success_chance }}%</small></div><strong class="green-text">↑ {{ workspace.health.success_chance_delta ?? 0 }}%</strong></article>
-          </section>
+        <section class="deal-section-card ai-insight-card">
+          <h2>AI Insights</h2>
+          <article>
+            <p class="insight-title">✦ Рекомендация</p>
+            <p>{{ copilot?.next_best_action ?? "Проведите встречу с директором на этой неделе. Это повысит вероятность закрытия на 18%." }}</p>
+            <hr />
+            <p class="insight-subtitle">Что влияет на сделку</p>
+            <ul>
+              <li>Клиент активно отвечает на письма</li>
+              <li>Бюджет подтвержден, решение централизованное</li>
+            </ul>
+            <button type="button">See details⌄</button>
+          </article>
+        </section>
 
-          <section class="ref-card compact-side">
-            <div class="side-head"><p class="ref-card-label">Контакты ({{ contacts.length || 2 }})</p><button type="button">+ Добавить</button></div>
-            <article v-for="contact in contacts.slice(0, 2)" :key="contact.id" class="contact-line">
-              <span class="contact-avatar">{{ contact.name.slice(0, 2).toUpperCase() }}</span>
-              <div><strong>{{ contact.name }}</strong><small>{{ contact.role ?? contact.company_name ?? "Менеджер" }}</small></div>
-              <span v-if="contact.actions?.call" class="mini-action">⌕</span><span v-if="contact.actions?.email" class="mini-action">✉</span><span v-if="contact.actions?.more" class="mini-action">...</span>
-            </article>
-            <article v-if="!contacts.length" class="contact-line">
-              <span class="contact-avatar">ИИ</span><div><strong>Иван Иванов</strong><small>CEO</small></div><span class="mini-action">⌕</span><span class="mini-action">✉</span><span class="mini-action">...</span>
-            </article>
-            <article v-if="contacts.length < 2" class="contact-line">
-              <span class="contact-avatar blue">АП</span><div><strong>Алексей Петров</strong><small>Менеджер</small></div><span class="mini-action">⌕</span><span class="mini-action">✉</span><span class="mini-action">...</span>
-            </article>
-          </section>
+        <section class="deal-section-card stakeholders-card">
+          <header><h2>People & Stakeholders</h2><button type="button">View all</button></header>
+          <article v-for="contact in contacts.slice(0, 3)" :key="contact.id">
+            <span class="stakeholder-avatar">{{ contact.name.slice(0, 2).toUpperCase() }}</span>
+            <div><strong>{{ contact.name }}</strong><small>{{ contact.role ?? contact.company_name ?? "Контакт" }}</small></div>
+            <em>{{ contact.role ?? "User" }}</em>
+          </article>
+          <article v-if="!contacts.length"><span class="stakeholder-avatar">АК</span><div><strong>Алексей Кузнецов</strong><small>Директор по IT</small></div><em>Decision Maker</em></article>
+          <article v-if="contacts.length < 2"><span class="stakeholder-avatar">ЕЕ</span><div><strong>Елена Иванова</strong><small>Руководитель отдела продаж</small></div><em class="warn">Influencer</em></article>
+          <article v-if="contacts.length < 3"><span class="stakeholder-avatar">SS</span><div><strong>Сергей Смирнов</strong><small>IT-специалист</small></div><em class="muted">User</em></article>
+        </section>
 
-          <section class="ref-card compact-side">
-            <div class="side-head"><p class="ref-card-label">Задачи ({{ openTasks.length || 1 }})</p><button type="button" :disabled="isSaving" @click="addQuickTask">+ Добавить</button></div>
-            <article class="task-line">
-              <span class="task-circle"></span>
-              <div><strong>{{ nextAction }}</strong><small>Сегодня</small></div>
-              <span class="priority">High</span>
-            </article>
-          </section>
+        <section class="deal-section-card notes-card">
+          <header><h2>Notes & Activity</h2><button type="button" @click="activeTab = 'timeline'">View all</button></header>
+          <input placeholder="Add note..." />
+          <article v-for="row in timelineRows.slice(0, 3)" :key="row.id">
+            <span class="activity-dot"></span>
+            <div><strong>{{ row.title }}</strong><small>{{ row.by }} • {{ String(row.when).split('\n')[0] }}</small></div>
+          </article>
+        </section>
 
-          <section class="ref-card compact-side">
-            <div class="side-head"><p class="ref-card-label">Файлы ({{ files.length }})</p><button type="button" :disabled="isSaving" @click="addProposalFile">+ Добавить</button></div>
-            <article v-for="file in files.slice(0, 3)" :key="file.id" class="file-line"><span class="file-badge pdf">{{ file.file_type ?? "FILE" }}</span><div><strong>{{ file.name }}</strong><small>{{ file.file_type ?? "FILE" }} · {{ formatFileSize(file.file_size) }}</small></div><small>{{ relativeDate(file.uploaded_at) }}</small><span>⇩</span></article>
-            <article v-for="document in knowledgeDocuments.slice(0, 2)" :key="document.id" class="file-line"><span class="file-badge pdf">RAG</span><div><strong>{{ document.title }}</strong><small>{{ document.visibility }} · {{ document.chunks_count }} chunks</small></div><small>{{ relativeDate(document.created_at) }}</small><span>⌕</span></article>
-            <article v-if="!files.length" class="file-line"><span class="file-badge pdf">--</span><div><strong>Файлов нет</strong><small>Загрузки пока не добавлены</small></div><small></small><span></span></article>
-          </section>
-        </aside>
+        <section class="deal-section-card risks-card">
+          <header><h2>Risks & Blockers</h2><button type="button">View all</button></header>
+          <article><span class="risk-icon high">△</span><div><strong>Нет встречи с директором</strong><small>Ключевое лицо не вовлечено в процесс</small></div><em>High</em></article>
+          <article><span class="risk-icon medium">△</span><div><strong>Конкурент предложил демо</strong><small>Возможна потеря интереса клиента</small></div><em class="medium">Medium</em></article>
+          <article><span class="risk-icon low">i</span><div><strong>Ожидаем внутреннее согласование</strong><small>Может повлиять на дату закрытия</small></div><em class="low">Low</em></article>
+        </section>
+
+        <section class="deal-section-card documents-card">
+          <header><h2>Files & Documents</h2><button type="button" @click="activeTab = 'files'">View all</button></header>
+          <article v-for="file in files.slice(0, 3)" :key="file.id"><span class="doc-icon">▧</span><div><strong>{{ file.name }}</strong><small>{{ relativeDate(file.uploaded_at) }} • {{ formatFileSize(file.file_size) }}</small></div><span>⇩</span></article>
+          <article v-for="document in knowledgeDocuments.slice(0, 2)" :key="document.id"><span class="doc-icon">▧</span><div><strong>{{ document.title }}</strong><small>{{ document.visibility }} • {{ document.chunks_count }} chunks</small></div><span>⇩</span></article>
+          <article v-if="!files.length && !knowledgeDocuments.length"><span class="doc-icon">▧</span><div><strong>Коммерческое предложение.pdf</strong><small>Jul 07 • {{ ownerName }}</small></div><span>⇩</span></article>
+          <article v-if="!files.length && !knowledgeDocuments.length"><span class="doc-icon">▧</span><div><strong>Презентация CRM.pdf</strong><small>Jul 05 • {{ ownerName }}</small></div><span>⇩</span></article>
+        </section>
+      </main>
+
+      <main v-else class="reference-tab-body">
+        <section v-if="activeTab === 'timeline'" class="ref-card tab-panel">
+          <h2>Timeline</h2>
+          <article v-for="row in timelineRows" :key="row.id" class="history-row"><time>{{ row.when }}</time><span class="history-node"></span><span class="ui-icon" :class="row.icon"></span><div><strong>{{ row.title }}</strong><small>{{ row.by }}</small></div></article>
+        </section>
+
+        <section v-else-if="activeTab === 'contacts'" class="ref-card tab-panel">
+          <h2>Contacts</h2>
+          <article v-for="contact in contacts" :key="contact.id" class="entity-row"><div><strong>{{ contact.name }}</strong><small>{{ contact.role ?? "Contact" }} · {{ contact.email ?? "no email" }} · {{ contact.phone ?? "no phone" }}</small></div></article>
+          <p v-if="!contacts.length" class="empty">No contacts</p>
+        </section>
+
+        <section v-else-if="activeTab === 'deals'" class="ref-card tab-panel">
+          <h2>Deals</h2>
+          <RouterLink v-for="deal in deals" :key="deal.id" class="entity-row drawer-row-link" :to="{ path: '/deals', query: { deal: deal.id } }"><div><strong>{{ deal.title }}</strong><small>{{ stages.find((stage) => stage.id === deal.stage_id)?.name ?? "Stage" }} · {{ deal.status }}</small></div><b>{{ crmStore.money(deal.amount) }}</b></RouterLink>
+          <p v-if="!deals.length" class="empty">No deals</p>
+        </section>
+
+        <section v-else-if="activeTab === 'tasks'" class="ref-card tab-panel">
+          <h2>Tasks</h2>
+          <article v-for="task in tasks" :key="task.id" class="entity-row"><div><strong>{{ task.title }}</strong><small>{{ task.priority }} · {{ task.due_at ? new Date(task.due_at).toLocaleString('ru-RU') : "no due date" }}</small></div><button class="secondary" type="button" @click="toggleDrawerTask(task)">{{ task.done_at ? "Reopen" : "Done" }}</button></article>
+          <p v-if="!tasks.length" class="empty">No tasks</p>
+        </section>
+
+        <section v-else-if="activeTab === 'files'" class="ref-card tab-panel">
+          <h2>Files</h2>
+          <article v-for="file in files" :key="file.id" class="entity-row"><div><strong>{{ file.name }}</strong><small>{{ file.file_type ?? "file" }} · {{ formatFileSize(file.file_size) }}</small></div><a v-if="file.download_url" class="button-link secondary-link" :href="file.download_url">Open</a></article>
+          <p v-if="!files.length" class="empty">No files</p>
+        </section>
+
+        <section v-else-if="activeTab === 'knowledge'" class="reference-knowledge-grid">
+          <section class="ref-card tab-panel"><h2>Company Knowledge</h2><p class="hint">Scope: {{ workspace.company.name }}{{ currentDeal ? ` · ${currentDeal.title}` : "" }}</p><article v-for="document in knowledgeDocuments" :key="document.id" class="entity-row"><div><strong>{{ document.title }}</strong><small>{{ document.visibility }} · {{ document.chunks_count }} chunks</small></div></article><p v-if="!knowledgeDocuments.length" class="empty">No company documents</p></section>
+          <section class="ref-card tab-panel"><h2>Ask Knowledge</h2><label>Question<textarea v-model="crmStore.knowledgeAskForm.value.question" rows="4"></textarea></label><button type="button" @click="askCompanyKnowledge">Ask company knowledge</button><p v-if="crmStore.knowledgeAnswer.value" class="answer-text">{{ crmStore.knowledgeAnswer.value.answer }}</p><article v-for="citation in crmStore.knowledgeAnswer.value?.citations ?? []" :key="citation.chunk_id" class="citation-row"><strong>{{ citation.document_title }}</strong><small>{{ citation.document_scope }}</small><p>{{ citation.text }}</p></article></section>
+        </section>
+
+        <section v-else class="ref-card tab-panel">
+          <h2>Change History</h2>
+          <article v-for="row in historyRows" :key="`${row.activity.id}-${row.change.field}`" class="history-change-row"><span>{{ row.change.field.replace(/_/g, " ") }}</span><div><strong>{{ row.change.old ?? "empty" }}</strong><small>changed to</small><strong>{{ row.change.new ?? "empty" }}</strong></div><small>{{ new Date(row.activity.created_at).toLocaleString("ru-RU") }}</small></article>
+          <p v-if="!historyRows.length" class="empty">No tracked changes</p>
+        </section>
       </main>
     </section>
 

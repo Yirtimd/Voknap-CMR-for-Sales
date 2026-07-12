@@ -2,7 +2,6 @@ import { createRouter, createWebHistory, type RouteLocationNormalized } from "vu
 
 import AppLayout from "../layouts/AppLayout.vue";
 import CompaniesPage from "../pages/CompaniesPage.vue";
-import CompanyWorkspacePage from "../pages/CompanyWorkspacePage.vue";
 import DealsPage from "../pages/DealsPage.vue";
 import HomePage from "../pages/HomePage.vue";
 import InboxPage from "../pages/InboxPage.vue";
@@ -26,7 +25,7 @@ export const router = createRouter({
         { path: "", redirect: "/home" },
         { path: "home", name: "home", component: HomePage, meta: { title: "Home", eyebrow: "Daily workspace" } },
         { path: "companies", name: "companies", component: CompaniesPage, meta: { title: "Companies", eyebrow: "Company-first CRM" } },
-        { path: "companies/:id", name: "company-workspace", component: CompanyWorkspacePage, meta: { title: "Company Card", eyebrow: "Workspace" } },
+        { path: "companies/:id", redirect: (to) => ({ path: "/companies", query: { company: String(to.params.id), ...(typeof to.query.tab === "string" ? { tab: to.query.tab } : {}) } }) },
         { path: "leads", name: "leads", component: LeadsPage, meta: { title: "Leads", eyebrow: "Demand pipeline" } },
         { path: "deals", name: "deals", component: DealsPage, meta: { title: "Deals", eyebrow: "Pipeline" } },
         { path: "tasks", name: "tasks", component: TasksPage, meta: { title: "Tasks", eyebrow: "Execution" } },
