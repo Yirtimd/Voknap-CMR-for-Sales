@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.modules.activity.service import ActivityService
 from app.modules.ai_agent.models import AgentAction, AgentMessage
 from app.modules.knowledge.service import KnowledgeService
-from app.modules.sales.models import Company, Contact, CustomerInsight, Deal, Lead, NextAction, Note, PipelineStage, Task
+from app.modules.sales.models import Company, Contact, CustomerInsight, Deal, Lead, NextAction, PipelineStage, Task
 
 
 class AgentService:
@@ -335,13 +335,25 @@ class AgentService:
         company_id: UUID | None = None,
         deal_id: UUID | None = None,
     ) -> tuple[str, list[dict]]:
+        if deal_id and not company_id:
+            deal = (
+                self.db.query(Deal)
+                .filter(Deal.tenant_id == tenant_id, Deal.id == deal_id)
+                .one_or_none()
+            )
+            company_id = deal.company_id if deal else None
+            if deal is None:
+                deal_id = None
+        scope = "deal" if company_id and deal_id else "company" if company_id else "global"
         answer, ranked_chunks = self.knowledge_service.answer(
             tenant_id,
             user_id,
             message,
             limit=5,
+            scope=scope,
             company_id=company_id,
             deal_id=deal_id,
+            include_global=False,
         )
         sources = [
             {

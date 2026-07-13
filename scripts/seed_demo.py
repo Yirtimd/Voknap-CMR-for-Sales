@@ -341,6 +341,8 @@ def create_knowledge(db: Session, tenant: Tenant, user: User) -> None:
         KnowledgeQuery(
             tenant_id=tenant.id,
             user_id=user.id,
+            scope="global",
+            include_global=False,
             question="Что делать после новой заявки?",
             answer="Создать компанию, контакт, сделку, next action и активность в timeline.",
         )
@@ -376,6 +378,9 @@ def add_knowledge_document(
         KnowledgeChunk(
             tenant_id=tenant.id,
             document_id=document.id,
+            scope=visibility,
+            company_id=company_id,
+            deal_id=deal_id,
             chunk_index=0,
             text=text,
             embedding_json=json.dumps(embedding),
@@ -559,7 +564,7 @@ def create_communication_events(db: Session, tenant: Tenant, user: User) -> None
                     occurred_at=now() + timedelta(days=shift),
                     subject=subject,
                     body=body,
-                    ai_summary=f"{channel.upper()}: {subject}. {body}",
+                    ai_summary=None,
                     metadata_json=json.dumps({"demo": True, "source": "seed_demo"}, ensure_ascii=False),
                     created_by=user.id,
                     created_at=now() + timedelta(days=shift),

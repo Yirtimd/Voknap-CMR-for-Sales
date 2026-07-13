@@ -48,7 +48,6 @@ class CommunicationEventResponse(BaseModel):
     occurred_at: datetime
     subject: str
     body: str | None
-    ai_summary: str | None
     metadata: dict
     created_by: UUID | None
     created_at: datetime

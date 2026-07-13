@@ -30,7 +30,7 @@ const confidence = computed(() => {
 const sourceSummary = computed(() => {
   const count = new Set((crmStore.knowledgeAnswer.value?.citations ?? []).map((item) => item.document_id)).size;
   if (!count) return "Ask a question to see how the answer was built.";
-  return `Answer built from ${count} company ${count === 1 ? "document" : "documents"}.`;
+  return `Answer built from ${count} general workspace ${count === 1 ? "document" : "documents"}.`;
 });
 
 function askSuggested(question: string) {
@@ -49,7 +49,7 @@ onMounted(() => {
 
 <template>
   <section class="brain-page">
-    <nav class="brain-tabs" aria-label="Company Brain sections">
+    <nav class="brain-tabs" aria-label="Workspace Knowledge sections">
       <button type="button" :class="{ active: activeTab === 'chat' }" @click="activeTab = 'chat'">Chat</button>
       <button type="button" :class="{ active: activeTab === 'documents' }" @click="activeTab = 'documents'">Documents</button>
       <button type="button" :class="{ active: activeTab === 'collections' }" @click="activeTab = 'collections'">Collections</button>
@@ -60,7 +60,7 @@ onMounted(() => {
     <section v-if="activeTab === 'chat'" class="brain-chat-layout">
       <div class="brain-main">
         <section class="brain-ask">
-          <p class="eyebrow">Company Brain</p>
+          <p class="eyebrow">Workspace Knowledge</p>
           <h2>Good afternoon, Dmitry.</h2>
           <p>What would you like to know?</p>
 
@@ -84,7 +84,7 @@ onMounted(() => {
           <div class="brain-answer-head">
             <div>
               <p class="eyebrow">Answer</p>
-              <h2>Company answer</h2>
+              <h2>General knowledge answer</h2>
             </div>
             <div class="confidence-meter">
               <span>Confidence</span>
@@ -148,7 +148,7 @@ onMounted(() => {
       <section class="panel">
         <div class="panel-head">
           <div>
-            <p class="eyebrow">Company Memory</p>
+            <p class="eyebrow">Workspace Memory</p>
             <h2>Documents</h2>
           </div>
           <button type="button" @click="crmStore.createKnowledgeDocument">Upload</button>
@@ -177,7 +177,7 @@ onMounted(() => {
     <section v-else class="panel brain-placeholder">
       <p class="eyebrow">{{ activeTab }}</p>
       <h2>{{ activeTab === "collections" ? "Collections" : activeTab === "agents" ? "AI Agents" : "Settings" }}</h2>
-      <p class="hint">This area is reserved for the next Company Brain workspace screen.</p>
+      <p class="hint">This area is reserved for the next Workspace Knowledge screen.</p>
     </section>
   </section>
 </template>

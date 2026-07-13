@@ -12,6 +12,7 @@ from app.modules.knowledge.schemas import (
     CitationResponse,
     DocumentCreate,
     DocumentResponse,
+    KnowledgeScope,
     SearchRequest,
     SearchResultResponse,
 )
@@ -28,31 +29,43 @@ def create_document(
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> DocumentResponse:
     service = KnowledgeService(db)
-    document = service.create_document(
-        tenant_id=tenant.id,
-        title=payload.title,
-        text=payload.text,
-        source_type=payload.source_type,
-        company_id=payload.company_id,
-        deal_id=payload.deal_id,
-        file_id=payload.file_id,
-        visibility=payload.visibility,
-    )
+    try:
+        document = service.create_document(
+            tenant_id=tenant.id,
+            title=payload.title,
+            text=payload.text,
+            source_type=payload.source_type,
+            company_id=payload.company_id,
+            deal_id=payload.deal_id,
+            file_id=payload.file_id,
+            visibility=payload.visibility,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
     return _document_response(document)
 
 
 @router.get("/documents", response_model=list[DocumentResponse])
 def list_documents(
+    scope: KnowledgeScope = "global",
     company_id: UUID | None = None,
     deal_id: UUID | None = None,
+    include_global: bool = False,
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> list[DocumentResponse]:
     service = KnowledgeService(db)
-    return [
-        _document_response(document)
-        for document in service.list_documents(tenant.id, company_id=company_id, deal_id=deal_id)
-    ]
+    try:
+        documents = service.list_documents(
+            tenant.id,
+            scope=scope,
+            company_id=company_id,
+            deal_id=deal_id,
+            include_global=include_global,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+    return [_document_response(document) for document in documents]
 
 
 @router.post("/companies/{company_id}/documents", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -63,16 +76,19 @@ def create_company_document(
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> DocumentResponse:
     service = KnowledgeService(db)
-    document = service.create_document(
-        tenant_id=tenant.id,
-        title=payload.title,
-        text=payload.text,
-        source_type=payload.source_type,
-        company_id=company_id,
-        deal_id=payload.deal_id,
-        file_id=payload.file_id,
-        visibility="company",
-    )
+    try:
+        document = service.create_document(
+            tenant_id=tenant.id,
+            title=payload.title,
+            text=payload.text,
+            source_type=payload.source_type,
+            company_id=company_id,
+            deal_id=payload.deal_id,
+            file_id=payload.file_id,
+            visibility="deal" if payload.deal_id else "company",
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
     return _document_response(document)
 
 
@@ -83,7 +99,11 @@ def list_company_documents(
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> list[DocumentResponse]:
     service = KnowledgeService(db)
-    return [_document_response(document) for document in service.list_documents(tenant.id, company_id=company_id)]
+    try:
+        documents = service.list_documents(tenant.id, scope="company", company_id=company_id)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    return [_document_response(document) for document in documents]
 
 
 @router.get("/documents/{document_id}", response_model=DocumentResponse)
@@ -109,13 +129,18 @@ def search(
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> list[SearchResultResponse]:
     service = KnowledgeService(db)
-    results = service.search(
-        tenant_id=tenant.id,
-        query=payload.query,
-        limit=payload.limit,
-        company_id=payload.company_id,
-        deal_id=payload.deal_id,
-    )
+    try:
+        results = service.search(
+            tenant_id=tenant.id,
+            query=payload.query,
+            limit=payload.limit,
+            scope=payload.scope,
+            company_id=payload.company_id,
+            deal_id=payload.deal_id,
+            include_global=payload.include_global,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
     return [
         SearchResultResponse(
             chunk_id=item.chunk.id,
@@ -139,14 +164,19 @@ def ask(
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> AskResponse:
     service = KnowledgeService(db)
-    answer, ranked_chunks = service.answer(
-        tenant_id=tenant.id,
-        user_id=tenant.user_id,
-        question=payload.question,
-        limit=payload.limit,
-        company_id=payload.company_id,
-        deal_id=payload.deal_id,
-    )
+    try:
+        answer, ranked_chunks = service.answer(
+            tenant_id=tenant.id,
+            user_id=tenant.user_id,
+            question=payload.question,
+            limit=payload.limit,
+            scope=payload.scope,
+            company_id=payload.company_id,
+            deal_id=payload.deal_id,
+            include_global=payload.include_global,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
     return AskResponse(
         answer=answer,
         citations=[
@@ -163,6 +193,10 @@ def ask(
             )
             for item in ranked_chunks
         ],
+        scope=payload.scope,
+        company_id=payload.company_id,
+        deal_id=payload.deal_id,
+        include_global=payload.include_global,
     )
 
 

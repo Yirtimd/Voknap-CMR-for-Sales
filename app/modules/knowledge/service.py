@@ -5,10 +5,12 @@ import re
 from dataclasses import dataclass
 from uuid import UUID
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeDocument, KnowledgeQuery
+from app.modules.sales.models import Company, Deal
 
 
 @dataclass
@@ -61,6 +63,7 @@ class KnowledgeService:
         file_id: UUID | None = None,
         visibility: str = "global",
     ) -> KnowledgeDocument:
+        self._validate_scope_context(tenant_id, visibility, company_id, deal_id)
         document = KnowledgeDocument(
             tenant_id=tenant_id,
             company_id=company_id,
@@ -80,6 +83,9 @@ class KnowledgeService:
                 KnowledgeChunk(
                     tenant_id=tenant_id,
                     document_id=document.id,
+                    scope=visibility,
+                    company_id=company_id,
+                    deal_id=deal_id,
                     chunk_index=index,
                     text=chunk_text,
                     embedding_json=json.dumps(embedding),
@@ -94,14 +100,14 @@ class KnowledgeService:
     def list_documents(
         self,
         tenant_id: UUID,
+        scope: str = "global",
         company_id: UUID | None = None,
         deal_id: UUID | None = None,
+        include_global: bool = False,
     ) -> list[KnowledgeDocument]:
+        self._validate_scope_context(tenant_id, scope, company_id, deal_id)
         query = self.db.query(KnowledgeDocument).filter(KnowledgeDocument.tenant_id == tenant_id)
-        if company_id is not None:
-            query = query.filter(KnowledgeDocument.company_id == company_id)
-        if deal_id is not None:
-            query = query.filter(KnowledgeDocument.deal_id == deal_id)
+        query = query.filter(self._document_scope_filter(scope, company_id, deal_id, include_global))
         return query.order_by(KnowledgeDocument.created_at.desc()).all()
 
     def search(
@@ -109,26 +115,22 @@ class KnowledgeService:
         tenant_id: UUID,
         query: str,
         limit: int = 6,
+        scope: str = "global",
         company_id: UUID | None = None,
         deal_id: UUID | None = None,
+        include_global: bool = False,
     ) -> list[RankedChunk]:
+        self._validate_scope_context(tenant_id, scope, company_id, deal_id)
         query_embedding = self.embedding_service.embed(query)
         rows_query = (
             self.db.query(KnowledgeChunk, KnowledgeDocument)
             .join(KnowledgeDocument, KnowledgeDocument.id == KnowledgeChunk.document_id)
-            .filter(KnowledgeChunk.tenant_id == tenant_id)
+            .filter(
+                KnowledgeChunk.tenant_id == tenant_id,
+                KnowledgeDocument.status == "ready",
+                self._chunk_scope_filter(scope, company_id, deal_id, include_global),
+            )
         )
-        if company_id is not None:
-            rows_query = rows_query.filter(
-                (KnowledgeDocument.visibility == "global") |
-                (KnowledgeDocument.company_id == company_id)
-            )
-        if deal_id is not None:
-            rows_query = rows_query.filter(
-                (KnowledgeDocument.visibility == "global") |
-                (KnowledgeDocument.deal_id == deal_id) |
-                (KnowledgeDocument.company_id == company_id)
-            )
         rows = rows_query.all()
 
         ranked: list[RankedChunk] = []
@@ -145,63 +147,176 @@ class KnowledgeService:
         user_id: UUID,
         question: str,
         limit: int = 6,
+        scope: str = "global",
         company_id: UUID | None = None,
         deal_id: UUID | None = None,
+        include_global: bool = False,
     ) -> tuple[str, list[RankedChunk]]:
-        ranked_chunks = self.search(tenant_id=tenant_id, query=question, limit=limit, company_id=company_id, deal_id=deal_id)
+        ranked_chunks = self.search(
+            tenant_id=tenant_id,
+            query=question,
+            limit=limit,
+            scope=scope,
+            company_id=company_id,
+            deal_id=deal_id,
+            include_global=include_global,
+        )
         if not ranked_chunks or ranked_chunks[0].score <= 0:
-            answer = "Не нашел ответ в базе знаний компании."
-            self._save_query(tenant_id, user_id, question, answer)
+            answer = "Не нашел ответ в выбранной базе знаний."
+            self._save_query(tenant_id, user_id, question, answer, scope, company_id, deal_id, include_global)
             return answer, []
 
-        answer = self._grounded_answer(question, ranked_chunks)
-        self._save_query(tenant_id, user_id, question, answer)
+        answer = self._grounded_answer(question, ranked_chunks, scope)
+        self._save_query(tenant_id, user_id, question, answer, scope, company_id, deal_id, include_global)
         return answer, ranked_chunks
 
-    def _grounded_answer(self, question: str, ranked_chunks: list[RankedChunk]) -> str:
+    def _grounded_answer(self, question: str, ranked_chunks: list[RankedChunk], scope: str) -> str:
         llm_api_key = settings.llm_api_key or settings.openai_api_key
         if llm_api_key:
             from openai import OpenAI
 
-            client = OpenAI(api_key=llm_api_key, base_url=settings.llm_base_url)
             context = "\n\n".join(
                 f"[{index + 1}] {item.document.title}\n{item.chunk.text}"
                 for index, item in enumerate(ranked_chunks)
             )
             prompt = (
-                    "Ответь только по контексту компании. Если ответа нет, скажи, что не нашел в базе знаний.\n\n"
-                    f"Вопрос: {question}\n\nКонтекст:\n{context}"
+                f"Режим базы знаний: {scope}. Ответь только по переданному контексту. "
+                "Не используй знания о других компаниях. Если ответа нет, прямо скажи об этом.\n\n"
+                f"Вопрос: {question}\n\nКонтекст:\n{context}"
             )
-            if settings.llm_base_url:
-                response = client.chat.completions.create(
-                    model=settings.llm_model,
-                    messages=[{"role": "user", "content": prompt}],
+            try:
+                client = OpenAI(
+                    api_key=llm_api_key,
+                    base_url=settings.llm_base_url,
+                    timeout=12.0,
+                    max_retries=0,
                 )
-                return response.choices[0].message.content or ""
+                if settings.llm_base_url:
+                    response = client.chat.completions.create(
+                        model=settings.llm_model,
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                    return response.choices[0].message.content or self._extractive_answer(ranked_chunks[0])
 
-            response = client.responses.create(
-                model=settings.llm_model,
-                input=prompt,
-            )
-            return response.output_text
+                response = client.responses.create(
+                    model=settings.llm_model,
+                    input=prompt,
+                )
+                return response.output_text or self._extractive_answer(ranked_chunks[0])
+            except Exception:
+                return self._extractive_answer(ranked_chunks[0], llm_unavailable=True)
 
-        best = ranked_chunks[0]
+        return self._extractive_answer(ranked_chunks[0])
+
+    def _extractive_answer(self, best: RankedChunk, llm_unavailable: bool = False) -> str:
+        prefix = "LLM сейчас недоступна. " if llm_unavailable else ""
         return (
-            "Нашел наиболее близкий фрагмент в базе знаний. "
+            f"{prefix}Нашел наиболее близкий фрагмент в базе знаний. "
             f"Источник: {best.document.title}. "
             f"Фрагмент: {best.chunk.text[:700]}"
         )
 
-    def _save_query(self, tenant_id: UUID, user_id: UUID, question: str, answer: str) -> None:
+    def _save_query(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+        question: str,
+        answer: str,
+        scope: str,
+        company_id: UUID | None,
+        deal_id: UUID | None,
+        include_global: bool,
+    ) -> None:
         self.db.add(
             KnowledgeQuery(
                 tenant_id=tenant_id,
                 user_id=user_id,
+                scope=scope,
+                company_id=company_id,
+                deal_id=deal_id,
+                include_global=include_global,
                 question=question,
                 answer=answer,
             )
         )
         self.db.commit()
+
+    def _validate_scope_context(
+        self,
+        tenant_id: UUID,
+        scope: str,
+        company_id: UUID | None,
+        deal_id: UUID | None,
+    ) -> None:
+        if scope not in {"global", "company", "deal"}:
+            raise ValueError("Unknown knowledge scope")
+        if scope == "global":
+            if company_id is not None or deal_id is not None:
+                raise ValueError("Global knowledge cannot receive company_id or deal_id")
+            return
+        if company_id is None:
+            raise ValueError("Company knowledge requires company_id")
+        company = (
+            self.db.query(Company)
+            .filter(Company.tenant_id == tenant_id, Company.id == company_id)
+            .one_or_none()
+        )
+        if company is None:
+            raise ValueError("Company does not belong to current workspace")
+        if scope == "company":
+            if deal_id is not None:
+                raise ValueError("Company knowledge cannot receive deal_id; use deal scope")
+            return
+        if deal_id is None:
+            raise ValueError("Deal knowledge requires deal_id")
+        deal = (
+            self.db.query(Deal)
+            .filter(Deal.tenant_id == tenant_id, Deal.id == deal_id)
+            .one_or_none()
+        )
+        if deal is None or deal.company_id != company_id:
+            raise ValueError("Deal does not belong to selected company")
+
+    def _document_scope_filter(
+        self,
+        scope: str,
+        company_id: UUID | None,
+        deal_id: UUID | None,
+        include_global: bool,
+    ):
+        global_filter = KnowledgeDocument.visibility == "global"
+        if scope == "global":
+            return global_filter
+        if scope == "company":
+            scoped_filter = KnowledgeDocument.company_id == company_id
+        else:
+            scoped_filter = or_(
+                KnowledgeDocument.deal_id == deal_id,
+                and_(KnowledgeDocument.company_id == company_id, KnowledgeDocument.deal_id.is_(None)),
+            )
+        return or_(global_filter, scoped_filter) if include_global else scoped_filter
+
+    def _chunk_scope_filter(
+        self,
+        scope: str,
+        company_id: UUID | None,
+        deal_id: UUID | None,
+        include_global: bool,
+    ):
+        global_filter = KnowledgeChunk.scope == "global"
+        if scope == "global":
+            return global_filter
+        if scope == "company":
+            scoped_filter = and_(
+                KnowledgeChunk.company_id == company_id,
+                KnowledgeChunk.deal_id.is_(None),
+            )
+        else:
+            scoped_filter = or_(
+                KnowledgeChunk.deal_id == deal_id,
+                and_(KnowledgeChunk.company_id == company_id, KnowledgeChunk.deal_id.is_(None)),
+            )
+        return or_(global_filter, scoped_filter) if include_global else scoped_filter
 
     def _split_text(self, text: str) -> list[str]:
         clean_text = re.sub(r"\s+", " ", text).strip()

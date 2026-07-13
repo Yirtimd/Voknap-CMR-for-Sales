@@ -1,7 +1,11 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+KnowledgeScope = Literal["global", "company", "deal"]
 
 
 class DocumentCreate(BaseModel):
@@ -11,7 +15,7 @@ class DocumentCreate(BaseModel):
     company_id: UUID | None = None
     deal_id: UUID | None = None
     file_id: UUID | None = None
-    visibility: str = Field(default="global", max_length=40)
+    visibility: KnowledgeScope = "global"
 
 
 class DocumentResponse(BaseModel):
@@ -30,8 +34,15 @@ class DocumentResponse(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(min_length=2)
     limit: int = Field(default=6, ge=1, le=20)
+    scope: KnowledgeScope = "global"
     company_id: UUID | None = None
     deal_id: UUID | None = None
+    include_global: bool = False
+
+    @model_validator(mode="after")
+    def validate_scope(self):
+        _validate_scope_context(self.scope, self.company_id, self.deal_id)
+        return self
 
 
 class SearchResultResponse(BaseModel):
@@ -49,8 +60,15 @@ class SearchResultResponse(BaseModel):
 class AskRequest(BaseModel):
     question: str = Field(min_length=2)
     limit: int = Field(default=6, ge=1, le=12)
+    scope: KnowledgeScope = "global"
     company_id: UUID | None = None
     deal_id: UUID | None = None
+    include_global: bool = False
+
+    @model_validator(mode="after")
+    def validate_scope(self):
+        _validate_scope_context(self.scope, self.company_id, self.deal_id)
+        return self
 
 
 class CitationResponse(BaseModel):
@@ -68,3 +86,18 @@ class CitationResponse(BaseModel):
 class AskResponse(BaseModel):
     answer: str
     citations: list[CitationResponse]
+    scope: KnowledgeScope
+    company_id: UUID | None = None
+    deal_id: UUID | None = None
+    include_global: bool = False
+
+
+def _validate_scope_context(scope: KnowledgeScope, company_id: UUID | None, deal_id: UUID | None) -> None:
+    if scope == "global" and (company_id is not None or deal_id is not None):
+        raise ValueError("Global knowledge cannot receive company_id or deal_id")
+    if scope == "company" and company_id is None:
+        raise ValueError("Company knowledge requires company_id")
+    if scope == "company" and deal_id is not None:
+        raise ValueError("Company knowledge cannot receive deal_id; use deal scope")
+    if scope == "deal" and (company_id is None or deal_id is None):
+        raise ValueError("Deal knowledge requires company_id and deal_id")

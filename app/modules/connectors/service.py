@@ -1,14 +1,23 @@
-import csv
 import base64
+import csv
+import hashlib
+import imaplib
 import io
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from email import message_from_bytes, policy
+from email.header import decode_header
+from email.message import Message
+from email.utils import parsedate_to_datetime
 from uuid import UUID
 
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.modules.communication.models import CommunicationEvent
 from app.modules.communication.schemas import CommunicationEventCreate
 from app.modules.communication.service import CommunicationService
 from app.modules.connectors.models import ConnectorAccount, ConnectorSyncRun
@@ -25,8 +34,8 @@ class ConnectorDefinition:
 
 CONNECTORS = [
     ConnectorDefinition("csv", "CSV import/export", "Импорт и экспорт лидов и контактов через CSV.", "ready"),
-    ConnectorDefinition("email", "Email", "Входящие письма, исходящие сообщения и привязка к timeline.", "ready"),
-    ConnectorDefinition("calendar", "Calendar", "Встречи, события календаря и meeting activity.", "ready"),
+    ConnectorDefinition("email", "Email (IMAP)", "Реальная загрузка входящих писем по IMAP и привязка к CRM.", "ready"),
+    ConnectorDefinition("calendar", "Calendar", "Импорт событий календаря через API пока не подключён.", "placeholder"),
     ConnectorDefinition("telephony", "Telephony", "Placeholder для звонков, записей и call activity.", "placeholder"),
     ConnectorDefinition("bitrix24", "Bitrix24", "Миграция компаний, контактов и лидов из Bitrix24.", "ready"),
     ConnectorDefinition("amocrm", "amoCRM", "Миграция компаний, контактов и сделок из amoCRM.", "ready"),
@@ -52,6 +61,12 @@ class ConnectorService:
         if connector_code not in {connector.code for connector in CONNECTORS}:
             raise ValueError("Unknown connector")
 
+        if connector_code == "email":
+            if settings.secret_key == "change-me-in-production" or len(settings.secret_key) < 32:
+                raise ValueError("Set a unique SECRET_KEY of at least 32 characters before connecting email")
+            self._validate_email_config(credentials, settings)
+            self._test_imap_connection(credentials, settings)
+
         account = ConnectorAccount(
             tenant_id=tenant_id,
             connector_code=connector_code,
@@ -59,7 +74,7 @@ class ConnectorService:
             credentials_json=self._encrypt_credentials(credentials),
             credentials_encrypted=True,
             settings_json=json.dumps(settings),
-            status="connected" if connector_code in {"csv", "email", "calendar", "bitrix24", "amocrm"} else "placeholder",
+            status="connected" if connector_code in {"csv", "email", "bitrix24", "amocrm"} else "placeholder",
         )
         self.db.add(account)
         self.db.commit()
@@ -240,28 +255,196 @@ class ConnectorService:
         )
 
     def _sync_email(self, tenant_id: UUID, account: ConnectorAccount, payload: dict) -> ConnectorSyncRun:
-        messages = payload.get("messages") or json.loads(account.settings_json or "{}").get("messages") or []
+        credentials = self._decrypt_credentials(account.credentials_json)
+        account_settings = json.loads(account.settings_json or "{}")
+        limit = min(max(int(payload.get("limit") or account_settings.get("sync_limit") or 100), 1), 500)
+        messages, last_uid = self._fetch_imap_messages(
+            credentials=credentials,
+            settings=account_settings,
+            after_uid=int(account.sync_cursor or 0),
+            limit=limit,
+        )
         created = 0
         for item in messages:
-            company = self._get_or_create_company(tenant_id, item.get("company_name") or "Email company")
+            before = (
+                self.db.query(CommunicationEvent)
+                .filter(
+                    CommunicationEvent.tenant_id == tenant_id,
+                    CommunicationEvent.channel == "email",
+                    CommunicationEvent.external_id == item["external_id"],
+                )
+                .one_or_none()
+            )
             CommunicationService(self.db).create(
                 tenant_id=tenant_id,
                 created_by=None,
                 payload=CommunicationEventCreate(
                     channel="email",
                     direction="inbound",
-                    external_id=item.get("id"),
+                    external_id=item["external_id"],
                     sender=item.get("sender"),
                     recipient=item.get("recipient"),
-                    subject=item.get("subject") or "Email received",
-                    body=item.get("body") or item.get("snippet"),
-                    company_id=company.id,
+                    subject=item.get("subject") or "Без темы",
+                    body=item.get("body"),
+                    occurred_at=item.get("occurred_at"),
                     connector_account_id=account.id,
-                    metadata={"connector_account_id": str(account.id)},
+                    metadata={
+                        "connector_account_id": str(account.id),
+                        "imap_uid": item["uid"],
+                        "message_id": item.get("message_id"),
+                    },
                 ),
             )
-            created += 1
-        return self._save_run(tenant_id, account.id, "inbound", "success", created, 0, 0, "Email sync completed", job_type="email_sync")
+            if before is None:
+                created += 1
+        if last_uid is not None:
+            account.sync_cursor = str(last_uid)
+        return self._save_run(
+            tenant_id,
+            account.id,
+            "inbound",
+            "success",
+            created,
+            0,
+            0,
+            f"Email sync completed: {created} new messages",
+            job_type="email_sync",
+        )
+
+    def _validate_email_config(self, credentials: dict, settings: dict) -> None:
+        missing = [key for key in ("username", "password") if not credentials.get(key)]
+        if not settings.get("host"):
+            missing.append("host")
+        if missing:
+            raise ValueError(f"Email connector requires: {', '.join(missing)}")
+
+    def _test_imap_connection(self, credentials: dict, settings: dict) -> None:
+        client = self._imap_connect(credentials, settings)
+        try:
+            folder = str(settings.get("folder") or "INBOX")
+            status, _ = client.select(folder, readonly=True)
+            if status != "OK":
+                raise ValueError(f"IMAP folder is unavailable: {folder}")
+        finally:
+            try:
+                client.logout()
+            except imaplib.IMAP4.error:
+                pass
+
+    def _imap_connect(self, credentials: dict, settings: dict) -> imaplib.IMAP4:
+        self._validate_email_config(credentials, settings)
+        host = str(settings["host"])
+        port = int(settings.get("port") or (993 if settings.get("use_ssl", True) else 143))
+        timeout = int(settings.get("timeout_seconds") or 15)
+        try:
+            if settings.get("use_ssl", True):
+                client: imaplib.IMAP4 = imaplib.IMAP4_SSL(host, port, timeout=timeout)
+            else:
+                client = imaplib.IMAP4(host, port, timeout=timeout)
+                if settings.get("starttls", True):
+                    client.starttls()
+            client.login(str(credentials["username"]), str(credentials["password"]))
+            return client
+        except (OSError, imaplib.IMAP4.error) as error:
+            raise ValueError(f"IMAP connection failed: {error}") from error
+
+    def _fetch_imap_messages(
+        self,
+        credentials: dict,
+        settings: dict,
+        after_uid: int,
+        limit: int,
+    ) -> tuple[list[dict], int | None]:
+        client = self._imap_connect(credentials, settings)
+        folder = str(settings.get("folder") or "INBOX")
+        messages: list[dict] = []
+        last_uid: int | None = None
+        try:
+            status, _ = client.select(folder, readonly=True)
+            if status != "OK":
+                raise ValueError(f"IMAP folder is unavailable: {folder}")
+            status, result = client.uid("search", None, f"UID {after_uid + 1}:*")
+            if status != "OK":
+                raise ValueError("IMAP message search failed")
+            uids = [int(value) for value in (result[0] or b"").split() if value]
+            for uid in uids[:limit]:
+                status, rows = client.uid("fetch", str(uid), "(RFC822)")
+                if status != "OK":
+                    continue
+                raw = next((row[1] for row in rows if isinstance(row, tuple) and isinstance(row[1], bytes)), None)
+                if raw is None:
+                    continue
+                message = message_from_bytes(raw, policy=policy.default)
+                message_id = str(message.get("Message-ID") or "").strip() or None
+                messages.append(
+                    {
+                        "uid": uid,
+                        "external_id": f"{account_identity(settings, credentials)}:{folder}:{uid}",
+                        "message_id": message_id,
+                        "sender": self._decode_header_value(message.get("From")),
+                        "recipient": self._decode_header_value(message.get("To")),
+                        "subject": self._decode_header_value(message.get("Subject")) or "Без темы",
+                        "body": self._message_body(message),
+                        "occurred_at": self._message_date(message),
+                    }
+                )
+                last_uid = uid
+            if uids and last_uid is None:
+                last_uid = uids[min(len(uids), limit) - 1]
+            return messages, last_uid
+        finally:
+            try:
+                client.logout()
+            except imaplib.IMAP4.error:
+                pass
+
+    def _decode_header_value(self, value: str | None) -> str | None:
+        if not value:
+            return None
+        parts = []
+        for part, encoding in decode_header(value):
+            if isinstance(part, bytes):
+                parts.append(part.decode(encoding or "utf-8", errors="replace"))
+            else:
+                parts.append(part)
+        return "".join(parts).strip() or None
+
+    def _message_body(self, message: Message) -> str | None:
+        plain: list[str] = []
+        html: list[str] = []
+        parts = message.walk() if message.is_multipart() else [message]
+        for part in parts:
+            if part.get_content_disposition() == "attachment":
+                continue
+            content_type = part.get_content_type()
+            if content_type not in {"text/plain", "text/html"}:
+                continue
+            try:
+                content = part.get_content()
+            except (LookupError, UnicodeDecodeError):
+                payload = part.get_payload(decode=True) or b""
+                content = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+            if content_type == "text/plain":
+                plain.append(str(content))
+            else:
+                html.append(str(content))
+        body = "\n".join(plain).strip()
+        if not body and html:
+            body = re.sub(r"<[^>]+>", " ", "\n".join(html))
+            body = re.sub(r"\s+", " ", body).strip()
+        return body or None
+
+    def _message_date(self, message: Message) -> datetime:
+        value = message.get("Date")
+        if value:
+            try:
+                parsed = parsedate_to_datetime(value)
+                if parsed.tzinfo is None:
+                    return parsed.replace(tzinfo=timezone.utc)
+                return parsed
+            except (TypeError, ValueError, OverflowError):
+                pass
+        return datetime.now(timezone.utc)
 
     def _sync_calendar(self, tenant_id: UUID, account: ConnectorAccount, payload: dict) -> ConnectorSyncRun:
         events = payload.get("events") or json.loads(account.settings_json or "{}").get("events") or []
@@ -395,14 +578,25 @@ class ConnectorService:
         return run
 
     def _encrypt_credentials(self, credentials: dict) -> str:
-        payload = json.dumps(credentials)
-        key = settings.secret_key.encode("utf-8")
-        data = payload.encode("utf-8")
-        encrypted = bytes(byte ^ key[index % len(key)] for index, byte in enumerate(data))
-        return base64.urlsafe_b64encode(encrypted).decode("ascii")
+        payload = json.dumps(credentials).encode("utf-8")
+        return self._fernet().encrypt(payload).decode("ascii")
 
     def _decrypt_credentials(self, value: str) -> dict:
-        key = settings.secret_key.encode("utf-8")
-        data = base64.urlsafe_b64decode(value.encode("ascii"))
-        decrypted = bytes(byte ^ key[index % len(key)] for index, byte in enumerate(data))
-        return json.loads(decrypted.decode("utf-8"))
+        try:
+            decrypted = self._fernet().decrypt(value.encode("ascii"))
+            return json.loads(decrypted.decode("utf-8"))
+        except InvalidToken:
+            # Compatibility with accounts created before authenticated encryption.
+            key = settings.secret_key.encode("utf-8")
+            data = base64.urlsafe_b64decode(value.encode("ascii"))
+            decrypted = bytes(byte ^ key[index % len(key)] for index, byte in enumerate(data))
+            return json.loads(decrypted.decode("utf-8"))
+
+    def _fernet(self) -> Fernet:
+        key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode("utf-8")).digest())
+        return Fernet(key)
+
+
+def account_identity(settings: dict, credentials: dict) -> str:
+    raw = f"{settings.get('host', '')}:{credentials.get('username', '')}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]

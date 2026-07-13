@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import { crmStore } from "../stores/crm";
+
+const channelFilter = ref("");
+const statusFilter = ref("");
+const visibleEvents = computed(() => crmStore.communicationEvents.value.filter((event) => {
+  if (channelFilter.value && event.channel !== channelFilter.value) return false;
+  if (statusFilter.value && event.status !== statusFilter.value) return false;
+  return true;
+}));
 
 onMounted(async () => {
   await Promise.allSettled([
@@ -17,6 +25,24 @@ onMounted(async () => {
   <section class="section-grid">
     <section class="panel">
       <h2>Communication Hub</h2>
+
+      <div class="inbox-toolbar">
+        <select v-model="channelFilter">
+          <option value="">Все каналы</option>
+          <option value="email">Email</option>
+          <option value="call">Звонки</option>
+          <option value="calendar">Встречи</option>
+          <option value="telegram">Telegram</option>
+          <option value="whatsapp">WhatsApp</option>
+        </select>
+        <select v-model="statusFilter">
+          <option value="">Все статусы</option>
+          <option value="new">Не привязано</option>
+          <option value="linked">Привязано</option>
+          <option value="activity_created">Activity создана</option>
+        </select>
+        <button type="button" @click="crmStore.refreshCommunication">Обновить</button>
+      </div>
 
       <form class="form-grid" @submit.prevent="crmStore.createCommunicationEvent()">
         <select v-model="crmStore.communicationEventForm.value.channel">
@@ -38,15 +64,15 @@ onMounted(async () => {
         <button type="submit">Create incoming</button>
       </form>
 
-      <article v-for="event in crmStore.communicationEvents.value" :key="event.id" class="timeline-item">
+      <article v-for="event in visibleEvents" :key="event.id" class="timeline-item">
         <span class="timeline-icon">{{ event.channel.slice(0, 2).toUpperCase() }}</span>
         <div>
           <header>
             <strong>{{ event.subject }}</strong>
             <small>{{ event.channel }} / {{ event.status }}</small>
           </header>
-          <p v-if="event.ai_summary">{{ event.ai_summary }}</p>
-          <p v-else-if="event.body">{{ event.body }}</p>
+          <p v-if="event.body">{{ event.body }}</p>
+          <small>{{ event.sender || "Unknown sender" }} · {{ new Date(event.occurred_at).toLocaleString() }}</small>
           <div class="form-grid compact-form">
             <select v-model="event.company_id">
               <option :value="null">No company</option>
@@ -74,13 +100,16 @@ onMounted(async () => {
                 {{ deal.title }}
               </option>
             </select>
-            <button type="button" @click="crmStore.linkCommunicationEvent(event)">Link</button>
-            <button type="button" @click="crmStore.createActivityFromCommunication(event.id)">Create activity</button>
-            <button type="button" @click="crmStore.refreshCommunicationSummary(event.id)">AI summary</button>
+            <button type="button" @click="crmStore.linkCommunicationEvent(event)">Сохранить привязку</button>
+            <button
+              type="button"
+              :disabled="!event.company_id || Boolean(event.activity_id)"
+              @click="crmStore.createActivityFromCommunication(event.id)"
+            >{{ event.activity_id ? "Activity создана" : "Создать activity" }}</button>
           </div>
         </div>
       </article>
-      <p v-if="!crmStore.communicationEvents.value.length" class="empty">Входящих событий пока нет</p>
+      <p v-if="!visibleEvents.length" class="empty">Событий по выбранным фильтрам нет</p>
     </section>
 
     <section class="panel">

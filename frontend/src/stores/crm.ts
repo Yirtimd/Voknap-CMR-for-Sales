@@ -116,10 +116,20 @@ const knowledgeDocumentForm = ref({
   source_type: "text",
   text: "Компания продает CRM для отделов продаж. Основная ценность: учет лидов, сделок, задач, база знаний и AI-помощник. Первый шаг после заявки: связаться с клиентом в течение 15 минут, уточнить сферу бизнеса, количество менеджеров и текущую CRM."
 });
-const knowledgeSearchForm = ref({ query: "Что делать после новой заявки?", limit: 6 });
+const knowledgeSearchForm = ref({ query: "Что делать после новой заявки?", limit: 6, scope: "global", include_global: false });
 const knowledgeAskForm = ref({ question: "Что делать после новой заявки?", limit: 6 });
 const agentForm = ref({ message: "Дай сводку по CRM", company_id: "", deal_id: "" });
-const connectorAccountForm = ref({ connector_code: "csv", title: "CSV import/export" });
+const connectorAccountForm = ref({
+  connector_code: "csv",
+  title: "CSV import/export",
+  email_provider: "gmail",
+  host: "imap.gmail.com",
+  port: 993,
+  username: "",
+  password: "",
+  folder: "INBOX",
+  use_ssl: true
+});
 const csvImportForm = ref({
   account_id: "",
   csv_text: "name,phone,email,company_name,lead_title,source\nИван Петров,+79990000000,client@example.com,Ромашка,Заявка из CSV,csv"
@@ -356,18 +366,6 @@ async function createActivityFromCommunication(eventId: string) {
   }, "Activity создана из коммуникации");
 }
 
-async function refreshCommunicationSummary(eventId: string) {
-  await run(async () => {
-    await api<CommunicationEvent>(
-      `/communication/events/${eventId}/summary`,
-      post({}),
-      token.value,
-      tenantId.value
-    );
-    await refreshCommunication();
-  }, "AI summary обновлен");
-}
-
 async function refreshCompanyCopilot(companyId: string) {
   if (!isAuthed.value) return;
   companyCopilot.value = await api<CompanyCopilot>(
@@ -412,8 +410,20 @@ async function searchKnowledge() {
   }, "Поиск выполнен");
 }
 
-async function askKnowledge(context: { company_id?: string; deal_id?: string } = {}) {
-  const payload = emptyToNull({ ...knowledgeAskForm.value, ...context });
+async function askKnowledge(context: {
+  scope?: "global" | "company" | "deal";
+  company_id?: string;
+  deal_id?: string;
+  include_global?: boolean;
+} = {}): Promise<boolean> {
+  const payload = emptyToNull({
+    ...knowledgeAskForm.value,
+    scope: "global",
+    include_global: false,
+    ...context
+  });
+  knowledgeAnswer.value = null;
+  let succeeded = false;
   await run(async () => {
     knowledgeAnswer.value = await api<KnowledgeAskResponse>(
       "/knowledge/ask",
@@ -421,7 +431,9 @@ async function askKnowledge(context: { company_id?: string; deal_id?: string } =
       token.value,
       tenantId.value
     );
+    succeeded = true;
   }, "Ответ готов");
+  return succeeded;
 }
 
 async function refreshAgent() {
@@ -492,17 +504,33 @@ async function refreshConnectors() {
 
 async function createConnectorAccount() {
   await run(async () => {
+    const isEmail = connectorAccountForm.value.connector_code === "email";
     await api<ConnectorAccount>(
       "/connectors/accounts",
       post({
         connector_code: connectorAccountForm.value.connector_code,
         title: connectorAccountForm.value.title,
-        credentials: {},
-        settings: {}
+        credentials: isEmail
+          ? {
+              username: connectorAccountForm.value.username,
+              password: connectorAccountForm.value.password
+            }
+          : {},
+        settings: isEmail
+          ? {
+              host: connectorAccountForm.value.host,
+              port: connectorAccountForm.value.port,
+              folder: connectorAccountForm.value.folder,
+              use_ssl: connectorAccountForm.value.use_ssl,
+              starttls: !connectorAccountForm.value.use_ssl,
+              sync_limit: 100
+            }
+          : {}
       }),
       token.value,
       tenantId.value
     );
+    connectorAccountForm.value.password = "";
     await refreshConnectors();
   }, "Коннектор подключен");
 }
@@ -516,6 +544,7 @@ async function syncConnectorAccount(accountId: string) {
       tenantId.value
     );
     await refreshAll();
+    await refreshCommunication();
     await refreshConnectors();
   }, "Синхронизация запущена");
 }
@@ -902,7 +931,6 @@ export const crmStore = {
   createCommunicationEvent,
   linkCommunicationEvent,
   createActivityFromCommunication,
-  refreshCommunicationSummary,
   importCsv,
   exportCsv,
   applyCompanyTemplate,

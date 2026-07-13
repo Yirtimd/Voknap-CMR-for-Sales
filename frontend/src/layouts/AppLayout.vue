@@ -16,7 +16,7 @@ const navItems = [
   { to: "/deals", label: "Deals", icon: "$" },
   { to: "/tasks", label: "Tasks", icon: "☑" },
   { to: "/inbox", label: "Inbox", icon: "✉" },
-  { to: "/knowledge", label: "Company Brain", icon: "◉" },
+  { to: "/knowledge", label: "Workspace Knowledge", icon: "◉" },
   { to: "/analytics", label: "Analytics", icon: "▥" },
   { to: "/settings", label: "Settings", icon: "⚙" }
 ];
@@ -24,7 +24,11 @@ const navItems = [
 const pageTitle = computed(() => String(route.meta.title ?? "AI Sales Workspace"));
 const pageEyebrow = computed(() => String(route.meta.eyebrow ?? "Workspace"));
 const isHome = computed(() => route.path === "/home");
+const isTasks = computed(() => route.path === "/tasks");
 const isAgentOpen = ref(false);
+const sidebarMode = ref<"full" | "compact" | "hidden">(
+  (localStorage.getItem("cmr_sidebar_mode") as "full" | "compact" | "hidden" | null) ?? "full"
+);
 const searchQuery = ref("");
 const activePanel = ref<"search" | "new" | "notifications" | "profile" | "menu" | null>(null);
 
@@ -95,21 +99,37 @@ function logout() {
   crmStore.logout();
   void router.push("/login");
 }
+
+function setSidebarMode(mode: "full" | "compact" | "hidden") {
+  sidebarMode.value = mode;
+  localStorage.setItem("cmr_sidebar_mode", mode);
+}
+
+function openTaskCreate() {
+  void router.replace({ path: "/tasks", query: { ...route.query, create: "1" } });
+}
 </script>
 
 <template>
-  <main class="app-shell" :class="{ 'agent-open': isAgentOpen }">
+  <main class="app-shell" :class="[`sidebar-${sidebarMode}`, { 'agent-open': isAgentOpen, 'tasks-workspace-active': isTasks }]">
     <aside class="sidebar">
+      <div class="sidebar-controls" aria-label="Sidebar mode">
+        <button type="button" :class="{ active: sidebarMode === 'full' }" aria-label="Полный сайдбар" @click="setSidebarMode('full')">▰</button>
+        <button type="button" :class="{ active: sidebarMode === 'compact' }" aria-label="Компактный сайдбар" @click="setSidebarMode('compact')">▌</button>
+        <button type="button" :class="{ active: sidebarMode === 'hidden' }" aria-label="Скрыть сайдбар" @click="setSidebarMode('hidden')">—</button>
+      </div>
       <div class="brand">
         <span class="brand-mark"><img :src="voknapLogo" alt="Voknap" /></span>
       </div>
 
       <nav class="nav">
-        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to"><span>{{ item.icon }}</span>{{ item.label }}</RouterLink>
+        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to" :data-label="item.label"><span>{{ item.icon }}</span><b>{{ item.label }}</b></RouterLink>
       </nav>
 
       <button class="secondary" type="button" @click="logout">Выйти</button>
     </aside>
+
+    <div v-if="sidebarMode === 'hidden'" class="sidebar-hover-zone" aria-hidden="true"></div>
 
     <section class="content">
       <header v-if="isHome" class="topbar home-topbar">
@@ -167,12 +187,18 @@ function logout() {
         </div>
       </header>
 
-      <header v-else class="topbar">
+      <header v-else class="topbar" :class="{ 'tasks-topbar': isTasks }">
         <div>
           <p class="eyebrow">{{ pageEyebrow }}</p>
           <h1>{{ pageTitle }}</h1>
         </div>
-        <button type="button" class="secondary" @click="crmStore.refreshAll">Обновить</button>
+        <div v-if="isTasks" class="tasks-top-actions">
+          <button type="button" class="secondary tasks-ai-inbox" @click="navigate('/inbox')"><span>✦</span> AI Inbox <b>{{ notifications.length }}</b></button>
+          <button type="button" class="tasks-new-button" @click="openTaskCreate"><span>＋</span> New Task</button>
+          <button type="button" class="secondary tasks-refresh" @click="crmStore.refreshAll"><span>⟳</span> Обновить</button>
+          <button type="button" class="secondary tasks-more" aria-label="Дополнительные действия">⋮</button>
+        </div>
+        <button v-else type="button" class="secondary" @click="crmStore.refreshAll">Обновить</button>
       </header>
 
       <div v-if="crmStore.error.value" class="alert error">{{ crmStore.error.value }}</div>
@@ -214,5 +240,22 @@ function logout() {
 .profile-popover { display: grid; gap: 6px; padding: 14px; }
 .profile-popover button { margin-top: 6px; }
 .top-popover .danger-item { color: var(--danger); }
+.tasks-topbar { min-height: 82px; background: rgba(255, 255, 255, 0.9); }
+.tasks-topbar h1 { margin: 2px 0 0; font-size: 28px; line-height: 34px; letter-spacing: -0.025em; }
+.tasks-topbar .eyebrow { margin: 0; font-size: 10px; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; }
+.tasks-top-actions { display: flex; align-items: center; gap: 8px; }
+.tasks-top-actions button { height: 38px; border-radius: 8px; padding: 0 13px; font-size: 13px; white-space: nowrap; }
+.tasks-top-actions button span { font-size: 15px; }
+.tasks-top-actions .tasks-ai-inbox { gap: 7px; color: #172033; }
+.tasks-ai-inbox span { color: #7656e8; }
+.tasks-ai-inbox b { display: grid; place-items: center; min-width: 22px; height: 22px; border-radius: 999px; padding: 0 6px; color: #0b72e7; background: #edf5ff; font-size: 10px; }
+.tasks-top-actions .tasks-new-button { gap: 7px; border-color: #0b72e7; background: #0b72e7; }
+.tasks-top-actions .tasks-refresh { gap: 7px; color: #172033; }
+.tasks-top-actions .tasks-more { width: 38px; padding: 0; color: #172033; font-size: 18px; }
+.app-shell.tasks-workspace-active { background: #f6f8fb; }
+.tasks-workspace-active .content { width: min(1600px, 100%); padding: 20px 24px 32px; }
+.tasks-workspace-active .topbar { margin: -20px -24px 20px; padding: 18px 24px; }
+@media (max-width: 760px) { .tasks-top-actions .tasks-ai-inbox, .tasks-top-actions .tasks-refresh { display: none; } .tasks-topbar h1 { font-size: 23px; } }
+@media (max-width: 920px) { .app-shell.tasks-workspace-active { grid-template-columns: 1fr; } .tasks-workspace-active .content { padding: 18px 14px 28px; } .tasks-workspace-active .topbar { margin: -18px -14px 16px; padding: 16px 14px 12px; } }
 @media (max-width: 760px) { .search-popover { min-width: 280px; } .top-popover { right: auto; left: 0; } }
 </style>

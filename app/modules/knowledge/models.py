@@ -42,6 +42,9 @@ class KnowledgeChunk(Base):
         nullable=False,
         index=True,
     )
+    scope: Mapped[str] = mapped_column(String(40), default="global", index=True)
+    company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), index=True)
+    deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), index=True)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     embedding_json: Mapped[str] = mapped_column(Text, nullable=False)
@@ -57,6 +60,10 @@ class KnowledgeQuery(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    scope: Mapped[str] = mapped_column(String(40), default="global", index=True)
+    company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), index=True)
+    deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), index=True)
+    include_global: Mapped[bool] = mapped_column(default=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

@@ -153,6 +153,10 @@ export type KnowledgeSearchResult = {
 export type KnowledgeAskResponse = {
   answer: string;
   citations: KnowledgeSearchResult[];
+  scope: "global" | "company" | "deal";
+  company_id: string | null;
+  deal_id: string | null;
+  include_global: boolean;
 };
 
 export type AgentAction = {
@@ -249,7 +253,6 @@ export type CommunicationEvent = {
   occurred_at: string;
   subject: string;
   body: string | null;
-  ai_summary: string | null;
   metadata: Record<string, unknown>;
   created_by: string | null;
   created_at: string;

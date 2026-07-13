@@ -117,6 +117,15 @@ const averageHealth = computed(() => {
 
 <template>
   <section class="companies-workspace">
+    <CompanyDrawer
+      v-if="selectedCompany"
+      :company="selectedCompany"
+      :initial-tab="typeof route.query.tab === 'string' ? route.query.tab : undefined"
+      embedded
+      @close="closeCompany"
+    />
+
+    <template v-else>
     <header class="companies-head">
       <div>
         <h1>Companies</h1>
@@ -160,7 +169,6 @@ const averageHealth = computed(() => {
         v-for="company in filteredCompanies"
         :key="company.id"
         class="company-list-row clickable-row"
-        :class="{ selected: selectedCompany?.id === company.id }"
         @click="openCompany(company)"
       >
         <span class="company-avatar" :class="healthTone(company)">{{ companyInitial(company) }}</span>
@@ -201,7 +209,7 @@ const averageHealth = computed(() => {
       </section>
     </div>
 
-    <CompanyDrawer :company="selectedCompany" :initial-tab="typeof route.query.tab === 'string' ? route.query.tab : undefined" @close="closeCompany" />
+    </template>
   </section>
 </template>
 

@@ -8,7 +8,6 @@ from uuid import UUID
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.modules.activity.models import Activity
 from app.modules.activity.service import ActivityService
 from app.modules.communication.models import CommunicationEvent
 from app.modules.communication.schemas import CommunicationEventCreate, CommunicationEventLink
@@ -75,7 +74,7 @@ class CommunicationService:
             occurred_at=payload.occurred_at or datetime.now(timezone.utc),
             subject=payload.subject,
             body=payload.body,
-            ai_summary=self._summarize(payload.subject, payload.body, payload.channel),
+            ai_summary=None,
             metadata_json=json.dumps(payload.metadata or {}, ensure_ascii=False),
             created_by=created_by,
         )
@@ -101,10 +100,37 @@ class CommunicationService:
         event = self._get_event(tenant_id, event_id)
         if not event:
             return None
-        event.company_id = payload.company_id
-        event.contact_id = payload.contact_id
-        event.deal_id = payload.deal_id
-        event.status = "linked" if payload.company_id else "new"
+
+        company = None
+        if payload.company_id:
+            company = self.db.query(Company).filter(Company.tenant_id == tenant_id, Company.id == payload.company_id).one_or_none()
+            if company is None:
+                raise ValueError("Company does not belong to current workspace")
+
+        contact = None
+        if payload.contact_id:
+            contact = self.db.query(Contact).filter(Contact.tenant_id == tenant_id, Contact.id == payload.contact_id).one_or_none()
+            if contact is None:
+                raise ValueError("Contact does not belong to current workspace")
+            if company and contact.company_id != company.id:
+                raise ValueError("Contact does not belong to selected company")
+            if company is None:
+                company = self.db.query(Company).filter(Company.tenant_id == tenant_id, Company.id == contact.company_id).one()
+
+        deal = None
+        if payload.deal_id:
+            deal = self.db.query(Deal).filter(Deal.tenant_id == tenant_id, Deal.id == payload.deal_id).one_or_none()
+            if deal is None:
+                raise ValueError("Deal does not belong to current workspace")
+            if company and deal.company_id != company.id:
+                raise ValueError("Deal does not belong to selected company")
+            if company is None:
+                company = self.db.query(Company).filter(Company.tenant_id == tenant_id, Company.id == deal.company_id).one()
+
+        event.company_id = company.id if company else None
+        event.contact_id = contact.id if contact else None
+        event.deal_id = deal.id if deal else None
+        event.status = "linked" if company else "new"
         event.updated_at = datetime.now(timezone.utc)
         self.db.commit()
         self.db.refresh(event)
@@ -132,7 +158,7 @@ class CommunicationService:
             activity_type=activity_type,
             channel=event.channel,
             title=event.subject,
-            description=event.ai_summary or event.body,
+            description=event.body,
             metadata={
                 "source": "communication_hub",
                 "communication_event_id": str(event.id),
@@ -143,16 +169,6 @@ class CommunicationService:
         )
         event.activity_id = activity.id
         event.status = "activity_created"
-        event.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(event)
-        return event
-
-    def refresh_summary(self, tenant_id: UUID, event_id: UUID) -> CommunicationEvent | None:
-        event = self._get_event(tenant_id, event_id)
-        if not event:
-            return None
-        event.ai_summary = self._summarize(event.subject, event.body, event.channel)
         event.updated_at = datetime.now(timezone.utc)
         self.db.commit()
         self.db.refresh(event)
@@ -221,14 +237,6 @@ class CommunicationService:
             if company.name.lower() in lowered:
                 return company
         return None
-
-    def _summarize(self, subject: str, body: str | None, channel: str) -> str:
-        text = " ".join((body or "").split())
-        if len(text) > 220:
-            text = f"{text[:220].rstrip()}..."
-        if text:
-            return f"{channel.upper()}: {subject}. {text}"
-        return f"{channel.upper()}: {subject}"
 
     def _activity_type(self, channel: str) -> str:
         return {

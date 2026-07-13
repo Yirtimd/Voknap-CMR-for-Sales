@@ -74,7 +74,10 @@ def link_event(
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> CommunicationEventResponse:
-    event = CommunicationService(db).link(tenant_id=tenant.id, event_id=event_id, payload=payload)
+    try:
+        event = CommunicationService(db).link(tenant_id=tenant.id, event_id=event_id, payload=payload)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Communication event not found")
     return _event_response(event)
@@ -91,18 +94,6 @@ def create_activity_from_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Communication event not found")
     if event.company_id is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Link event to company before activity creation")
-    return _event_response(event)
-
-
-@router.post("/events/{event_id}/summary", response_model=CommunicationEventResponse)
-def refresh_event_summary(
-    event_id: UUID,
-    db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
-) -> CommunicationEventResponse:
-    event = CommunicationService(db).refresh_summary(tenant_id=tenant.id, event_id=event_id)
-    if event is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Communication event not found")
     return _event_response(event)
 
 
@@ -124,7 +115,6 @@ def _event_response(event: CommunicationEvent) -> CommunicationEventResponse:
         occurred_at=event.occurred_at,
         subject=event.subject,
         body=event.body,
-        ai_summary=event.ai_summary,
         metadata=json.loads(event.metadata_json or "{}"),
         created_by=event.created_by,
         created_at=event.created_at,

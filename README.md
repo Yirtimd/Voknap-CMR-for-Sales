@@ -263,6 +263,18 @@ This is useful for checking the full product flow:
 3. Ask a question.
 4. Check the answer and citations.
 
+Knowledge retrieval uses an explicit scope contract:
+
+- `global`: only general workspace documents;
+- `company`: only base documents of one company;
+- `deal`: selected deal documents plus base documents of its company;
+- `include_global`: explicit opt-in for adding general workspace documents to a
+  company or deal query.
+
+Every knowledge chunk stores filter metadata: `tenant_id`, `scope`, `company_id`, and
+`deal_id`. Metadata filtering happens before similarity ranking. Scope and context are
+also written to the knowledge query audit log.
+
 For OpenAI embeddings:
 
 ```bash
@@ -335,17 +347,35 @@ Backend endpoints:
 - `GET /connectors/definitions`
 - `POST /connectors/accounts`
 - `GET /connectors/accounts`
+- `POST /connectors/accounts/{account_id}/sync`
 - `POST /connectors/accounts/{account_id}/csv/import`
 - `GET /connectors/csv/export`
 - `GET /connectors/runs`
+- `POST /connectors/runs/{run_id}/retry`
 
 Current capabilities:
 
 - connector registry;
 - connector account creation;
+- real IMAP credential validation;
+- incremental email sync by IMAP UID;
+- MIME/header decoding and duplicate protection;
+- encrypted connector credentials;
 - CSV contact and lead import;
 - CSV export;
 - sync run history.
+
+Email setup in UI:
+
+1. Set a unique `SECRET_KEY` of at least 32 characters in `.env` and restart backend.
+2. Open `Connectors` and select `Email (IMAP)`.
+3. Enter IMAP host, port, mailbox login, app password, and folder.
+4. Click `Проверить и подключить`.
+5. Click `Sync now`; imported messages appear in `Inbox`.
+
+Gmail uses `imap.gmail.com:993` and an App Password. Microsoft 365 requires OAuth
+2.0; it is intentionally absent from the password form. Provider OAuth flows and a
+webhook/subscription worker are separate production deployment work.
 
 CSV columns:
 
@@ -353,13 +383,30 @@ CSV columns:
 name,phone,email,company_name,lead_title,source
 ```
 
-Planned connectors:
+Placeholder connectors:
 
-- email;
 - Telegram;
+- WhatsApp;
+- telephony;
+- calendar API;
 - Bitrix24;
 - amoCRM;
 - 1C.
+
+## Communication Hub
+
+Backend endpoints:
+
+- `GET /communication/events`
+- `POST /communication/events`
+- `POST /communication/ingest`
+- `PATCH /communication/events/{event_id}/link`
+- `POST /communication/events/{event_id}/activity`
+
+Imported email, calls, meetings, and messenger placeholders share one
+`CommunicationEvent` model. Events can be linked to company, contact, and deal and
+then added to the CRM timeline as an Activity. AI summary is intentionally excluded
+from this phase.
 
 ## Company Templates
 
