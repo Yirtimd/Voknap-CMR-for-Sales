@@ -19,6 +19,7 @@ from app.modules.analytics.schemas import (
     TaskSLASummary,
 )
 from app.modules.sales.models import Company, CustomerInsight, Deal, Pipeline, PipelineStage, Task
+from app.modules.sales.stages import stage_label_ru
 
 
 OPEN_STATUSES = {"open", "active", "in_progress", "new"}
@@ -225,7 +226,7 @@ class AnalyticsService:
                         pipeline_id=pipeline_id,
                         pipeline_name=pipeline_by_id[pipeline_id].name,
                         stage_id=stage.id,
-                        stage_name=stage.name,
+                        stage_name=stage_label_ru(stage.name),
                         sort_order=stage.sort_order,
                         deal_count=len(current),
                         reached_count=reached,
@@ -271,7 +272,7 @@ class AnalyticsService:
                     title=deal.title,
                     company_id=deal.company_id,
                     company_name=company_by_id[deal.company_id].name,
-                    stage_name=stage_by_id[deal.stage_id].name,
+                    stage_name=stage_label_ru(stage_by_id[deal.stage_id].name),
                     owner_name=user_by_id.get(deal.owner_id).full_name if deal.owner_id in user_by_id else None,
                     amount=_money(deal.amount),
                     weighted_amount=round(_money(deal.amount) * _probability(deal) / 100, 2),
@@ -478,7 +479,7 @@ class AnalyticsService:
                     title=deal.title,
                     company_id=deal.company_id,
                     company_name=company_by_id[deal.company_id].name,
-                    stage_name=stage_by_id[deal.stage_id].name,
+                    stage_name=stage_label_ru(stage_by_id[deal.stage_id].name),
                     owner_name=user_by_id.get(deal.owner_id).full_name if deal.owner_id in user_by_id else None,
                     amount=_money(deal.amount),
                     weighted_amount=round(_money(deal.amount) * _probability(deal) / 100, 2),

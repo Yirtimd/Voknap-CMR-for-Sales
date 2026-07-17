@@ -4,6 +4,10 @@ import { computed, onMounted, ref } from "vue";
 import { crmStore } from "../stores/crm";
 
 const activeTab = ref<"chat" | "documents" | "collections" | "agents" | "settings">("chat");
+const uploadInput = ref<HTMLInputElement | null>(null);
+const uploadFile = ref<File | null>(null);
+const uploadTitle = ref("");
+const uploadInProgress = ref(false);
 
 const suggestedQuestions = [
   "How do we qualify leads?",
@@ -42,6 +46,28 @@ function relevance(score: number) {
   return `${Math.min(99, Math.max(61, Math.round(score * 100)))}% relevance`;
 }
 
+function selectUpload(event: Event) {
+  uploadFile.value = (event.target as HTMLInputElement).files?.[0] ?? null;
+}
+
+async function uploadKnowledgeFile() {
+  if (!uploadFile.value) return;
+  uploadInProgress.value = true;
+  try {
+    const succeeded = await crmStore.uploadKnowledgeDocument(uploadFile.value, {
+      title: uploadTitle.value,
+      scope: "global"
+    });
+    if (succeeded) {
+      uploadFile.value = null;
+      uploadTitle.value = "";
+      if (uploadInput.value) uploadInput.value.value = "";
+    }
+  } finally {
+    uploadInProgress.value = false;
+  }
+}
+
 onMounted(() => {
   void crmStore.refreshKnowledge();
 });
@@ -49,7 +75,7 @@ onMounted(() => {
 
 <template>
   <section class="brain-page">
-    <nav class="brain-tabs" aria-label="Workspace Knowledge sections">
+    <nav class="brain-tabs" aria-label="Brain sections">
       <button type="button" :class="{ active: activeTab === 'chat' }" @click="activeTab = 'chat'">Chat</button>
       <button type="button" :class="{ active: activeTab === 'documents' }" @click="activeTab = 'documents'">Documents</button>
       <button type="button" :class="{ active: activeTab === 'collections' }" @click="activeTab = 'collections'">Collections</button>
@@ -60,7 +86,7 @@ onMounted(() => {
     <section v-if="activeTab === 'chat'" class="brain-chat-layout">
       <div class="brain-main">
         <section class="brain-ask">
-          <p class="eyebrow">Workspace Knowledge</p>
+          <p class="eyebrow">Brain</p>
           <h2>Good afternoon, Dmitry.</h2>
           <p>What would you like to know?</p>
 
@@ -151,10 +177,22 @@ onMounted(() => {
             <p class="eyebrow">Workspace Memory</p>
             <h2>Documents</h2>
           </div>
-          <button type="button" @click="crmStore.createKnowledgeDocument">Upload</button>
+          <button type="button" @click="uploadInput?.click()">Upload file</button>
         </div>
 
+        <form class="document-upload-form" @submit.prevent="uploadKnowledgeFile">
+          <label class="wide-field">
+            PDF, DOCX or TXT
+            <input ref="uploadInput" type="file" accept=".pdf,.docx,.txt" required @change="selectUpload" />
+          </label>
+          <label>Optional title<input v-model="uploadTitle" placeholder="Defaults to file name" /></label>
+          <button type="submit" :disabled="!uploadFile || uploadInProgress">
+            {{ uploadInProgress ? "Parsing and indexing…" : "Upload and index" }}
+          </button>
+        </form>
+
         <form class="document-upload-form" @submit.prevent="crmStore.createKnowledgeDocument">
+          <h3 class="wide-field">Or add plain text</h3>
           <label>Title<input v-model="crmStore.knowledgeDocumentForm.value.title" /></label>
           <label>Collection<input v-model="crmStore.knowledgeDocumentForm.value.source_type" /></label>
           <label class="wide-field">Content<textarea v-model="crmStore.knowledgeDocumentForm.value.text" class="large-textarea"></textarea></label>
@@ -168,7 +206,10 @@ onMounted(() => {
             <strong>{{ document.title }}</strong>
             <small>{{ document.chunks_count }} knowledge pieces · updated {{ new Date(document.created_at).toLocaleDateString() }}</small>
           </div>
-          <span :class="['status-pill', document.status]">{{ document.status }}</span>
+          <div>
+            <button v-if="document.download_url" type="button" class="secondary" @click="crmStore.downloadKnowledgeDocument(document)">Download</button>
+            <span :class="['status-pill', document.status]">{{ document.status }}</span>
+          </div>
         </article>
         <p v-if="!crmStore.knowledgeDocuments.value.length" class="empty">Documents will appear here after upload.</p>
       </section>
@@ -177,7 +218,7 @@ onMounted(() => {
     <section v-else class="panel brain-placeholder">
       <p class="eyebrow">{{ activeTab }}</p>
       <h2>{{ activeTab === "collections" ? "Collections" : activeTab === "agents" ? "AI Agents" : "Settings" }}</h2>
-      <p class="hint">This area is reserved for the next Workspace Knowledge screen.</p>
+      <p class="hint">This area is reserved for the next Brain screen.</p>
     </section>
   </section>
 </template>

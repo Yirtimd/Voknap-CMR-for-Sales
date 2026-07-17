@@ -13,11 +13,20 @@ from app.modules.ai_agent.schemas import (
     AgentChatResponse,
     AgentHistoryMessage,
     CompanyCopilotResponse,
+    HomeCopilotResponse,
 )
 from app.modules.ai_agent.service import AgentService
 
 
 router = APIRouter()
+
+
+@router.get("/home/copilot", response_model=HomeCopilotResponse)
+def home_copilot(
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(get_current_tenant),
+) -> HomeCopilotResponse:
+    return HomeCopilotResponse(**AgentService(db).home_copilot(tenant.id))
 
 
 @router.get("/companies/{company_id}/copilot", response_model=CompanyCopilotResponse)

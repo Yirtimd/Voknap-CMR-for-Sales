@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 
-import { api, emptyToNull, post } from "../api";
+import { api, apiBlob, emptyToNull, post } from "../api";
 import type {
   AgentAction,
   AgentChatResponse,
@@ -10,6 +10,7 @@ import type {
   AuthResponse,
   Company,
   CompanyCopilot,
+  HomeCopilot,
   CompanyWorkspace,
   CommunicationEvent,
   Contact,
@@ -59,6 +60,7 @@ const agentHistory = ref<AgentHistoryMessage[]>([]);
 const agentActions = ref<AgentAction[]>([]);
 const agentLastResponse = ref<AgentChatResponse | null>(null);
 const companyCopilot = ref<CompanyCopilot | null>(null);
+const homeCopilot = ref<HomeCopilot | null>(null);
 const connectorDefinitions = ref<ConnectorDefinition[]>([]);
 const connectorAccounts = ref<ConnectorAccount[]>([]);
 const connectorRuns = ref<ConnectorSyncRun[]>([]);
@@ -248,6 +250,7 @@ function logout() {
   notes.value = [];
   pipelines.value = [];
   nextActions.value = [];
+  homeCopilot.value = null;
   me.value = null;
   localStorage.clear();
 }
@@ -377,6 +380,16 @@ async function refreshCompanyCopilot(companyId: string) {
   await refreshAgent();
 }
 
+async function refreshHomeCopilot() {
+  if (!isAuthed.value) return;
+  homeCopilot.value = await api<HomeCopilot>(
+    "/ai-agent/home/copilot",
+    {},
+    token.value,
+    tenantId.value
+  );
+}
+
 async function refreshKnowledge() {
   if (!isAuthed.value) return;
   knowledgeDocuments.value = await api<KnowledgeDocument[]>(
@@ -397,6 +410,48 @@ async function createKnowledgeDocument() {
     );
     await refreshKnowledge();
   }, "Документ добавлен в базу знаний");
+}
+
+async function uploadKnowledgeDocument(
+  file: File,
+  context: {
+    title?: string;
+    scope?: "global" | "company" | "deal";
+    company_id?: string;
+    deal_id?: string;
+  } = {}
+): Promise<boolean> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("scope", context.scope ?? "global");
+  if (context.title?.trim()) form.append("title", context.title.trim());
+  if (context.company_id) form.append("company_id", context.company_id);
+  if (context.deal_id) form.append("deal_id", context.deal_id);
+  let succeeded = false;
+  await run(async () => {
+    await api<KnowledgeDocument>(
+      "/knowledge/documents/upload",
+      { method: "POST", body: form },
+      token.value,
+      tenantId.value
+    );
+    if ((context.scope ?? "global") === "global") await refreshKnowledge();
+    succeeded = true;
+  }, "Файл загружен и добавлен в базу знаний");
+  return succeeded;
+}
+
+async function downloadKnowledgeDocument(document: Pick<KnowledgeDocument, "title" | "download_url">) {
+  if (!document.download_url) return;
+  await run(async () => {
+    const blob = await apiBlob(document.download_url ?? "", token.value, tenantId.value);
+    const url = URL.createObjectURL(blob);
+    const anchor = window.document.createElement("a");
+    anchor.href = url;
+    anchor.download = document.title;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, "Файл скачан");
 }
 
 async function searchKnowledge() {
@@ -849,6 +904,7 @@ export const crmStore = {
   agentActions,
   agentLastResponse,
   companyCopilot,
+  homeCopilot,
   connectorDefinitions,
   connectorAccounts,
   connectorRuns,
@@ -901,6 +957,7 @@ export const crmStore = {
   createCompany,
   loadCompanyWorkspace,
   refreshCompanyCopilot,
+  refreshHomeCopilot,
   refreshKnowledge,
   refreshAgent,
   refreshConnectors,
@@ -920,6 +977,8 @@ export const crmStore = {
   toggleTask,
   createNote,
   createKnowledgeDocument,
+  uploadKnowledgeDocument,
+  downloadKnowledgeDocument,
   searchKnowledge,
   askKnowledge,
   sendAgentMessage,

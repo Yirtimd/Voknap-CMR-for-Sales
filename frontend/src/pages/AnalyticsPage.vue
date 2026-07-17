@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { crmStore } from "../stores/crm";
+import { formatStageName, isTerminalStage } from "../utils/stages";
 
 const loading = ref(false);
 const loadError = ref("");
 const data = computed(() => crmStore.analyticsOverview.value);
+type AnalyticsPanel = "summary" | "forecast" | "conversion" | "sla" | "risk" | "activity";
+
+const activePanel = ref<AnalyticsPanel | null>(null);
 
 async function loadAnalytics() {
   loading.value = true;
@@ -32,7 +36,8 @@ const unhealthyCompanies = computed(() => data.value?.company_health.filter((com
 
 const bottleneckStage = computed(() => {
   const stages = data.value?.stage_conversion ?? [];
-  return [...stages].sort((left, right) => right.stuck_count - left.stuck_count || left.conversion_from_previous - right.conversion_from_previous)[0];
+  const activeStages = stages.filter((stage) => !isTerminalStage(stage.stage_name));
+  return [...activeStages].sort((left, right) => right.stuck_count - left.stuck_count || left.conversion_from_previous - right.conversion_from_previous)[0];
 });
 
 const goalProgress = computed(() => {
@@ -82,6 +87,7 @@ const nextBestDeal = computed(() => topRiskDeals.value[0] ?? stuckDeals.value[0]
 
 const kpis = computed(() => [
   {
+    panel: "forecast" as AnalyticsPanel,
     label: "Pipeline",
     value: crmStore.money(forecast.value?.open_pipeline),
     trend: `${forecast.value?.open_deals ?? 0} deals`,
@@ -89,6 +95,7 @@ const kpis = computed(() => [
     direction: "up"
   },
   {
+    panel: "forecast" as AnalyticsPanel,
     label: "Revenue",
     value: crmStore.money(forecast.value?.weighted_revenue),
     trend: `${periodDays.value}d`,
@@ -96,6 +103,7 @@ const kpis = computed(() => [
     direction: "up"
   },
   {
+    panel: "conversion" as AnalyticsPanel,
     label: "Win Rate",
     value: `${goalProgress.value}%`,
     trend: "AI weighted",
@@ -103,6 +111,7 @@ const kpis = computed(() => [
     direction: "up"
   },
   {
+    panel: "sla" as AnalyticsPanel,
     label: "Avg Cycle",
     value: avgResolution.value,
     trend: `${taskSla.value?.overdue ?? 0} overdue`,
@@ -114,6 +123,145 @@ const kpis = computed(() => [
 function generatedAt(value?: string) {
   return value ? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
 }
+
+const detail = computed(() => {
+  const panel = activePanel.value;
+  if (!panel) return null;
+  if (panel === "forecast") {
+    return {
+      eyebrow: "Revenue intelligence",
+      title: "Pipeline & Forecast",
+      summary: `В прогноз на ${periodDays.value} дней входит ${forecast.value?.open_deals ?? 0} открытых сделок. Взвешенная выручка учитывает вероятность каждой сделки.`,
+      metrics: [
+        ["Open pipeline", crmStore.money(forecast.value?.open_pipeline)],
+        ["Due in period", crmStore.money(forecast.value?.due_in_period)],
+        ["Weighted revenue", crmStore.money(forecast.value?.weighted_revenue)],
+        ["Overdue revenue", crmStore.money(forecast.value?.overdue_revenue)]
+      ],
+      rows: [
+        ["Commit", crmStore.money(forecast.value?.commit_revenue)],
+        ["Best case", crmStore.money(forecast.value?.best_case_revenue)],
+        ["Pipeline", crmStore.money(forecast.value?.pipeline_revenue)],
+        ["Won", crmStore.money(forecast.value?.won_revenue)]
+      ],
+      link: "/deals",
+      linkLabel: "Open deals"
+    };
+  }
+  if (panel === "conversion") {
+    return {
+      eyebrow: "Funnel diagnostics",
+      title: "Conversion by Stage",
+      summary: bottleneckStage.value
+        ? `Главное узкое место — «${formatStageName(bottleneckStage.value.stage_name)}»: ${bottleneckStage.value.stuck_count} зависших сделок, конверсия ${bottleneckStage.value.conversion_from_previous}%.`
+        : "Недостаточно данных для определения узкого места.",
+      metrics: [
+        ["Stages", `${stageHealth.value.length}`],
+        ["Bottleneck", bottleneckStage.value ? formatStageName(bottleneckStage.value.stage_name) : "—"],
+        ["Stuck deals", `${bottleneckStage.value?.stuck_count ?? 0}`],
+        ["From first", `${bottleneckStage.value?.conversion_from_first ?? 0}%`]
+      ],
+      rows: stageHealth.value.map((stage) => [
+        `${stage.pipeline_name} · ${formatStageName(stage.stage_name)}`,
+        `${stage.conversion_from_previous}% · ${stage.deal_count} deals · ${crmStore.money(stage.amount)}`
+      ]),
+      link: "/deals",
+      linkLabel: "Open pipeline"
+    };
+  }
+  if (panel === "sla") {
+    return {
+      eyebrow: "Execution quality",
+      title: "Task SLA",
+      summary: `${taskSla.value?.overdue ?? 0} задач просрочено. SLA команды — ${taskSla.value?.sla_rate ?? 0}%, среднее время выполнения — ${avgResolution.value}.`,
+      metrics: [
+        ["Total", `${taskSla.value?.total ?? 0}`],
+        ["Completed", `${taskSla.value?.completed ?? 0}`],
+        ["Overdue", `${taskSla.value?.overdue ?? 0}`],
+        ["SLA", `${taskSla.value?.sla_rate ?? 0}%`]
+      ],
+      rows: (taskSla.value?.by_owner ?? []).map((owner) => [
+        owner.owner_name,
+        `${owner.sla_rate}% SLA · ${owner.overdue} overdue · ${owner.completed}/${owner.total} done`
+      ]),
+      link: "/tasks",
+      linkLabel: "Open tasks"
+    };
+  }
+  if (panel === "risk") {
+    return {
+      eyebrow: "AI risk map",
+      title: "Deals at Risk",
+      summary: `${riskMap.value?.high ?? 0} сделок имеют высокий риск. Суммарная выручка под риском — ${crmStore.money(riskMap.value?.revenue_at_risk)}.`,
+      metrics: [
+        ["High", `${riskMap.value?.high ?? 0}`],
+        ["Medium", `${riskMap.value?.medium ?? 0}`],
+        ["Low", `${riskMap.value?.low ?? 0}`],
+        ["Revenue at risk", crmStore.money(riskMap.value?.revenue_at_risk)]
+      ],
+      rows: (riskMap.value?.deals ?? []).map((deal) => [
+        `${deal.company_name} · ${deal.title}`,
+        `${deal.score}% · ${crmStore.money(deal.amount)} · ${deal.reasons.join(", ")}`
+      ]),
+      link: "/deals",
+      linkLabel: "Work with risks"
+    };
+  }
+  if (panel === "activity") {
+    return {
+      eyebrow: "Manager performance",
+      title: "Team Activity",
+      summary: `За период команда провела ${meetingsThisWeek.value} встреч и выполнила ${completedTasks.value} задач.`,
+      metrics: [
+        ["Managers", `${managerActivity.value.length}`],
+        ["Meetings", `${meetingsThisWeek.value}`],
+        ["Completed tasks", `${completedTasks.value}`],
+        ["Team SLA", `${taskSla.value?.sla_rate ?? 0}%`]
+      ],
+      rows: managerActivity.value.map((manager) => [
+        manager.manager_name,
+        `${manager.activities} activities · ${manager.calls} calls · ${manager.emails} emails · ${manager.meetings} meetings`
+      ]),
+      link: "/tasks",
+      linkLabel: "Open team tasks"
+    };
+  }
+  const companyRisk = unhealthyCompanies.value[0];
+  return {
+    eyebrow: "Live management brief",
+    title: "AI Summary",
+    summary: `Взвешенный прогноз составляет ${crmStore.money(forecast.value?.weighted_revenue)} при открытом pipeline ${crmStore.money(forecast.value?.open_pipeline)}. Под риском находится ${crmStore.money(riskMap.value?.revenue_at_risk)}.`,
+    metrics: [
+      ["Weighted forecast", crmStore.money(forecast.value?.weighted_revenue)],
+      ["High-risk deals", `${riskMap.value?.high ?? 0}`],
+      ["Overdue tasks", `${taskSla.value?.overdue ?? 0}`],
+      ["Team SLA", `${taskSla.value?.sla_rate ?? 0}%`]
+    ],
+    rows: [
+      ["Priority 1", bottleneckStage.value ? `Разобрать зависшие сделки этапа «${formatStageName(bottleneckStage.value.stage_name)}»` : "Проверить структуру pipeline"],
+      ["Priority 2", nextBestDeal.value ? `Связаться с ${nextBestDeal.value.company_name}: риск ${crmStore.money(nextBestDeal.value.amount)}` : "Назначить следующий шаг по ключевым сделкам"],
+      ["Priority 3", taskSla.value?.overdue ? `Закрыть ${taskSla.value.overdue} просроченных задач` : "Сохранить текущий уровень SLA"],
+      ["Account focus", companyRisk ? `${companyRisk.company_name}: ${companyRisk.reasons.join(" · ") || companyRisk.label}` : "Критических компаний нет"]
+    ],
+    link: "/deals",
+    linkLabel: "Start with deals"
+  };
+});
+
+function openPanel(panel: AnalyticsPanel) {
+  activePanel.value = panel;
+}
+
+function closePanel() {
+  activePanel.value = null;
+}
+
+function handleEscape(event: KeyboardEvent) {
+  if (event.key === "Escape") closePanel();
+}
+
+onMounted(() => window.addEventListener("keydown", handleEscape));
+onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
 </script>
 
 <template>
@@ -124,7 +272,7 @@ function generatedAt(value?: string) {
         <h2>Analytics</h2>
       </div>
       <div class="analytics-actions">
-        <button type="button" class="secondary" :disabled="loading">AI Summary</button>
+        <button type="button" class="secondary" :disabled="loading || !data" @click="openPanel('summary')">AI Summary</button>
         <button type="button" aria-label="Refresh analytics" :disabled="loading" @click="loadAnalytics">
           {{ loading ? "…" : "↻" }}
         </button>
@@ -134,16 +282,24 @@ function generatedAt(value?: string) {
     <p v-if="loadError" class="analytics-error">{{ loadError }}</p>
 
     <section class="analytics-top-grid">
-      <article v-for="kpi in kpis" :key="kpi.label" class="analytics-kpi" role="button" tabindex="0">
+      <article
+        v-for="kpi in kpis"
+        :key="kpi.label"
+        class="analytics-kpi interactive-card"
+        role="button"
+        tabindex="0"
+        @click="openPanel(kpi.panel)"
+        @keydown.enter.space.prevent="openPanel(kpi.panel)"
+      >
         <span>{{ kpi.label }}</span>
         <strong>{{ kpi.value }}</strong>
         <small :class="kpi.direction">{{ kpi.trend }} · {{ kpi.detail }}</small>
       </article>
 
-      <article class="ai-summary-card" role="button" tabindex="0">
+      <article class="ai-summary-card interactive-card" role="button" tabindex="0" @click="openPanel('summary')" @keydown.enter.space.prevent="openPanel('summary')">
         <span>AI Insights</span>
         <strong>
-          Этап «{{ bottleneckStage?.stage_name ?? "КП" }}» требует внимания
+          Этап «{{ bottleneckStage ? formatStageName(bottleneckStage.stage_name) : "КП" }}» требует внимания
         </strong>
         <small>
           {{ topRiskDeals.length || stuckDeals.length }} сделки в зоне риска · экспозиция
@@ -158,7 +314,7 @@ function generatedAt(value?: string) {
     </section>
 
     <section class="analytics-main-grid">
-      <section class="analytics-panel forecast-panel" role="button" tabindex="0">
+      <section class="analytics-panel forecast-panel interactive-card" role="button" tabindex="0" @click="openPanel('forecast')" @keydown.enter.space.prevent="openPanel('forecast')">
         <div class="panel-title">
           <div>
             <p class="eyebrow">Revenue Forecast</p>
@@ -185,17 +341,17 @@ function generatedAt(value?: string) {
         </div>
       </section>
 
-      <section class="analytics-panel health-panel" role="button" tabindex="0">
+      <section class="analytics-panel health-panel interactive-card" role="button" tabindex="0" @click="openPanel('conversion')" @keydown.enter.space.prevent="openPanel('conversion')">
         <div class="panel-title">
           <div>
             <p class="eyebrow">Pipeline Health</p>
             <h3>Conversion Funnel</h3>
           </div>
-          <span>{{ bottleneckStage?.stage_name ?? "No bottleneck" }}</span>
+          <span>{{ bottleneckStage ? formatStageName(bottleneckStage.stage_name) : "Нет узкого места" }}</span>
         </div>
         <div class="funnel-list">
           <article v-for="stage in stageHealth" :key="stage.stage_id" :class="{ bottleneck: stage.isBottleneck }">
-            <span>{{ stage.stage_name }}</span>
+            <span>{{ formatStageName(stage.stage_name) }}</span>
             <div><i :style="{ width: `${stage.width}%` }"></i></div>
             <small>{{ stage.deal_count }} · {{ crmStore.money(stage.amount) }}</small>
           </article>
@@ -205,7 +361,7 @@ function generatedAt(value?: string) {
     </section>
 
     <section class="analytics-main-grid lower">
-      <section class="analytics-panel risk-panel" role="button" tabindex="0">
+      <section class="analytics-panel risk-panel interactive-card" role="button" tabindex="0" @click="openPanel('risk')" @keydown.enter.space.prevent="openPanel('risk')">
         <div class="panel-title">
           <div>
             <p class="eyebrow">Top Deals at Risk</p>
@@ -213,13 +369,13 @@ function generatedAt(value?: string) {
           </div>
           <span>Lost revenue: {{ crmStore.money(riskMap?.revenue_at_risk ?? 0) }}</span>
         </div>
-        <RouterLink v-for="deal in topRiskDeals" :key="deal.deal_id" to="/deals" class="risk-row">
+        <RouterLink v-for="deal in topRiskDeals" :key="deal.deal_id" to="/deals" class="risk-row" @click.stop>
           <i :class="deal.level"></i>
           <span>{{ deal.company_name }}</span>
           <small>{{ deal.score }}% risk</small>
           <strong>{{ crmStore.money(deal.amount) }}</strong>
         </RouterLink>
-        <RouterLink v-for="deal in stuckDeals" v-if="!topRiskDeals.length" :key="deal.deal_id" to="/deals" class="risk-row">
+        <RouterLink v-for="deal in stuckDeals" v-if="!topRiskDeals.length" :key="deal.deal_id" to="/deals" class="risk-row" @click.stop>
           <i :class="deal.risk_level"></i>
           <span>{{ deal.company_name }}</span>
           <small>{{ deal.days_in_stage }} days</small>
@@ -228,7 +384,7 @@ function generatedAt(value?: string) {
         <p v-if="!topRiskDeals.length && !stuckDeals.length" class="empty compact">No open deals at risk</p>
       </section>
 
-      <section class="analytics-panel activity-panel" role="button" tabindex="0">
+      <section class="analytics-panel activity-panel interactive-card" role="button" tabindex="0" @click="openPanel('activity')" @keydown.enter.space.prevent="openPanel('activity')">
         <div class="panel-title">
           <div>
             <p class="eyebrow">Team Activity</p>
@@ -252,8 +408,8 @@ function generatedAt(value?: string) {
         </dl>
         <div class="ask-analytics">
           <span>Ask Analytics</span>
-          <small>Почему упала конверсия?</small>
-          <small>Какие сделки вероятнее всего выиграют?</small>
+          <button type="button" @click.stop="openPanel('conversion')">Почему упала конверсия?</button>
+          <button type="button" @click.stop="openPanel('risk')">Какие сделки требуют внимания?</button>
         </div>
       </section>
     </section>
@@ -286,6 +442,36 @@ function generatedAt(value?: string) {
       </div>
       <RouterLink class="button-link" :to="nextBestDeal ? '/deals' : '/companies'">Open Deal →</RouterLink>
     </section>
+
+    <div v-if="detail" class="analytics-modal-backdrop" @click.self="closePanel">
+      <section class="analytics-modal" role="dialog" aria-modal="true" :aria-label="detail.title">
+        <header>
+          <div>
+            <p class="eyebrow">{{ detail.eyebrow }}</p>
+            <h3>{{ detail.title }}</h3>
+          </div>
+          <button type="button" class="analytics-modal-close" aria-label="Close analytics details" @click="closePanel">×</button>
+        </header>
+        <p class="analytics-modal-summary">{{ detail.summary }}</p>
+        <dl class="analytics-modal-metrics">
+          <div v-for="metric in detail.metrics" :key="metric[0]">
+            <dt>{{ metric[0] }}</dt>
+            <dd>{{ metric[1] }}</dd>
+          </div>
+        </dl>
+        <div class="analytics-modal-rows">
+          <article v-for="row in detail.rows" :key="`${row[0]}-${row[1]}`">
+            <strong>{{ row[0] }}</strong>
+            <span>{{ row[1] }}</span>
+          </article>
+          <p v-if="!detail.rows.length" class="empty">No detailed data for this period</p>
+        </div>
+        <footer>
+          <span>Generated {{ generatedAt(data?.generated_at) }}</span>
+          <RouterLink class="button-link" :to="detail.link" @click="closePanel">{{ detail.linkLabel }} →</RouterLink>
+        </footer>
+      </section>
+    </div>
   </section>
 </template>
 
@@ -371,9 +557,22 @@ function generatedAt(value?: string) {
 .forecast-legend,
 .risk-row small,
 .activity-panel dt,
-.ask-analytics small,
+.ask-analytics button,
 .company-row small {
   color: var(--muted);
+}
+
+.interactive-card {
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.interactive-card:hover,
+.interactive-card:focus-visible {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+  box-shadow: 0 8px 24px rgb(15 23 42 / 10%);
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .analytics-kpi span {
@@ -633,9 +832,21 @@ function generatedAt(value?: string) {
   font-weight: 800;
 }
 
-.ask-analytics small {
+.ask-analytics button {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
   font-size: 12px;
   line-height: 1.25;
+  text-align: left;
+}
+
+.ask-analytics button:hover,
+.ask-analytics button:focus-visible {
+  color: var(--brand);
+  text-decoration: underline;
 }
 
 .company-strip {
@@ -691,6 +902,110 @@ function generatedAt(value?: string) {
 .next-action .button-link {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+.analytics-modal-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(15 23 42 / 38%);
+  backdrop-filter: blur(4px);
+}
+
+.analytics-modal {
+  display: grid;
+  gap: 18px;
+  width: min(760px, 100%);
+  max-height: min(820px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+  background: var(--surface-solid);
+  box-shadow: 0 30px 80px rgb(15 23 42 / 24%);
+}
+
+.analytics-modal > header,
+.analytics-modal > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.analytics-modal h3,
+.analytics-modal p {
+  margin: 0;
+}
+
+.analytics-modal h3 {
+  font-size: 20px;
+}
+
+.analytics-modal-close {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.analytics-modal-summary {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.analytics-modal-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.analytics-modal-metrics div {
+  min-width: 0;
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface-muted);
+}
+
+.analytics-modal-metrics dt,
+.analytics-modal > footer {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.analytics-modal-metrics dd {
+  margin: 5px 0 0;
+  font-size: 15px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.analytics-modal-rows {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.analytics-modal-rows article {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.42fr) minmax(0, 1fr);
+  gap: 16px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 12px 2px;
+}
+
+.analytics-modal-rows span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .empty {
@@ -756,6 +1071,27 @@ function generatedAt(value?: string) {
 
   .ai-summary-card {
     grid-column: auto;
+  }
+
+  .analytics-modal-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .analytics-modal {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+    padding: 18px;
+  }
+
+  .analytics-modal-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analytics-modal-rows article {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 }
 </style>

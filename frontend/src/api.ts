@@ -6,10 +6,11 @@ export async function api<T>(
   token?: string,
   tenantId?: string
 ): Promise<T> {
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(!isFormData ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(tenantId ? { "X-Tenant-Id": tenantId } : {}),
       ...options.headers
@@ -24,6 +25,20 @@ export async function api<T>(
   return response.json() as Promise<T>;
 }
 
+export async function apiBlob(path: string, token?: string, tenantId?: string): Promise<Blob> {
+  const response = await fetch(`${API_URL}${path}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(tenantId ? { "X-Tenant-Id": tenantId } : {})
+    }
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `API error ${response.status}`);
+  }
+  return response.blob();
+}
+
 export function post(body: unknown, method = "POST"): RequestInit {
   return { method, body: JSON.stringify(body) };
 }
@@ -33,4 +48,3 @@ export function emptyToNull<T extends Record<string, unknown>>(source: T): T {
     Object.entries(source).map(([key, value]) => [key, value === "" ? null : value])
   ) as T;
 }
-

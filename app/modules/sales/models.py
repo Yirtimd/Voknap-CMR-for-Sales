@@ -188,6 +188,7 @@ class CompanyFile(Base):
     file_type: Mapped[str | None] = mapped_column(String(40))
     mime_type: Mapped[str | None] = mapped_column(String(120))
     file_size: Mapped[int | None] = mapped_column(Integer)
+    storage_backend: Mapped[str] = mapped_column(String(40), default="local", nullable=False)
     storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
     download_url: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

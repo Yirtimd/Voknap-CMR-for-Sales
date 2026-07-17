@@ -22,8 +22,8 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Starting PostgreSQL..."
-docker compose up -d --wait postgres
+echo "Starting PostgreSQL and MinIO..."
+docker compose up -d --wait postgres minio
 
 echo "Applying migrations..."
 .venv/bin/alembic upgrade head

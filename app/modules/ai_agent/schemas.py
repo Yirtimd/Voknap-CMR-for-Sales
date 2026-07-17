@@ -42,3 +42,36 @@ class CompanyCopilotResponse(BaseModel):
     meeting_prep: str
     insight: dict
     actions: list[AgentActionResponse] = Field(default_factory=list)
+
+
+class HomeFocusDeal(BaseModel):
+    deal_id: UUID
+    company_id: UUID
+    company_name: str
+    deal_title: str
+    amount: float
+    stage_name: str
+    confidence: int
+    risk_score: int
+    risk_level: str
+    next_action: str
+
+
+class HomeCopilotResponse(BaseModel):
+    generated_at: datetime
+    source: str = "backend_copilot"
+    title: str
+    rationale: str
+    company_id: UUID | None = None
+    company_name: str | None = None
+    deal_id: UUID | None = None
+    deal_title: str | None = None
+    amount: float = 0
+    confidence: int = 0
+    risk_score: int = 0
+    risk_level: str = "low"
+    action_label: str
+    primary_url: str
+    details_url: str
+    signals: list[str] = Field(default_factory=list)
+    focus_deals: list[HomeFocusDeal] = Field(default_factory=list)

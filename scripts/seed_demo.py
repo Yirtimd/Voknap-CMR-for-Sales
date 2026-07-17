@@ -90,7 +90,7 @@ def create_pipeline(db: Session, tenant: Tenant) -> list[PipelineStage]:
     db.flush()
 
     stages = []
-    for index, name in enumerate(("New", "Discovery", "Proposal", "Negotiation", "Won")):
+    for index, name in enumerate(("Новые", "Разработка", "КП", "Переговоры", "Закрыты")):
         stage = PipelineStage(tenant_id=tenant.id, pipeline_id=pipeline.id, name=name, sort_order=index)
         db.add(stage)
         stages.append(stage)
@@ -299,7 +299,7 @@ def create_company_pack(
         ("CALL", "Call", "Call completed", "Обсудили текущий процесс продаж и узкие места.", -3),
         ("MEETING", "Meeting", "Discovery meeting", "Зафиксировали участников, сроки и критерии успеха.", -2),
         ("AI_SUMMARY_UPDATED", "AI", "AI generated summary", "AI обновил краткую сводку компании.", -1),
-        ("DEAL_STAGE_CHANGED", "CRM", f"Stage moved to {stages[stage_index].name}", "Сделка перешла на текущий этап.", 0),
+        ("DEAL_STAGE_CHANGED", "CRM", f"Этап изменён на «{stages[stage_index].name}»", "Сделка перешла на текущий этап.", 0),
     ]
     for activity_type, channel, title, text, shift in activity_rows:
         db.add(
@@ -383,7 +383,11 @@ def add_knowledge_document(
             deal_id=deal_id,
             chunk_index=0,
             text=text,
-            embedding_json=json.dumps(embedding),
+            embedding_vector=embedding,
+            embedding_provider="local",
+            embedding_model="local-hash-v1",
+            embedding_version="1",
+            embedding_dimensions=len(embedding),
             token_estimate=len(text.split()),
         )
     )

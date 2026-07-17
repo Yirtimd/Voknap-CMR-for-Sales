@@ -29,6 +29,9 @@ class DocumentResponse(BaseModel):
     status: str
     created_at: datetime
     chunks_count: int = 0
+    download_url: str | None = None
+    extraction_method: str = "manual"
+    source_pages: int | None = None
 
 
 class SearchRequest(BaseModel):

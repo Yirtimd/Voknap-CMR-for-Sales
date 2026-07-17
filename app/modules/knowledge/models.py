@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import VECTOR
 
 from app.core.database import Base
 
@@ -23,6 +24,8 @@ class KnowledgeDocument(Base):
     source_type: Mapped[str] = mapped_column(String(40), default="text")
     visibility: Mapped[str] = mapped_column(String(40), default="global")
     status: Mapped[str] = mapped_column(String(40), default="ready")
+    extraction_method: Mapped[str] = mapped_column(String(40), default="manual", nullable=False)
+    source_pages: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     chunks: Mapped[list["KnowledgeChunk"]] = relationship(
@@ -47,7 +50,11 @@ class KnowledgeChunk(Base):
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), index=True)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding_json: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_vector: Mapped[list[float]] = mapped_column(VECTOR(1536), nullable=False)
+    embedding_provider: Mapped[str] = mapped_column(String(50), default="local", nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(120), default="local-hash-v1", nullable=False)
+    embedding_version: Mapped[str] = mapped_column(String(40), default="1", nullable=False)
+    embedding_dimensions: Mapped[int] = mapped_column(Integer, default=256, nullable=False)
     token_estimate: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 

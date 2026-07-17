@@ -12,6 +12,11 @@ from app.modules.knowledge.service import KnowledgeService
 from app.modules.sales.models import Company, Deal, Pipeline, PipelineStage
 
 
+@pytest.fixture(autouse=True)
+def local_embeddings(monkeypatch):
+    monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_provider", "local")
+
+
 @pytest.fixture
 def scoped_knowledge():
     engine = create_engine("sqlite:///:memory:")
@@ -136,3 +141,19 @@ def test_request_rejects_implicit_or_conflicting_scope():
         AskRequest(question="pricing", scope="company")
     with pytest.raises(ValidationError):
         AskRequest(question="pricing", scope="global", company_id=company_id)
+
+
+def test_reindex_updates_embedding_metadata(scoped_knowledge, monkeypatch):
+    data = scoped_knowledge
+    service = data["service"]
+    monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_version", "2")
+
+    before = service.search(data["tenant_id"], "pricing policy", scope="global", limit=20)
+    count = service.reindex_all(data["tenant_id"], batch_size=2)
+    after = service.search(data["tenant_id"], "pricing policy", scope="global", limit=20)
+
+    assert before == []
+    assert count == 4
+    assert document_ids(after) == {data["global"].id}
+    assert all(chunk.embedding_version == "2" for chunk in data["global"].chunks)
+    assert all(chunk.embedding_dimensions == 256 for chunk in data["global"].chunks)

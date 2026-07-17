@@ -2,8 +2,9 @@
 import { computed, ref, watch } from "vue";
 
 import { api, emptyToNull, post } from "../../api";
-import type { Activity, CommunicationEvent, Company, CompanyFile, KnowledgeDocument, NextAction, Task } from "../../types";
+import type { Activity, CommunicationEvent, Company, NextAction, Task } from "../../types";
 import { crmStore } from "../../stores/crm";
+import { formatStageName } from "../../utils/stages";
 
 const props = defineProps<{ company: Company | null; initialTab?: string; embedded?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
@@ -11,6 +12,7 @@ const isSaving = ref(false);
 const includeGlobalKnowledge = ref(false);
 const knowledgeIsLoading = ref(false);
 const knowledgeError = ref("");
+const knowledgeFileInput = ref<HTMLInputElement | null>(null);
 const isNextActionEditorOpen = ref(false);
 const nextActionForm = ref({ title: "", description: "", due_at: "", priority: "high" });
 const drawerActionMode = ref<"call" | "email" | "meeting" | "task" | null>(null);
@@ -56,24 +58,27 @@ const tasks = computed(() => workspace.value?.tasks ?? []);
 const activities = computed(() => workspace.value?.activities ?? []);
 const files = computed(() => workspace.value?.files ?? []);
 const knowledgeDocuments = computed(() => workspace.value?.knowledge_documents ?? []);
-const knowledgeSources = computed(() =>
-  [
-    ...files.value.slice(0, 3).map((file) => ({
+const knowledgeSources = computed(() => {
+  const indexedFileIds = new Set(knowledgeDocuments.value.map((document) => document.file_id).filter(Boolean));
+  return [
+    ...knowledgeDocuments.value.slice(0, 3).map((document) => ({
+      id: document.id,
+      title: document.title,
+      type: document.source_type.toUpperCase(),
+      date: document.created_at,
+      meta: `${document.visibility === "deal" ? "Сделка" : "Компания"} · ${formatDate(document.created_at)}`,
+      downloadable: Boolean(document.download_url)
+    })),
+    ...files.value.filter((file) => !indexedFileIds.has(file.id)).slice(0, 3).map((file) => ({
       id: file.id,
       title: file.name,
       type: String(file.file_type ?? file.name.split(".").pop() ?? "DOC").toUpperCase(),
       date: file.uploaded_at,
-      meta: `${String(file.file_type ?? "Файл").toUpperCase()} · ${formatDate(file.uploaded_at)}`
-    })),
-    ...knowledgeDocuments.value.slice(0, 3).map((document) => ({
-      id: document.id,
-      title: document.title,
-      type: document.title.split(".").pop()?.toUpperCase() ?? "DOC",
-      date: document.created_at,
-      meta: `${document.visibility === "deal" ? "Сделка" : "Компания"} · ${formatDate(document.created_at)}`
+      meta: `${String(file.file_type ?? "Файл").toUpperCase()} · ${formatDate(file.uploaded_at)}`,
+      downloadable: false
     }))
   ].slice(0, 5)
-);
+});
 const companyKnowledgeAnswer = computed(() => {
   const answer = crmStore.knowledgeAnswer.value;
   if (!answer || !props.company || answer.company_id !== props.company.id) return null;
@@ -166,8 +171,8 @@ const compactDealRows = computed(() =>
     const nextStage = row.stages[row.activeIndex + 1];
     return {
       ...row,
-      activeStageName: activeStage?.name ?? "Stage",
-      nextStageName: nextStage?.name ?? "Final",
+      activeStageName: formatStageName(activeStage?.name),
+      nextStageName: nextStage ? formatStageName(nextStage.name) : "Финал",
       progress: Math.round(((row.activeIndex + 1) / stageCount) * 100)
     };
   })
@@ -179,7 +184,7 @@ const pipeline = computed(() => deals.value.reduce((sum, deal) => sum + Number(d
 const pipelineBreakdown = computed(() => {
   const rows = new Map<string, { title: string; count: number; amount: number }>();
   deals.value.forEach((deal) => {
-    const stageTitle = stages.value.find((stage) => stage.id === deal.stage_id)?.name ?? "Без этапа";
+    const stageTitle = formatStageName(stages.value.find((stage) => stage.id === deal.stage_id)?.name);
     const row = rows.get(stageTitle) ?? { title: stageTitle, count: 0, amount: 0 };
     row.count += 1;
     row.amount += Number(deal.amount ?? 0);
@@ -533,41 +538,33 @@ async function askCompanyKnowledge() {
   }
 }
 
-function addProposalFile() {
-  if (!props.company) return;
+function chooseCompanyKnowledgeFile() {
+  knowledgeFileInput.value?.click();
+}
+
+function uploadCompanyKnowledgeFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !props.company) return;
   void runDrawerAction(async () => {
-    const file = await api<CompanyFile>(
-      `/sales/companies/${props.company?.id}/files`,
-      post({
-        company_id: props.company?.id,
-        deal_id: currentDeal.value?.id ?? null,
-        contact_id: contacts.value[0]?.id ?? null,
-        activity_id: null,
-        name: `Proposal_${props.company?.name}.pdf`,
-        file_type: "proposal",
-        mime_type: "application/pdf",
-        file_size: 1480000,
-        storage_key: `demo/${props.company?.id}/proposal.pdf`,
-        download_url: `/demo-files/${props.company?.id}/proposal`,
-      }),
-      crmStore.token.value,
-      crmStore.tenantId.value
-    );
-    await api<KnowledgeDocument>(
-      `/knowledge/companies/${props.company?.id}/documents`,
-      post({
-        title: `Proposal knowledge: ${props.company?.name}`,
-        source_type: "proposal",
-        visibility: "company",
-        company_id: props.company?.id,
-        deal_id: currentDeal.value?.id ?? null,
-        file_id: file.id,
-        text: `Proposal for ${props.company?.name}. Deal: ${currentDeal.value?.title ?? "not set"}. Next action: ${nextAction.value}. Risk: ${currentDeal.value?.risk_level ?? "not set"}. This document belongs to company-specific RAG context.`,
-      }),
-      crmStore.token.value,
-      crmStore.tenantId.value
-    );
+    const succeeded = await crmStore.uploadKnowledgeDocument(file, currentDeal.value
+      ? {
+          scope: "deal",
+          company_id: props.company?.id,
+          deal_id: currentDeal.value.id
+        }
+      : {
+          scope: "company",
+          company_id: props.company?.id
+        });
+    if (!succeeded) throw new Error(crmStore.error.value || "Не удалось загрузить файл");
   });
+}
+
+function openKnowledgeSource(sourceId: string) {
+  const document = knowledgeDocuments.value.find((item) => item.id === sourceId);
+  if (document?.download_url) void crmStore.downloadKnowledgeDocument(document);
 }
 
 function confirmCopilotAction(actionId: string) {
@@ -866,7 +863,7 @@ function saveNextAction() {
             <header>
               <div>
                 <strong>{{ row.deal.title }}</strong>
-                <small>{{ row.stages[row.activeIndex]?.name ?? "Stage" }} · {{ row.deal.status }}</small>
+                <small>{{ formatStageName(row.stages[row.activeIndex]?.name) }} · {{ row.deal.status }}</small>
               </div>
               <b>{{ crmStore.money(row.deal.amount) }}</b>
             </header>
@@ -878,7 +875,7 @@ function saveNextAction() {
                 :class="{ done: index < row.activeIndex, active: index === row.activeIndex }"
               >
                 <span>{{ index < row.activeIndex ? "✓" : index + 1 }}</span>
-                <strong>{{ stage.name }}</strong>
+                <strong>{{ formatStageName(stage.name) }}</strong>
               </div>
             </div>
           </RouterLink>
@@ -986,11 +983,20 @@ function saveNextAction() {
                   <strong>{{ source.title }}</strong>
                   <small>{{ source.meta }}</small>
                 </div>
-                <button type="button" aria-label="Открыть источник">›</button>
+                <button type="button" :disabled="!source.downloadable" aria-label="Скачать источник" @click="openKnowledgeSource(source.id)">›</button>
               </article>
               <p v-if="!knowledgeSources.length" class="empty">Источники пока не добавлены</p>
             </section>
-            <button type="button" class="knowledge-manage-button" @click="addProposalFile">⚙ Управление источниками</button>
+            <input
+              ref="knowledgeFileInput"
+              hidden
+              type="file"
+              accept=".pdf,.docx,.txt"
+              @change="uploadCompanyKnowledgeFile"
+            />
+            <button type="button" class="knowledge-manage-button" :disabled="isSaving" @click="chooseCompanyKnowledgeFile">
+              {{ isSaving ? "Загрузка и индексация…" : "+ Загрузить PDF, DOCX или TXT" }}
+            </button>
           </aside>
 
           <section class="knowledge-card knowledge-workspace">

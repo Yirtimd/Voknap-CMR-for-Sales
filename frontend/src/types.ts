@@ -136,6 +136,9 @@ export type KnowledgeDocument = {
   status: string;
   created_at: string;
   chunks_count: number;
+  download_url?: string | null;
+  extraction_method?: string;
+  source_pages?: number | null;
 };
 
 export type KnowledgeSearchResult = {
@@ -188,6 +191,37 @@ export type CompanyCopilot = {
   meeting_prep: string;
   insight: Record<string, unknown>;
   actions: AgentAction[];
+};
+
+export type HomeCopilot = {
+  generated_at: string;
+  source: "backend_copilot";
+  title: string;
+  rationale: string;
+  company_id: string | null;
+  company_name: string | null;
+  deal_id: string | null;
+  deal_title: string | null;
+  amount: number;
+  confidence: number;
+  risk_score: number;
+  risk_level: string;
+  action_label: string;
+  primary_url: string;
+  details_url: string;
+  signals: string[];
+  focus_deals: Array<{
+    deal_id: string;
+    company_id: string;
+    company_name: string;
+    deal_title: string;
+    amount: number;
+    stage_name: string;
+    confidence: number;
+    risk_score: number;
+    risk_level: string;
+    next_action: string;
+  }>;
 };
 
 export type AgentHistoryMessage = {
@@ -480,6 +514,9 @@ export type WorkspaceKnowledgeDocument = {
   file_id: string | null;
   created_at: string;
   chunks_count: number;
+  download_url?: string | null;
+  extraction_method?: string;
+  source_pages?: number | null;
 };
 
 export type WorkspaceActivity = {

@@ -3,11 +3,12 @@
 PYTHON := .venv/bin/python
 ALEMBIC := .venv/bin/alembic
 
-.PHONY: help check db db-ready migrate dev seed test stop
+.PHONY: help check db db-ready infra infra-ready migrate dev production seed test stop
 
 help:
 	@echo "CMR Sales App"
 	@echo "  make dev   - start database, backend, and frontend"
+	@echo "  make production - start PostgreSQL, MinIO, and OCR-ready backend"
 	@echo "  make seed  - recreate demo workspace data"
 	@echo "  make test  - run backend and frontend checks"
 	@echo "  make stop  - stop Docker services"
@@ -25,11 +26,23 @@ db-ready:
 	@docker info >/dev/null 2>&1 || (echo "Docker is not running. Start Docker Desktop and retry." && exit 1)
 	docker compose up -d --wait postgres
 
+infra:
+	@docker info >/dev/null 2>&1 || (echo "Docker is not running. Start Docker Desktop and retry." && exit 1)
+	docker compose up -d postgres minio
+
+infra-ready:
+	@docker info >/dev/null 2>&1 || (echo "Docker is not running. Start Docker Desktop and retry." && exit 1)
+	docker compose up -d --wait postgres minio
+
 migrate: check db-ready
 	$(ALEMBIC) upgrade head
 
 dev:
 	bash scripts/dev.sh
+
+production:
+	@docker info >/dev/null 2>&1 || (echo "Docker is not running. Start Docker Desktop and retry." && exit 1)
+	docker compose --profile production up -d --build --wait backend
 
 seed: check db-ready migrate
 	$(PYTHON) scripts/seed_demo.py

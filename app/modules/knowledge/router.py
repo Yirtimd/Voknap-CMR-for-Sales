@@ -1,10 +1,14 @@
 from uuid import UUID
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import CurrentTenant, get_current_tenant
+from app.modules.knowledge.files import KnowledgeFileError
 from app.modules.knowledge.models import KnowledgeDocument
 from app.modules.knowledge.schemas import (
     AskRequest,
@@ -17,9 +21,41 @@ from app.modules.knowledge.schemas import (
     SearchResultResponse,
 )
 from app.modules.knowledge.service import KnowledgeService
+from app.modules.knowledge.storage import open_knowledge_file
+from app.modules.sales.models import CompanyFile
 
 
 router = APIRouter()
+
+
+@router.post("/documents/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+async def upload_document(
+    file: UploadFile = File(...),
+    title: str | None = Form(default=None, max_length=255),
+    scope: KnowledgeScope = Form(default="global"),
+    company_id: UUID | None = Form(default=None),
+    deal_id: UUID | None = Form(default=None),
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(get_current_tenant),
+) -> DocumentResponse:
+    data = await file.read(settings.knowledge_max_upload_bytes + 1)
+    await file.close()
+    service = KnowledgeService(db)
+    try:
+        document = service.create_document_from_upload(
+            tenant_id=tenant.id,
+            user_id=tenant.user_id,
+            filename=file.filename or "document",
+            content_type=file.content_type,
+            data=data,
+            title=title,
+            scope=scope,
+            company_id=company_id,
+            deal_id=deal_id,
+        )
+    except (KnowledgeFileError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+    return _document_response(document)
 
 
 @router.post("/documents", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -104,6 +140,46 @@ def list_company_documents(
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     return [_document_response(document) for document in documents]
+
+
+@router.get("/documents/{document_id}/download")
+def download_document(
+    document_id: UUID,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(get_current_tenant),
+):
+    document = (
+        db.query(KnowledgeDocument)
+        .filter(KnowledgeDocument.id == document_id, KnowledgeDocument.tenant_id == tenant.id)
+        .one_or_none()
+    )
+    if document is None or document.file_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file not found")
+    stored_file = (
+        db.query(CompanyFile)
+        .filter(CompanyFile.id == document.file_id, CompanyFile.tenant_id == tenant.id)
+        .one_or_none()
+    )
+    if stored_file is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file not found")
+    try:
+        stored_object = open_knowledge_file(stored_file.storage_backend, stored_file.storage_key)
+    except KnowledgeFileError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    if stored_object.path is not None:
+        return FileResponse(
+            stored_object.path,
+            media_type=stored_file.mime_type,
+            filename=stored_file.name,
+        )
+    return StreamingResponse(
+        stored_object.stream,
+        media_type=stored_object.content_type or stored_file.mime_type,
+        headers={
+            "Content-Length": str(stored_object.content_length),
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(stored_file.name)}",
+        },
+    )
 
 
 @router.get("/documents/{document_id}", response_model=DocumentResponse)
@@ -212,4 +288,7 @@ def _document_response(document: KnowledgeDocument) -> DocumentResponse:
         status=document.status,
         created_at=document.created_at,
         chunks_count=len(document.chunks),
+        download_url=f"/knowledge/documents/{document.id}/download" if document.file_id else None,
+        extraction_method=document.extraction_method,
+        source_pages=document.source_pages,
     )

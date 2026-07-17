@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import type { Deal } from "../types";
 import { crmStore } from "../stores/crm";
+import { formatStageName } from "../utils/stages";
 
 const route = useRoute();
 const router = useRouter();
@@ -93,7 +94,8 @@ function stageIndex(stageId: string) {
 }
 
 function stageName(stageId: string) {
-  return crmStore.allStages.value.find((stage) => stage.id === stageId)?.name ?? "Stage";
+  const stage = crmStore.allStages.value.find((item) => item.id === stageId);
+  return formatStageName(stage?.name ?? stageId);
 }
 
 function aiScore(deal: Deal) {
@@ -234,11 +236,6 @@ function timelineItems(deal: Deal) {
   ];
 }
 
-function move(deal: Deal, event: Event) {
-  const stageId = (event.target as HTMLSelectElement).value;
-  void crmStore.moveDeal(deal, stageId);
-}
-
 function openDeal(deal: Deal) {
   if (didDrag.value) return;
   selectedDeal.value = deal;
@@ -358,7 +355,7 @@ watch(
     <section class="deals-filter-bar">
       <div class="deal-filter-controls">
         <span class="filter-label">Filters</span>
-        <select v-model="filters.stage" class="filter-chip"><option value="">All stages</option><option v-for="stage in crmStore.allStages.value" :key="stage.id" :value="stage.id">{{ stage.name }}</option></select>
+        <select v-model="filters.stage" class="filter-chip"><option value="">Все этапы</option><option v-for="stage in crmStore.allStages.value" :key="stage.id" :value="stage.id">{{ stageName(stage.id) }}</option></select>
         <select v-model="filters.owner" class="filter-chip"><option value="">All owners</option><option v-for="ownerId in ownerIds" :key="ownerId" :value="ownerId">{{ ownerId.slice(0, 8) }}</option></select>
         <select v-model="filters.company" class="filter-chip"><option value="">All companies</option><option v-for="company in crmStore.companies.value" :key="company.id" :value="company.id">{{ company.name }}</option></select>
         <label class="filter-chip numeric-filter">Amount ≥<input v-model.number="filters.minAmount" type="number" min="0" /></label>
@@ -392,7 +389,7 @@ watch(
       >
         <header>
           <div>
-            <strong>{{ column.stage.name }}</strong>
+            <strong>{{ stageName(column.stage.id) }}</strong>
             <small>{{ column.deals.length }} · {{ crmStore.money(column.amount) }}</small>
           </div>
         </header>
@@ -423,14 +420,6 @@ watch(
             <div><dt>Tasks</dt><dd>{{ openTasks(deal).length }} open</dd></div>
           </dl>
           <div class="progress-line deal-health"><span :style="{ width: `${aiScore(deal)}%` }"></span></div>
-          <div class="deal-hover-actions">
-            <button type="button" @click.stop="selectedDeal = deal">Open</button>
-            <button type="button" @click.stop="selectedDeal = deal">AI Summary</button>
-            <button type="button" @click.stop="crmStore.createNote('deal', deal.id)">Notes</button>
-            <select :value="deal.stage_id" @click.stop @change="move(deal, $event)">
-              <option v-for="stage in crmStore.allStages.value" :key="stage.id" :value="stage.id">{{ stage.name }}</option>
-            </select>
-          </div>
         </article>
         <button class="secondary stage-new" type="button" @click="showCreateDeal = true">+ New</button>
       </section>
@@ -443,7 +432,7 @@ watch(
           <tr v-for="deal in visibleDeals" :key="deal.id" @click="selectedDeal = deal">
             <td>{{ deal.title }}</td>
             <td>{{ companyName(deal.company_id) }}</td>
-            <td>{{ crmStore.allStages.value.find((stage) => stage.id === deal.stage_id)?.name ?? "Stage" }}</td>
+            <td>{{ stageName(deal.stage_id) }}</td>
             <td>{{ crmStore.money(deal.amount) }}</td>
             <td>{{ aiScore(deal) }}%</td>
             <td>{{ nextAction(deal) }}</td>
@@ -465,7 +454,7 @@ watch(
     <section v-else class="panel">
       <h2>Forecast</h2>
       <article v-for="row in forecast" :key="row.stage.id" class="list-row">
-        <span>{{ row.stage.name }} · {{ row.probability }}%</span>
+        <span>{{ stageName(row.stage.id) }} · {{ row.probability }}%</span>
         <small>{{ crmStore.money(row.weighted) }}</small>
       </article>
     </section>
@@ -660,7 +649,7 @@ watch(
           <label>Stage
             <select v-model="crmStore.dealForm.value.stage_id" required>
               <option value="">Choose</option>
-              <option v-for="stage in crmStore.allStages.value" :key="stage.id" :value="stage.id">{{ stage.name }}</option>
+              <option v-for="stage in crmStore.allStages.value" :key="stage.id" :value="stage.id">{{ stageName(stage.id) }}</option>
             </select>
           </label>
           <label>Next action<input v-model="crmStore.dealForm.value.next_step" /></label>

@@ -3,6 +3,7 @@ import { computed } from "vue";
 
 import type { Deal } from "../../types";
 import { crmStore } from "../../stores/crm";
+import { formatStageName } from "../../utils/stages";
 
 const props = defineProps<{ deal: Deal | null }>();
 defineEmits<{ close: [] }>();
@@ -16,8 +17,8 @@ const companyName = computed(() =>
 );
 const stageName = computed(() =>
   props.deal
-    ? crmStore.allStages.value.find((item) => item.id === props.deal?.stage_id)?.name ?? "Unknown"
-    : "Unknown"
+    ? formatStageName(crmStore.allStages.value.find((item) => item.id === props.deal?.stage_id)?.name)
+    : "Без этапа"
 );
 
 function addNote() {

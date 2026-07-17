@@ -5568,7 +5568,7 @@ meter {
 
 .filter-chip {
   width: auto;
-  min-width: 116px;
+  min-width: 124px;
   min-height: 32px;
   border-color: #d7dde7;
   border-radius: 7px;
@@ -5675,6 +5675,10 @@ meter {
   border-bottom: 1px solid var(--line-soft);
   padding: 2px 2px 10px;
   background: transparent;
+}
+
+.deal-stage > header > div {
+  min-width: 0;
 }
 
 .deal-stage > header strong {
@@ -5816,54 +5820,6 @@ meter {
 
 .rich-deal-card.risk .deal-health span {
   background: var(--danger);
-}
-
-.deal-hover-actions {
-  position: absolute;
-  inset: auto 10px 10px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid rgba(210, 210, 215, 0.9);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 10px 24px rgba(29, 29, 31, 0.12);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(8px);
-  transition:
-    opacity 150ms ease,
-    transform 150ms ease;
-}
-
-.rich-deal-card:hover .deal-hover-actions,
-.rich-deal-card:focus-within .deal-hover-actions {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-
-.deal-hover-actions button,
-.deal-hover-actions select {
-  min-height: 30px;
-  min-width: 0;
-  overflow: hidden;
-  padding: 0 7px;
-  font-size: 11px;
-  line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.deal-hover-actions button {
-  color: #273449;
-  border-color: var(--line);
-  background: #ffffff;
-}
-
-.deal-hover-actions select {
-  grid-column: 1 / -1;
 }
 
 .stage-new {

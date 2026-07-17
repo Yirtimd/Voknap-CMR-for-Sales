@@ -22,6 +22,7 @@ htmlcov/
 *.sqlite
 *.sqlite3
 *.log
+data/knowledge_uploads/
 
 # Frontend dependencies and builds
 frontend/node_modules/

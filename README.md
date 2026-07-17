@@ -24,14 +24,23 @@ After installing backend and frontend dependencies once:
 make dev
 ```
 
-This starts PostgreSQL, applies migrations, and runs backend and frontend with
-hot reload. Stop application processes with `Ctrl+C`. Useful commands:
+This starts PostgreSQL and MinIO, applies migrations, and runs backend and
+frontend with hot reload. Stop application processes with `Ctrl+C`. Useful commands:
 
 ```bash
 make seed  # recreate demo workspace data
 make test  # run backend and frontend checks
 make stop  # stop Docker services
 ```
+
+For an OCR-ready backend fully inside Docker:
+
+```bash
+make production
+```
+
+This image includes Tesseract with Russian and English language data. MinIO API
+is exposed at `http://localhost:9000`, its console at `http://localhost:9001`.
 
 The application reads provider settings and secrets from `.env` in the project
 root. If `.env` is absent, configured application defaults are used.
@@ -255,8 +264,8 @@ Frontend:
 http://localhost:5173/knowledge
 ```
 
-Local RAG works without external APIs through deterministic local embeddings.
-This is useful for checking the full product flow:
+The `local` provider uses deterministic word hashes and is intended only for
+offline tests. Production RAG uses a real multilingual embedding API.
 
 1. Add a document.
 2. Run search.
@@ -275,16 +284,72 @@ Every knowledge chunk stores filter metadata: `tenant_id`, `scope`, `company_id`
 `deal_id`. Metadata filtering happens before similarity ranking. Scope and context are
 also written to the knowledge query audit log.
 
-For OpenAI embeddings:
+For the current APIYI OpenAI-compatible provider:
 
 ```bash
-export OPENAI_API_KEY="..."
-export EMBEDDING_PROVIDER="openai"
-export EMBEDDING_MODEL="text-embedding-3-small"
+EMBEDDING_PROVIDER="openai_compatible"
+EMBEDDING_API_KEY="..."       # optional; falls back to LLM_API_KEY
+EMBEDDING_BASE_URL=".../v1"   # optional; falls back to LLM_BASE_URL
+EMBEDDING_MODEL="text-embedding-3-small"
 ```
 
-The current implementation stores embeddings as JSON for portability. The
-production target is PostgreSQL with `pgvector`, hybrid search, and reranking.
+Remote provider configuration is strict: missing credentials, an unknown
+provider, or an unavailable model raises an error instead of silently falling
+back to local hashes. Existing documents must be reindexed after changing the
+embedding model.
+
+Apply embedding metadata migration and rebuild all existing vectors:
+
+```bash
+.venv/bin/alembic upgrade head
+.venv/bin/python scripts/reindex_knowledge.py
+```
+
+Reindex is transactional: provider failure rolls back the whole operation.
+Search ignores chunks whose provider, model, version, or dimensions do not
+match the current embedding configuration.
+
+Real knowledge file upload:
+
+```text
+POST /knowledge/documents/upload
+multipart fields: file, title?, scope, company_id?, deal_id?
+GET /knowledge/documents/{document_id}/download
+```
+
+Supported formats: text and scanned PDF, DOCX, TXT in UTF-8/UTF-16/CP1251.
+Files are limited to 20 MB, PDFs to 500 pages, and extracted text to 500,000
+characters. Metadata is stored in `files`; parsed chunks are embedded and
+written to pgvector.
+
+Production file storage uses any S3-compatible service. Local development uses
+the bundled MinIO instance:
+
+```bash
+KNOWLEDGE_STORAGE_BACKEND=s3
+S3_ENDPOINT_URL=http://localhost:9000
+S3_ACCESS_KEY=cmrminio
+S3_SECRET_KEY=cmrminio-dev-secret
+S3_BUCKET=cmr-knowledge
+S3_REGION=us-east-1
+S3_USE_SSL=false
+```
+
+For AWS S3, omit `S3_ENDPOINT_URL`, enable TLS, use IAM-provided credentials,
+and optionally set `S3_SERVER_SIDE_ENCRYPTION=AES256` or `aws:kms`. Existing
+local files remain readable because every file records its storage backend;
+moving old objects to S3 is a separate migration.
+
+PDF pages without a text layer are rendered and recognized by Tesseract. OCR is
+configured with `KNOWLEDGE_OCR_LANGUAGES=rus+eng`, DPI, per-page timeout, and an
+OCR page limit. On a host run, install Tesseract plus Russian/English language
+packs. The production Docker image already contains them. The extraction method
+and source page count are saved on each knowledge document.
+
+Embeddings are stored as native PostgreSQL `vector(1536)` values. Retrieval uses
+exact cosine distance in SQL after tenant/company/deal and embedding identity
+filters. HNSW indexing will be added when collection size justifies approximate
+search. Hybrid full-text search and reranking remain later targets.
 
 ## Analytics & Forecast
 

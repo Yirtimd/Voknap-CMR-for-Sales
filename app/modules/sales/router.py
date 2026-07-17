@@ -23,6 +23,7 @@ from app.modules.sales.models import (
     PipelineStage,
     Task,
 )
+from app.modules.sales.stages import stage_label_ru
 from app.modules.sales.schemas import (
     CompanyCreate,
     CompanyFileCreate,
@@ -602,8 +603,8 @@ def move_deal(
         company_id=deal.company_id,
         deal_id=deal.id,
         activity_type="DEAL_STAGE_CHANGED",
-        title="Deal stage changed",
-        description=f"{deal.title} moved to {new_stage.name}",
+        title="Этап сделки изменён",
+        description=f"{deal.title}: новый этап — {stage_label_ru(new_stage.name)}",
         metadata={"old_stage_id": str(old_stage_id), "new_stage_id": str(payload.stage_id)},
         commit=False,
     )
@@ -884,6 +885,9 @@ def _knowledge_document_response(document: KnowledgeDocument) -> dict:
         "file_id": str(document.file_id) if document.file_id else None,
         "created_at": document.created_at.isoformat(),
         "chunks_count": len(document.chunks),
+        "download_url": f"/knowledge/documents/{document.id}/download" if document.file_id else None,
+        "extraction_method": document.extraction_method,
+        "source_pages": document.source_pages,
     }
 
 

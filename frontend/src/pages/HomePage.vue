@@ -2,7 +2,8 @@
 import { computed, onMounted, ref } from "vue";
 
 import { crmStore } from "../stores/crm";
-import type { Activity, Deal, Task } from "../types";
+import type { Activity, Deal } from "../types";
+import { formatStageName } from "../utils/stages";
 
 type Accent = "blue" | "green" | "orange" | "red" | "purple" | "slate";
 
@@ -28,7 +29,11 @@ type RiskDeal = {
 
 onMounted(async () => {
   await crmStore.refreshAll();
-  await Promise.allSettled([crmStore.refreshAgent(), crmStore.refreshActivities()]);
+  await Promise.allSettled([
+    crmStore.refreshAgent(),
+    crmStore.refreshActivities(),
+    crmStore.refreshHomeCopilot()
+  ]);
 });
 
 function companyName(companyId: string | null) {
@@ -37,11 +42,6 @@ function companyName(companyId: string | null) {
 
 function dealCompany(deal: Deal) {
   return companyName(deal.company_id);
-}
-
-function stageName(stageId: string | null) {
-  if (!stageId) return "Этап не указан";
-  return crmStore.allStages.value.find((stage) => stage.id === stageId)?.name ?? "Этап";
 }
 
 function compactDate(value: Date) {
@@ -89,7 +89,6 @@ function dealProbability(deal: Deal) {
 
 const todaysDate = computed(() => compactDate(new Date(`${selectedDate.value}T12:00:00`)));
 
-const openTasks = computed(() => crmStore.tasks.value.filter((task) => !task.done_at));
 const selectedTasks = computed(() => crmStore.tasks.value.filter((task) => isSelectedDate(task.due_at)));
 const todayTasks = computed(() => selectedTasks.value.filter((task) => !task.done_at));
 const signedDeals = computed(() => crmStore.deals.value.filter((deal) => deal.status === "won"));
@@ -125,25 +124,7 @@ const signatureDeals = computed(() =>
   activeDeals.value.filter((deal) => /договор|подпис|контракт/i.test(`${deal.expected_next_event ?? ""} ${deal.next_step ?? ""} ${deal.title}`))
 );
 
-const aiDeal = computed(() => priorityDeals.value[0] ?? activeDeals.value[0] ?? null);
-const aiTitle = computed(() => {
-  const deal = aiDeal.value;
-  if (!deal) return "Добавить первую приоритетную сделку";
-  const nextStep = deal.next_step?.trim() || `связаться с ${dealCompany(deal)}`;
-  return `${nextStep.charAt(0).toUpperCase()}${nextStep.slice(1)}`;
-});
-
-const aiText = computed(() => {
-  const deal = aiDeal.value;
-  if (!deal) return "CRM начнет строить рекомендации, когда появятся сделки, задачи и активности.";
-  return `Вероятность закрытия вырастет при контакте сегодня.`;
-});
-
-const aiMeta = computed(() => {
-  const deal = aiDeal.value;
-  if (!deal) return "Нет активных сделок";
-  return `${dealCompany(deal)} · ${deal.title} · ${crmStore.money(deal.amount)}`;
-});
+const homeCopilot = computed(() => crmStore.homeCopilot.value);
 
 const todaysTimeline = computed<TimelineItem[]>(() => {
   const tasks = selectedTasks.value.slice(0, 4);
@@ -177,9 +158,6 @@ const todaysTimeline = computed<TimelineItem[]>(() => {
   });
 });
 
-const nextBestTask = computed<Task | null>(() => todayTasks.value[0] ?? openTasks.value[0] ?? null);
-const nextBestDeal = computed<Deal | null>(() => priorityDeals.value[0] ?? null);
-
 const activityItems = computed(() => {
   const fromActivity = crmStore.activities.value.slice(0, 3).map((activity: Activity, index) => ({
     id: activity.id,
@@ -203,16 +181,17 @@ const activityItems = computed(() => {
 });
 
 const focusDeals = computed(() =>
-  priorityDeals.value.map((deal, index) => ({
-    id: deal.id,
-    confidence: Math.min(96, Math.max(48, dealProbability(deal) + 17 - index * 6)),
-    title: dealCompany(deal),
-    meta: deal.title,
+  (homeCopilot.value?.focus_deals ?? []).map((deal, index) => ({
+    id: deal.deal_id,
+    confidence: deal.confidence,
+    riskScore: deal.risk_score,
+    title: deal.company_name,
+    meta: deal.deal_title,
     amount: crmStore.money(deal.amount),
-    stage: stageName(deal.stage_id),
-    action: deal.next_step || (index === 0 ? "Позвонить сегодня" : index === 1 ? "Отправить КП" : "Провести встречу"),
-    icon: index === 0 ? "☎" : index === 1 ? "➤" : "▣",
-    accent: (index === 0 ? "red" : index === 1 ? "green" : "orange") as Accent
+    stage: formatStageName(deal.stage_name),
+    action: deal.next_action,
+    icon: /позвон|созвон|связаться/i.test(deal.next_action) ? "☎" : index === 1 ? "➤" : "▣",
+    accent: (deal.risk_level === "high" ? "red" : deal.risk_level === "medium" ? "orange" : "green") as Accent
   }))
 );
 </script>
@@ -278,14 +257,19 @@ const focusDeals = computed(() =>
 
     <section class="home-ai">
       <div class="home-ai-copy">
-        <p class="home-ai-label"><span>✦</span> AI рекомендует</p>
-        <h2>{{ aiTitle }}</h2>
-        <p>{{ aiText }}</p>
-        <small>{{ aiMeta }}</small>
+        <p class="home-ai-label"><span>✦</span> AI рекомендует <b>Backend copilot</b></p>
+        <h2>{{ homeCopilot?.title ?? "Copilot анализирует рабочую очередь…" }}</h2>
+        <p>{{ homeCopilot?.rationale ?? "Рекомендация загружается с backend." }}</p>
+        <small>
+          {{ homeCopilot?.company_name ?? "Нет компании" }}
+          <template v-if="homeCopilot?.deal_title"> · {{ homeCopilot.deal_title }} · {{ crmStore.money(homeCopilot.amount) }}</template>
+        </small>
       </div>
       <div class="home-ai-actions">
-        <RouterLink class="home-call-button" to="/companies"><span>☎</span> Позвонить</RouterLink>
-        <RouterLink class="button-link secondary-link" to="/knowledge">Подробнее</RouterLink>
+        <RouterLink class="home-call-button" :to="homeCopilot?.primary_url ?? '/companies'">
+          <span>☎</span> {{ homeCopilot?.action_label ?? "Открыть компании" }}
+        </RouterLink>
+        <RouterLink class="button-link secondary-link" :to="homeCopilot?.details_url ?? '/deals'">Подробнее</RouterLink>
       </div>
     </section>
 
@@ -335,17 +319,14 @@ const focusDeals = computed(() =>
         <header>
           <h2><span>◎</span> Следующее лучшее действие</h2>
         </header>
-        <h3>{{ nextBestTask?.title ?? nextBestDeal?.next_step ?? "Проверить рабочую очередь" }}</h3>
-        <p>
-          {{
-            nextBestTask?.description ||
-            (nextBestDeal ? `Похожие сделки закрывались быстрее после шага: ${nextBestDeal.next_step || "контакт с клиентом"}.` : "Добавьте задачу или сделку, чтобы AI предложил следующий шаг.")
-          }}
-        </p>
+        <h3>{{ homeCopilot?.title ?? "Проверить рабочую очередь" }}</h3>
+        <p>{{ homeCopilot?.rationale ?? "Backend copilot формирует следующий лучший шаг." }}</p>
         <div>
-          <RouterLink class="button-link secondary-link" to="/tasks">Отправить КП</RouterLink>
+          <RouterLink class="button-link secondary-link" :to="homeCopilot?.primary_url ?? '/companies'">
+            {{ homeCopilot?.action_label ?? "Открыть" }}
+          </RouterLink>
         </div>
-        <RouterLink class="home-why-link" to="/knowledge">Почему это важно? ⌄</RouterLink>
+        <RouterLink class="home-why-link" :to="homeCopilot?.details_url ?? '/deals'">Почему это важно? ⌄</RouterLink>
       </article>
 
       <article class="home-card">
@@ -386,6 +367,10 @@ const focusDeals = computed(() =>
               <dd>{{ deal.stage }}</dd>
             </div>
             <div>
+              <dt>AI риск:</dt>
+              <dd>{{ deal.riskScore }}%</dd>
+            </div>
+            <div>
               <dt>Действие:</dt>
               <dd>{{ deal.action }}</dd>
             </div>
@@ -405,5 +390,6 @@ const focusDeals = computed(() =>
 .date-nav button { width: 38px; padding: 0; }
 .date-nav input { min-width: 0; }
 .today-button { width: 100%; }
+.home-ai-label b { margin-left: 8px; border-radius: 999px; padding: 3px 7px; color: #5f35c8; background: #eee7ff; font-size: 10px; letter-spacing: .03em; text-transform: uppercase; }
 @media (max-width: 560px) { .home-date-menu { right: auto; left: 0; min-width: 250px; } }
 </style>

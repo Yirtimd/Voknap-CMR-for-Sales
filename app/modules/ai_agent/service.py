@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.modules.activity.service import ActivityService
 from app.modules.ai_agent.models import AgentAction, AgentMessage
+from app.modules.analytics.service import AnalyticsService
 from app.modules.knowledge.service import KnowledgeService
 from app.modules.sales.models import Company, Contact, CustomerInsight, Deal, Lead, NextAction, PipelineStage, Task
+from app.modules.sales.stages import stage_label_ru
 
 
 class AgentService:
@@ -69,6 +71,130 @@ class AgentService:
             .limit(30)
             .all()
         )
+
+    def home_copilot(self, tenant_id: UUID) -> dict:
+        now = datetime.now(timezone.utc)
+        overview = AnalyticsService(self.db).overview(
+            tenant_id=tenant_id,
+            forecast_days=90,
+            stuck_days=14,
+            activity_days=30,
+        )
+        risk_item = overview.risk_map.deals[0] if overview.risk_map.deals else None
+        if risk_item is None:
+            company = (
+                self.db.query(Company)
+                .filter(Company.tenant_id == tenant_id)
+                .order_by(Company.created_at.asc())
+                .first()
+            )
+            return {
+                "generated_at": now,
+                "source": "backend_copilot",
+                "title": "Создать первую приоритетную сделку",
+                "rationale": "Backend copilot не нашёл открытых сделок для ранжирования.",
+                "company_id": company.id if company else None,
+                "company_name": company.name if company else None,
+                "action_label": "Открыть компании",
+                "primary_url": f"/companies/{company.id}" if company else "/companies",
+                "details_url": "/deals",
+                "signals": ["нет открытых сделок"],
+                "focus_deals": [],
+            }
+
+        deal = (
+            self.db.query(Deal)
+            .filter(Deal.id == risk_item.deal_id, Deal.tenant_id == tenant_id)
+            .one()
+        )
+        company = (
+            self.db.query(Company)
+            .filter(Company.id == deal.company_id, Company.tenant_id == tenant_id)
+            .one()
+        )
+        actions = (
+            self.db.query(NextAction)
+            .filter(
+                NextAction.tenant_id == tenant_id,
+                NextAction.status == "open",
+                NextAction.company_id == company.id,
+            )
+            .all()
+        )
+        priority_rank = {"urgent": 3, "high": 2, "normal": 1, "low": 0}
+        actions.sort(
+            key=lambda action: (
+                action.deal_id == deal.id,
+                priority_rank.get(str(action.priority).lower(), 1),
+                -(action.due_at.timestamp() if action.due_at else now.timestamp() + 10**9),
+            ),
+            reverse=True,
+        )
+        next_action = actions[0] if actions else None
+        title = (
+            next_action.title
+            if next_action
+            else deal.next_step
+            or deal.expected_next_event
+            or f"Связаться с {company.name} и назначить следующий шаг"
+        )
+        signal_labels = {
+            "deal is stuck": "сделка зависла на этапе",
+            "close date overdue": "дата закрытия просрочена",
+            "next step missing": "не указан следующий шаг",
+            "company health is low": "низкий health score компании",
+            "AI risk and probability signals": "комбинация риска и вероятности",
+        }
+        signals = [signal_labels.get(reason, reason) for reason in risk_item.reasons]
+        if next_action:
+            signals.insert(0, f"активный NextAction: {next_action.title}")
+        rationale = (
+            f"Backend copilot выбрал сделку «{deal.title}»: риск {risk_item.score}%, "
+            f"этап «{stage_label_ru(risk_item.stage_name)}». Основания: {', '.join(signals)}."
+        )
+        action_label = "Позвонить" if re.search(r"позвон|созвон|связаться", title, re.I) else "Открыть компанию"
+        focus_deals = []
+        for item in overview.risk_map.deals[:3]:
+            focus_deal = (
+                self.db.query(Deal)
+                .filter(Deal.id == item.deal_id, Deal.tenant_id == tenant_id)
+                .one()
+            )
+            focus_deals.append(
+                {
+                    "deal_id": focus_deal.id,
+                    "company_id": item.company_id,
+                    "company_name": item.company_name,
+                    "deal_title": item.title,
+                    "amount": item.amount,
+                    "stage_name": stage_label_ru(item.stage_name),
+                    "confidence": max(0, min(100, int(focus_deal.probability or 45))),
+                    "risk_score": item.score,
+                    "risk_level": item.level,
+                    "next_action": focus_deal.next_step
+                    or focus_deal.expected_next_event
+                    or f"Связаться с {item.company_name}",
+                }
+            )
+        return {
+            "generated_at": now,
+            "source": "backend_copilot",
+            "title": title,
+            "rationale": rationale,
+            "company_id": company.id,
+            "company_name": company.name,
+            "deal_id": deal.id,
+            "deal_title": deal.title,
+            "amount": float(deal.amount or 0),
+            "confidence": max(0, min(100, int(deal.probability or 45))),
+            "risk_score": risk_item.score,
+            "risk_level": risk_item.level,
+            "action_label": action_label,
+            "primary_url": f"/companies/{company.id}",
+            "details_url": "/deals",
+            "signals": signals,
+            "focus_deals": focus_deals,
+        }
 
     def company_copilot(self, tenant_id: UUID, user_id: UUID, company_id: UUID) -> dict | None:
         company = (
@@ -423,7 +549,7 @@ class AgentService:
                     "deal_id": str(deal.id),
                     "deal_title": deal.title,
                     "stage_id": str(stage.id),
-                    "stage_name": stage.name,
+                    "stage_name": stage_label_ru(stage.name),
                 }
             ),
         )
@@ -444,7 +570,7 @@ class AgentService:
         stages = self.db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant_id).all()
         lowered = text.lower()
         for stage in stages:
-            if stage.name.lower() in lowered:
+            if stage.name.lower() in lowered or stage_label_ru(stage.name).lower() in lowered:
                 return stage
         return None
 

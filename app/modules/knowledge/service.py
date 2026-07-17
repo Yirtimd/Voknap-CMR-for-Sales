@@ -1,16 +1,18 @@
 import hashlib
-import json
 import math
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.modules.knowledge.files import parse_knowledge_file
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeDocument, KnowledgeQuery
-from app.modules.sales.models import Company, Deal
+from app.modules.knowledge.storage import delete_knowledge_file, store_knowledge_file
+from app.modules.sales.models import Company, CompanyFile, Deal
 
 
 @dataclass
@@ -24,14 +26,59 @@ class EmbeddingService:
     dimensions = 256
 
     def embed(self, text: str) -> list[float]:
-        if settings.embedding_provider == "openai" and settings.openai_api_key:
+        return self.embed_many([text])[0]
+
+    def embed_many(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        provider = settings.embedding_provider.lower().strip()
+        if provider in {"openai", "openai_compatible"}:
             from openai import OpenAI
 
-            client = OpenAI(api_key=settings.openai_api_key)
-            response = client.embeddings.create(model=settings.embedding_model, input=text)
-            return response.data[0].embedding
+            api_key = settings.embedding_api_key or (
+                settings.openai_api_key if provider == "openai" else settings.llm_api_key
+            )
+            if not api_key:
+                raise RuntimeError(
+                    "Embedding API key is not configured. Set EMBEDDING_API_KEY "
+                    "or the provider fallback key in .env."
+                )
 
-        return self._local_embed(text)
+            base_url = settings.embedding_base_url
+            if provider == "openai_compatible" and not base_url:
+                base_url = settings.llm_base_url
+            if provider == "openai_compatible" and not base_url:
+                raise RuntimeError(
+                    "Embedding base URL is not configured. Set EMBEDDING_BASE_URL "
+                    "or LLM_BASE_URL in .env."
+                )
+            if base_url:
+                base_url = base_url.rstrip("/")
+                if base_url.endswith("/embeddings"):
+                    base_url = base_url.removesuffix("/embeddings")
+
+            client = OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout=20.0,
+                max_retries=1,
+            )
+            response = client.embeddings.create(model=settings.embedding_model, input=texts)
+            return [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
+
+        if provider == "local":
+            return [self._local_embed(text) for text in texts]
+
+        raise RuntimeError(f"Unsupported embedding provider: {settings.embedding_provider}")
+
+    def metadata(self, dimensions: int) -> dict[str, str | int]:
+        provider = settings.embedding_provider.lower().strip()
+        return {
+            "embedding_provider": provider,
+            "embedding_model": settings.embedding_model if provider != "local" else "local-hash-v1",
+            "embedding_version": settings.embedding_version,
+            "embedding_dimensions": dimensions,
+        }
 
     def _local_embed(self, text: str) -> list[float]:
         vector = [0.0] * self.dimensions
@@ -62,6 +109,9 @@ class KnowledgeService:
         deal_id: UUID | None = None,
         file_id: UUID | None = None,
         visibility: str = "global",
+        extraction_method: str = "manual",
+        source_pages: int | None = None,
+        commit: bool = True,
     ) -> KnowledgeDocument:
         self._validate_scope_context(tenant_id, visibility, company_id, deal_id)
         document = KnowledgeDocument(
@@ -72,30 +122,101 @@ class KnowledgeService:
             title=title,
             source_type=source_type,
             visibility=visibility,
+            extraction_method=extraction_method,
+            source_pages=source_pages,
         )
         self.db.add(document)
         self.db.flush()
 
         chunks = self._split_text(text)
-        for index, chunk_text in enumerate(chunks):
-            embedding = self.embedding_service.embed(chunk_text)
-            self.db.add(
-                KnowledgeChunk(
-                    tenant_id=tenant_id,
-                    document_id=document.id,
-                    scope=visibility,
-                    company_id=company_id,
-                    deal_id=deal_id,
-                    chunk_index=index,
-                    text=chunk_text,
-                    embedding_json=json.dumps(embedding),
-                    token_estimate=max(1, len(chunk_text) // 4),
+        for offset in range(0, len(chunks), 32):
+            chunk_batch = chunks[offset : offset + 32]
+            embeddings = self.embedding_service.embed_many(chunk_batch)
+            if len(embeddings) != len(chunk_batch):
+                raise RuntimeError("Embedding provider returned an unexpected vector count")
+            for index, (chunk_text, embedding) in enumerate(
+                zip(chunk_batch, embeddings, strict=True),
+                start=offset,
+            ):
+                self.db.add(
+                    KnowledgeChunk(
+                        tenant_id=tenant_id,
+                        document_id=document.id,
+                        scope=visibility,
+                        company_id=company_id,
+                        deal_id=deal_id,
+                        chunk_index=index,
+                        text=chunk_text,
+                        embedding_vector=embedding,
+                        **self.embedding_service.metadata(len(embedding)),
+                        token_estimate=max(1, len(chunk_text) // 4),
+                    )
                 )
-            )
 
-        self.db.commit()
-        self.db.refresh(document)
+        if commit:
+            self.db.commit()
+            self.db.refresh(document)
         return document
+
+    def create_document_from_upload(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+        filename: str,
+        content_type: str | None,
+        data: bytes,
+        title: str | None = None,
+        scope: str = "global",
+        company_id: UUID | None = None,
+        deal_id: UUID | None = None,
+    ) -> KnowledgeDocument:
+        self._validate_scope_context(tenant_id, scope, company_id, deal_id)
+        parsed = parse_knowledge_file(filename, content_type, data)
+        storage_backend, storage_key = store_knowledge_file(
+            tenant_id,
+            parsed.filename,
+            data,
+            parsed.mime_type,
+        )
+        try:
+            company_file = CompanyFile(
+                tenant_id=tenant_id,
+                company_id=company_id,
+                deal_id=deal_id,
+                uploaded_by_id=user_id,
+                name=parsed.filename,
+                file_type=parsed.extension,
+                mime_type=parsed.mime_type,
+                file_size=len(data),
+                storage_backend=storage_backend,
+                storage_key=storage_key,
+            )
+            self.db.add(company_file)
+            self.db.flush()
+            document = self.create_document(
+                tenant_id=tenant_id,
+                title=(title or "").strip() or Path(parsed.filename).stem,
+                text=parsed.text,
+                source_type=parsed.extension,
+                company_id=company_id,
+                deal_id=deal_id,
+                file_id=company_file.id,
+                visibility=scope,
+                extraction_method=parsed.extraction_method,
+                source_pages=parsed.source_pages,
+                commit=False,
+            )
+            company_file.download_url = f"/knowledge/documents/{document.id}/download"
+            self.db.commit()
+            self.db.refresh(document)
+            return document
+        except Exception:
+            self.db.rollback()
+            try:
+                delete_knowledge_file(storage_backend, storage_key)
+            except Exception:
+                pass
+            raise
 
     def list_documents(
         self,
@@ -129,17 +250,45 @@ class KnowledgeService:
                 KnowledgeChunk.tenant_id == tenant_id,
                 KnowledgeDocument.status == "ready",
                 self._chunk_scope_filter(scope, company_id, deal_id, include_global),
+                self._embedding_identity_filter(len(query_embedding)),
             )
         )
-        rows = rows_query.all()
+
+        if self.db.get_bind().dialect.name == "postgresql":
+            distance = KnowledgeChunk.embedding_vector.cosine_distance(query_embedding)
+            rows = rows_query.add_columns(distance.label("distance")).order_by(distance).limit(limit).all()
+            return [
+                RankedChunk(chunk=chunk, document=document, score=1.0 - float(distance_value))
+                for chunk, document, distance_value in rows
+            ]
 
         ranked: list[RankedChunk] = []
-        for chunk, document in rows:
-            chunk_embedding = json.loads(chunk.embedding_json)
-            score = self._cosine_similarity(query_embedding, chunk_embedding)
+        for chunk, document in rows_query.all():
+            score = self._cosine_similarity(query_embedding, chunk.embedding_vector)
             ranked.append(RankedChunk(chunk=chunk, document=document, score=score))
 
         return sorted(ranked, key=lambda item: item.score, reverse=True)[:limit]
+
+    def reindex_all(self, tenant_id: UUID | None = None, batch_size: int = 32) -> int:
+        query = self.db.query(KnowledgeChunk).order_by(KnowledgeChunk.created_at, KnowledgeChunk.id)
+        if tenant_id is not None:
+            query = query.filter(KnowledgeChunk.tenant_id == tenant_id)
+        chunks = query.all()
+        try:
+            for offset in range(0, len(chunks), batch_size):
+                batch = chunks[offset : offset + batch_size]
+                embeddings = self.embedding_service.embed_many([chunk.text for chunk in batch])
+                if len(embeddings) != len(batch):
+                    raise RuntimeError("Embedding provider returned an unexpected vector count")
+                for chunk, embedding in zip(batch, embeddings, strict=True):
+                    chunk.embedding_vector = embedding
+                    for field, value in self.embedding_service.metadata(len(embedding)).items():
+                        setattr(chunk, field, value)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        return len(chunks)
 
     def answer(
         self,
@@ -343,3 +492,12 @@ class KnowledgeService:
             return 0.0
         dot = sum(left_value * right_value for left_value, right_value in zip(left, right, strict=True))
         return dot / (left_norm * right_norm)
+
+    def _embedding_identity_filter(self, dimensions: int):
+        metadata = self.embedding_service.metadata(dimensions)
+        return and_(
+            KnowledgeChunk.embedding_provider == metadata["embedding_provider"],
+            KnowledgeChunk.embedding_model == metadata["embedding_model"],
+            KnowledgeChunk.embedding_version == metadata["embedding_version"],
+            KnowledgeChunk.embedding_dimensions == dimensions,
+        )

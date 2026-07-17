@@ -16,7 +16,7 @@ const navItems = [
   { to: "/deals", label: "Deals", icon: "$" },
   { to: "/tasks", label: "Tasks", icon: "☑" },
   { to: "/inbox", label: "Inbox", icon: "✉" },
-  { to: "/knowledge", label: "Workspace Knowledge", icon: "◉" },
+  { to: "/knowledge", label: "Brain", icon: "◉" },
   { to: "/analytics", label: "Analytics", icon: "▥" },
   { to: "/settings", label: "Settings", icon: "⚙" }
 ];
