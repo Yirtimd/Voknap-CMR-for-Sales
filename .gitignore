@@ -29,7 +29,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 
-# Internal project notes
+# Confidential internal project documentation (never commit)
 docs/
 
 # OS / editor
