@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     embedding_base_url: str | None = None
     embedding_model: str = "text-embedding-3-small"
     embedding_version: str = "1"
+    embedding_dimensions: int = 1536
     rag_chunk_size: int = 1200
     rag_chunk_overlap: int = 180
     knowledge_upload_dir: str = "data/knowledge_uploads"

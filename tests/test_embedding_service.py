@@ -26,6 +26,7 @@ def test_openai_compatible_embeddings_reuse_llm_credentials(monkeypatch):
     monkeypatch.setattr("app.modules.knowledge.service.settings.llm_api_key", "provider-key")
     monkeypatch.setattr("app.modules.knowledge.service.settings.llm_base_url", "https://provider.test/v1")
     monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_model", "multilingual-model")
+    monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_dimensions", 3)
 
     vector = EmbeddingService().embed("русский multilingual текст")
 
@@ -59,6 +60,7 @@ def test_full_embeddings_endpoint_is_normalized_to_sdk_base_url(monkeypatch):
     monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
     monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_provider", "openai_compatible")
     monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_api_key", "provider-key")
+    monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_dimensions", 2)
     monkeypatch.setattr(
         "app.modules.knowledge.service.settings.embedding_base_url",
         "https://provider.test/v1/embeddings/",
@@ -73,4 +75,31 @@ def test_unknown_embedding_provider_is_rejected(monkeypatch):
     monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_provider", "unknown")
 
     with pytest.raises(RuntimeError, match="Unsupported embedding provider"):
+        EmbeddingService().embed("knowledge")
+
+
+def test_local_embeddings_match_pgvector_schema(monkeypatch):
+    monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_provider", "local")
+    monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_dimensions", 1536)
+
+    vector = EmbeddingService().embed("knowledge")
+
+    assert len(vector) == 1536
+
+
+def test_remote_embedding_dimension_mismatch_fails_before_database(monkeypatch):
+    class FakeOpenAI:
+        def __init__(self, **_kwargs):
+            self.embeddings = SimpleNamespace(
+                create=lambda **_call: SimpleNamespace(
+                    data=[SimpleNamespace(index=0, embedding=[0.1, 0.2])]
+                )
+            )
+
+    monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+    monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_provider", "openai")
+    monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_api_key", "provider-key")
+    monkeypatch.setattr("app.modules.knowledge.service.settings.embedding_dimensions", 1536)
+
+    with pytest.raises(RuntimeError, match="2 dimensions; expected 1536"):
         EmbeddingService().embed("knowledge")

@@ -39,7 +39,7 @@ def test_txt_upload_stores_file_document_chunks_and_metadata(tmp_path, monkeypat
         assert document.visibility == "global"
         assert len(document.chunks) == 1
         assert document.chunks[0].embedding_provider == "local"
-        assert document.chunks[0].embedding_dimensions == 256
+        assert document.chunks[0].embedding_dimensions == 1536
         assert (tmp_path / stored_file.storage_key).read_bytes().startswith("После новой заявки".encode())
         assert stored_file.download_url == f"/knowledge/documents/{document.id}/download"
 

@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.modules.knowledge.files import parse_knowledge_file
-from app.modules.knowledge.models import KnowledgeChunk, KnowledgeDocument, KnowledgeQuery
+from app.modules.knowledge.models import (
+    PGVECTOR_DIMENSIONS,
+    KnowledgeChunk,
+    KnowledgeDocument,
+    KnowledgeQuery,
+)
 from app.modules.knowledge.storage import delete_knowledge_file, store_knowledge_file
 from app.modules.sales.models import Company, CompanyFile, Deal
 
@@ -23,7 +28,8 @@ class RankedChunk:
 
 
 class EmbeddingService:
-    dimensions = 256
+    def __init__(self, expected_dimensions: int | None = None):
+        self.dimensions = expected_dimensions or settings.embedding_dimensions
 
     def embed(self, text: str) -> list[float]:
         return self.embed_many([text])[0]
@@ -64,12 +70,28 @@ class EmbeddingService:
                 max_retries=1,
             )
             response = client.embeddings.create(model=settings.embedding_model, input=texts)
-            return [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
+            vectors = [
+                item.embedding for item in sorted(response.data, key=lambda item: item.index)
+            ]
+            self._validate_vectors(vectors)
+            return vectors
 
         if provider == "local":
             return [self._local_embed(text) for text in texts]
 
         raise RuntimeError(f"Unsupported embedding provider: {settings.embedding_provider}")
+
+    def _validate_vectors(self, vectors: list[list[float]]) -> None:
+        for vector in vectors:
+            if len(vector) != self.dimensions:
+                raise RuntimeError(
+                    "Embedding provider returned "
+                    f"{len(vector)} dimensions; expected {self.dimensions} for the active "
+                    "pgvector schema. Update EMBEDDING_DIMENSIONS and migrate/reindex "
+                    "before changing embedding models."
+                )
+            if not all(math.isfinite(value) for value in vector):
+                raise RuntimeError("Embedding provider returned a non-finite vector value")
 
     def metadata(self, dimensions: int) -> dict[str, str | int]:
         provider = settings.embedding_provider.lower().strip()
@@ -97,7 +119,13 @@ class EmbeddingService:
 class KnowledgeService:
     def __init__(self, db: Session):
         self.db = db
-        self.embedding_service = EmbeddingService()
+        if settings.embedding_dimensions != PGVECTOR_DIMENSIONS:
+            raise RuntimeError(
+                f"EMBEDDING_DIMENSIONS={settings.embedding_dimensions} does not match "
+                f"the active pgvector schema vector({PGVECTOR_DIMENSIONS}). "
+                "Migrate and reindex before changing embedding dimensions."
+            )
+        self.embedding_service = EmbeddingService(expected_dimensions=PGVECTOR_DIMENSIONS)
 
     def create_document(
         self,

@@ -156,4 +156,4 @@ def test_reindex_updates_embedding_metadata(scoped_knowledge, monkeypatch):
     assert count == 4
     assert document_ids(after) == {data["global"].id}
     assert all(chunk.embedding_version == "2" for chunk in data["global"].chunks)
-    assert all(chunk.embedding_dimensions == 256 for chunk in data["global"].chunks)
+    assert all(chunk.embedding_dimensions == 1536 for chunk in data["global"].chunks)

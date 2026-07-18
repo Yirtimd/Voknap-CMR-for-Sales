@@ -291,6 +291,7 @@ EMBEDDING_PROVIDER="openai_compatible"
 EMBEDDING_API_KEY="..."       # optional; falls back to LLM_API_KEY
 EMBEDDING_BASE_URL=".../v1"   # optional; falls back to LLM_BASE_URL
 EMBEDDING_MODEL="text-embedding-3-small"
+EMBEDDING_DIMENSIONS=1536       # must match PostgreSQL vector(1536)
 ```
 
 Remote provider configuration is strict: missing credentials, an unknown
@@ -350,6 +351,11 @@ Embeddings are stored as native PostgreSQL `vector(1536)` values. Retrieval uses
 exact cosine distance in SQL after tenant/company/deal and embedding identity
 filters. HNSW indexing will be added when collection size justifies approximate
 search. Hybrid full-text search and reranking remain later targets.
+
+`EMBEDDING_DIMENSIONS` is a schema contract, not a runtime tuning switch. The
+local deterministic provider also emits 1536-dimensional vectors. A remote
+provider response with another size fails before database write. Changing the
+dimension requires an Alembic migration followed by a full reindex.
 
 ## Analytics & Forecast
 
