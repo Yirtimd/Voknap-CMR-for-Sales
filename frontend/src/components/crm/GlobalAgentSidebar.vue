@@ -11,13 +11,13 @@ const messagesEl = ref<HTMLElement | null>(null);
 const importantPrompts = [
   "Что нужно сделать сегодня?",
   "Найди риски в воронке",
-  "Какие сделки без next action?",
+  "Какие сделки без следующего шага?",
   "Подготовь план дня менеджера"
 ];
 
 const recentPrompts = [
   { text: "Дай сводку по CRM", time: "10:30" },
-  { text: "Какие сделки без next action?", time: "Вчера" },
+  { text: "Какие сделки без следующего шага?", time: "Вчера" },
   { text: "Создай задачу позвонить клиенту", time: "Вчера" }
 ];
 
@@ -51,7 +51,7 @@ function formatPayload(payload: Record<string, unknown>) {
         <h2>AI Агент</h2>
         <p>Глобальный помощник</p>
       </div>
-      <button class="secondary agent-close" type="button" @click="emit('close')">Close</button>
+      <button class="secondary agent-close" type="button" aria-label="Закрыть AI-агента" @click="emit('close')">Закрыть</button>
     </header>
 
     <section class="agent-card agent-summary">
@@ -60,9 +60,9 @@ function formatPayload(payload: Record<string, unknown>) {
         <button type="button" @click="send('Дай сводку по CRM')">›</button>
       </header>
       <div class="agent-context">
-        <div><strong>{{ crmStore.openTasks.value.length }}</strong><small>Open tasks</small></div>
-        <div><strong>{{ crmStore.deals.value.length }}</strong><small>Deals</small></div>
-        <div><strong>{{ crmStore.money(crmStore.totalPipeline.value) }}</strong><small>Pipeline</small></div>
+        <div><strong>{{ crmStore.openTasks.value.length }}</strong><small>Открытые задачи</small></div>
+        <div><strong>{{ crmStore.deals.value.length }}</strong><small>Сделки</small></div>
+        <div><strong>{{ crmStore.money(crmStore.totalPipeline.value) }}</strong><small>Портфель</small></div>
       </div>
     </section>
 

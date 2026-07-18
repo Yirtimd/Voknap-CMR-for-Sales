@@ -17,7 +17,7 @@ async function loadAnalytics() {
   try {
     await crmStore.refreshAnalytics();
   } catch (caught) {
-    loadError.value = caught instanceof Error ? caught.message : "Analytics unavailable";
+    loadError.value = caught instanceof Error ? caught.message : "Аналитика временно недоступна";
   } finally {
     loading.value = false;
   }
@@ -49,7 +49,7 @@ const goalProgress = computed(() => {
 
 const avgResolution = computed(() => {
   const value = taskSla.value?.average_resolution_hours;
-  return value == null ? "2.1h" : `${Math.round(value * 10) / 10}h`;
+  return value == null ? "2,1 ч" : `${Math.round(value * 10) / 10} ч`;
 });
 
 const meetingsThisWeek = computed(() => managerActivity.value.reduce((sum, manager) => sum + manager.meetings, 0));
@@ -88,34 +88,34 @@ const nextBestDeal = computed(() => topRiskDeals.value[0] ?? stuckDeals.value[0]
 const kpis = computed(() => [
   {
     panel: "forecast" as AnalyticsPanel,
-    label: "Pipeline",
+    label: "Портфель",
     value: crmStore.money(forecast.value?.open_pipeline),
-    trend: `${forecast.value?.open_deals ?? 0} deals`,
-    detail: "active pipeline",
+    trend: `${forecast.value?.open_deals ?? 0} сделок`,
+    detail: "активная воронка",
     direction: "up"
   },
   {
     panel: "forecast" as AnalyticsPanel,
-    label: "Revenue",
+    label: "Выручка",
     value: crmStore.money(forecast.value?.weighted_revenue),
-    trend: `${periodDays.value}d`,
-    detail: "weighted forecast",
+    trend: `${periodDays.value} дн.`,
+    detail: "взвешенный прогноз",
     direction: "up"
   },
   {
     panel: "conversion" as AnalyticsPanel,
-    label: "Win Rate",
+    label: "Вероятность успеха",
     value: `${goalProgress.value}%`,
-    trend: "AI weighted",
-    detail: "plan probability",
+    trend: "Расчёт AI",
+    detail: "вероятность плана",
     direction: "up"
   },
   {
     panel: "sla" as AnalyticsPanel,
-    label: "Avg Cycle",
+    label: "Средний цикл",
     value: avgResolution.value,
-    trend: `${taskSla.value?.overdue ?? 0} overdue`,
-    detail: "task velocity",
+    trend: `${taskSla.value?.overdue ?? 0} просрочено`,
+    detail: "скорость задач",
     direction: "down"
   }
 ]);
@@ -129,55 +129,55 @@ const detail = computed(() => {
   if (!panel) return null;
   if (panel === "forecast") {
     return {
-      eyebrow: "Revenue intelligence",
-      title: "Pipeline & Forecast",
+      eyebrow: "Прогноз выручки",
+      title: "Воронка и прогноз",
       summary: `В прогноз на ${periodDays.value} дней входит ${forecast.value?.open_deals ?? 0} открытых сделок. Взвешенная выручка учитывает вероятность каждой сделки.`,
       metrics: [
-        ["Open pipeline", crmStore.money(forecast.value?.open_pipeline)],
-        ["Due in period", crmStore.money(forecast.value?.due_in_period)],
-        ["Weighted revenue", crmStore.money(forecast.value?.weighted_revenue)],
-        ["Overdue revenue", crmStore.money(forecast.value?.overdue_revenue)]
+        ["Открытая воронка", crmStore.money(forecast.value?.open_pipeline)],
+        ["Закрытие в периоде", crmStore.money(forecast.value?.due_in_period)],
+        ["Взвешенная выручка", crmStore.money(forecast.value?.weighted_revenue)],
+        ["Просроченная выручка", crmStore.money(forecast.value?.overdue_revenue)]
       ],
       rows: [
-        ["Commit", crmStore.money(forecast.value?.commit_revenue)],
-        ["Best case", crmStore.money(forecast.value?.best_case_revenue)],
-        ["Pipeline", crmStore.money(forecast.value?.pipeline_revenue)],
-        ["Won", crmStore.money(forecast.value?.won_revenue)]
+        ["Подтверждено", crmStore.money(forecast.value?.commit_revenue)],
+        ["Лучший сценарий", crmStore.money(forecast.value?.best_case_revenue)],
+        ["Воронка", crmStore.money(forecast.value?.pipeline_revenue)],
+        ["Выиграно", crmStore.money(forecast.value?.won_revenue)]
       ],
       link: "/deals",
-      linkLabel: "Open deals"
+      linkLabel: "Открыть сделки"
     };
   }
   if (panel === "conversion") {
     return {
-      eyebrow: "Funnel diagnostics",
-      title: "Conversion by Stage",
+      eyebrow: "Диагностика воронки",
+      title: "Конверсия по этапам",
       summary: bottleneckStage.value
         ? `Главное узкое место — «${formatStageName(bottleneckStage.value.stage_name)}»: ${bottleneckStage.value.stuck_count} зависших сделок, конверсия ${bottleneckStage.value.conversion_from_previous}%.`
         : "Недостаточно данных для определения узкого места.",
       metrics: [
-        ["Stages", `${stageHealth.value.length}`],
-        ["Bottleneck", bottleneckStage.value ? formatStageName(bottleneckStage.value.stage_name) : "—"],
-        ["Stuck deals", `${bottleneckStage.value?.stuck_count ?? 0}`],
-        ["From first", `${bottleneckStage.value?.conversion_from_first ?? 0}%`]
+        ["Этапов", `${stageHealth.value.length}`],
+        ["Узкое место", bottleneckStage.value ? formatStageName(bottleneckStage.value.stage_name) : "—"],
+        ["Зависших сделок", `${bottleneckStage.value?.stuck_count ?? 0}`],
+        ["От первого этапа", `${bottleneckStage.value?.conversion_from_first ?? 0}%`]
       ],
       rows: stageHealth.value.map((stage) => [
         `${stage.pipeline_name} · ${formatStageName(stage.stage_name)}`,
         `${stage.conversion_from_previous}% · ${stage.deal_count} deals · ${crmStore.money(stage.amount)}`
       ]),
       link: "/deals",
-      linkLabel: "Open pipeline"
+      linkLabel: "Открыть воронку"
     };
   }
   if (panel === "sla") {
     return {
-      eyebrow: "Execution quality",
-      title: "Task SLA",
+      eyebrow: "Качество работы",
+      title: "SLA задач",
       summary: `${taskSla.value?.overdue ?? 0} задач просрочено. SLA команды — ${taskSla.value?.sla_rate ?? 0}%, среднее время выполнения — ${avgResolution.value}.`,
       metrics: [
-        ["Total", `${taskSla.value?.total ?? 0}`],
-        ["Completed", `${taskSla.value?.completed ?? 0}`],
-        ["Overdue", `${taskSla.value?.overdue ?? 0}`],
+        ["Всего", `${taskSla.value?.total ?? 0}`],
+        ["Завершено", `${taskSla.value?.completed ?? 0}`],
+        ["Просрочено", `${taskSla.value?.overdue ?? 0}`],
         ["SLA", `${taskSla.value?.sla_rate ?? 0}%`]
       ],
       rows: (taskSla.value?.by_owner ?? []).map((owner) => [
@@ -185,66 +185,66 @@ const detail = computed(() => {
         `${owner.sla_rate}% SLA · ${owner.overdue} overdue · ${owner.completed}/${owner.total} done`
       ]),
       link: "/tasks",
-      linkLabel: "Open tasks"
+      linkLabel: "Открыть задачи"
     };
   }
   if (panel === "risk") {
     return {
-      eyebrow: "AI risk map",
-      title: "Deals at Risk",
+      eyebrow: "Карта рисков AI",
+      title: "Сделки под риском",
       summary: `${riskMap.value?.high ?? 0} сделок имеют высокий риск. Суммарная выручка под риском — ${crmStore.money(riskMap.value?.revenue_at_risk)}.`,
       metrics: [
-        ["High", `${riskMap.value?.high ?? 0}`],
-        ["Medium", `${riskMap.value?.medium ?? 0}`],
-        ["Low", `${riskMap.value?.low ?? 0}`],
-        ["Revenue at risk", crmStore.money(riskMap.value?.revenue_at_risk)]
+        ["Высокий", `${riskMap.value?.high ?? 0}`],
+        ["Средний", `${riskMap.value?.medium ?? 0}`],
+        ["Низкий", `${riskMap.value?.low ?? 0}`],
+        ["Выручка под риском", crmStore.money(riskMap.value?.revenue_at_risk)]
       ],
       rows: (riskMap.value?.deals ?? []).map((deal) => [
         `${deal.company_name} · ${deal.title}`,
         `${deal.score}% · ${crmStore.money(deal.amount)} · ${deal.reasons.join(", ")}`
       ]),
       link: "/deals",
-      linkLabel: "Work with risks"
+      linkLabel: "Открыть риски"
     };
   }
   if (panel === "activity") {
     return {
-      eyebrow: "Manager performance",
-      title: "Team Activity",
+      eyebrow: "Эффективность менеджеров",
+      title: "Активность команды",
       summary: `За период команда провела ${meetingsThisWeek.value} встреч и выполнила ${completedTasks.value} задач.`,
       metrics: [
-        ["Managers", `${managerActivity.value.length}`],
-        ["Meetings", `${meetingsThisWeek.value}`],
-        ["Completed tasks", `${completedTasks.value}`],
-        ["Team SLA", `${taskSla.value?.sla_rate ?? 0}%`]
+        ["Менеджеров", `${managerActivity.value.length}`],
+        ["Встреч", `${meetingsThisWeek.value}`],
+        ["Завершено задач", `${completedTasks.value}`],
+        ["SLA команды", `${taskSla.value?.sla_rate ?? 0}%`]
       ],
       rows: managerActivity.value.map((manager) => [
         manager.manager_name,
         `${manager.activities} activities · ${manager.calls} calls · ${manager.emails} emails · ${manager.meetings} meetings`
       ]),
       link: "/tasks",
-      linkLabel: "Open team tasks"
+      linkLabel: "Открыть задачи команды"
     };
   }
   const companyRisk = unhealthyCompanies.value[0];
   return {
-    eyebrow: "Live management brief",
-    title: "AI Summary",
+    eyebrow: "Управленческая сводка",
+    title: "Сводка AI",
     summary: `Взвешенный прогноз составляет ${crmStore.money(forecast.value?.weighted_revenue)} при открытом pipeline ${crmStore.money(forecast.value?.open_pipeline)}. Под риском находится ${crmStore.money(riskMap.value?.revenue_at_risk)}.`,
     metrics: [
-      ["Weighted forecast", crmStore.money(forecast.value?.weighted_revenue)],
-      ["High-risk deals", `${riskMap.value?.high ?? 0}`],
-      ["Overdue tasks", `${taskSla.value?.overdue ?? 0}`],
-      ["Team SLA", `${taskSla.value?.sla_rate ?? 0}%`]
+      ["Взвешенный прогноз", crmStore.money(forecast.value?.weighted_revenue)],
+      ["Сделки высокого риска", `${riskMap.value?.high ?? 0}`],
+      ["Просроченные задачи", `${taskSla.value?.overdue ?? 0}`],
+      ["SLA команды", `${taskSla.value?.sla_rate ?? 0}%`]
     ],
     rows: [
-      ["Priority 1", bottleneckStage.value ? `Разобрать зависшие сделки этапа «${formatStageName(bottleneckStage.value.stage_name)}»` : "Проверить структуру pipeline"],
-      ["Priority 2", nextBestDeal.value ? `Связаться с ${nextBestDeal.value.company_name}: риск ${crmStore.money(nextBestDeal.value.amount)}` : "Назначить следующий шаг по ключевым сделкам"],
-      ["Priority 3", taskSla.value?.overdue ? `Закрыть ${taskSla.value.overdue} просроченных задач` : "Сохранить текущий уровень SLA"],
-      ["Account focus", companyRisk ? `${companyRisk.company_name}: ${companyRisk.reasons.join(" · ") || companyRisk.label}` : "Критических компаний нет"]
+      ["Приоритет 1", bottleneckStage.value ? `Разобрать зависшие сделки этапа «${formatStageName(bottleneckStage.value.stage_name)}»` : "Проверить структуру воронки"],
+      ["Приоритет 2", nextBestDeal.value ? `Связаться с ${nextBestDeal.value.company_name}: риск ${crmStore.money(nextBestDeal.value.amount)}` : "Назначить следующий шаг по ключевым сделкам"],
+      ["Приоритет 3", taskSla.value?.overdue ? `Закрыть ${taskSla.value.overdue} просроченных задач` : "Сохранить текущий уровень SLA"],
+      ["Фокус по компаниям", companyRisk ? `${companyRisk.company_name}: ${companyRisk.reasons.join(" · ") || companyRisk.label}` : "Критических компаний нет"]
     ],
     link: "/deals",
-    linkLabel: "Start with deals"
+    linkLabel: "Перейти к сделкам"
   };
 });
 
@@ -268,12 +268,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
   <section class="analytics-page">
     <header class="analytics-head">
       <div>
-        <p class="eyebrow">Generated {{ generatedAt(data?.generated_at) }}</p>
-        <h2>Analytics</h2>
+        <p class="eyebrow">Обновлено {{ generatedAt(data?.generated_at) }}</p>
+        <h2>Обзор показателей</h2>
       </div>
       <div class="analytics-actions">
-        <button type="button" class="secondary" :disabled="loading || !data" @click="openPanel('summary')">AI Summary</button>
-        <button type="button" aria-label="Refresh analytics" :disabled="loading" @click="loadAnalytics">
+        <button type="button" class="secondary" :disabled="loading || !data" @click="openPanel('summary')">Сводка AI</button>
+        <button type="button" aria-label="Обновить аналитику" :disabled="loading" @click="loadAnalytics">
           {{ loading ? "…" : "↻" }}
         </button>
       </div>
@@ -297,7 +297,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
       </article>
 
       <article class="ai-summary-card interactive-card" role="button" tabindex="0" @click="openPanel('summary')" @keydown.enter.space.prevent="openPanel('summary')">
-        <span>AI Insights</span>
+        <span>Выводы AI</span>
         <strong>
           Этап «{{ bottleneckStage ? formatStageName(bottleneckStage.stage_name) : "КП" }}» требует внимания
         </strong>
@@ -306,7 +306,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
           {{ crmStore.money(riskMap?.revenue_at_risk ?? 0) }}
         </small>
         <div class="goal-line">
-          <span>Weighted goal</span>
+          <span>Взвешенная цель</span>
           <b>{{ goalProgress }}%</b>
         </div>
         <div class="goal-track"><i :style="{ width: `${goalProgress}%` }"></i></div>
@@ -317,13 +317,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
       <section class="analytics-panel forecast-panel interactive-card" role="button" tabindex="0" @click="openPanel('forecast')" @keydown.enter.space.prevent="openPanel('forecast')">
         <div class="panel-title">
           <div>
-            <p class="eyebrow">Revenue Forecast</p>
+            <p class="eyebrow">Прогноз выручки</p>
             <h3>{{ crmStore.money(forecast?.weighted_revenue) }}</h3>
           </div>
-          <span>{{ periodDays }} days</span>
+          <span>{{ periodDays }} дней</span>
         </div>
         <div class="chart-frame">
-          <svg viewBox="0 0 296 160" preserveAspectRatio="none" role="img" aria-label="Revenue forecast trend">
+          <svg viewBox="0 0 296 160" preserveAspectRatio="none" role="img" aria-label="Динамика прогноза выручки">
             <defs>
               <linearGradient id="forecastFill" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stop-color="#0071e3" stop-opacity="0.24" />
@@ -336,16 +336,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
           </svg>
         </div>
         <div class="forecast-legend">
-          <span>Commit: {{ crmStore.money(forecast?.commit_revenue) }}</span>
-          <span>Pipeline: {{ crmStore.money(forecast?.pipeline_revenue) }}</span>
+          <span>Подтверждено: {{ crmStore.money(forecast?.commit_revenue) }}</span>
+          <span>Воронка: {{ crmStore.money(forecast?.pipeline_revenue) }}</span>
         </div>
       </section>
 
       <section class="analytics-panel health-panel interactive-card" role="button" tabindex="0" @click="openPanel('conversion')" @keydown.enter.space.prevent="openPanel('conversion')">
         <div class="panel-title">
           <div>
-            <p class="eyebrow">Pipeline Health</p>
-            <h3>Conversion Funnel</h3>
+            <p class="eyebrow">Состояние воронки</p>
+            <h3>Конверсия по этапам</h3>
           </div>
           <span>{{ bottleneckStage ? formatStageName(bottleneckStage.stage_name) : "Нет узкого места" }}</span>
         </div>
@@ -355,7 +355,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
             <div><i :style="{ width: `${stage.width}%` }"></i></div>
             <small>{{ stage.deal_count }} · {{ crmStore.money(stage.amount) }}</small>
           </article>
-          <p v-if="!stageHealth.length" class="empty">No pipeline data</p>
+          <p v-if="!stageHealth.length" class="empty">Данных по воронке пока нет</p>
         </div>
       </section>
     </section>
@@ -364,50 +364,50 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
       <section class="analytics-panel risk-panel interactive-card" role="button" tabindex="0" @click="openPanel('risk')" @keydown.enter.space.prevent="openPanel('risk')">
         <div class="panel-title">
           <div>
-            <p class="eyebrow">Top Deals at Risk</p>
-            <h3>Deals at Risk</h3>
+            <p class="eyebrow">Главные риски</p>
+            <h3>Сделки под риском</h3>
           </div>
-          <span>Lost revenue: {{ crmStore.money(riskMap?.revenue_at_risk ?? 0) }}</span>
+          <span>Выручка под риском: {{ crmStore.money(riskMap?.revenue_at_risk ?? 0) }}</span>
         </div>
         <RouterLink v-for="deal in topRiskDeals" :key="deal.deal_id" to="/deals" class="risk-row" @click.stop>
           <i :class="deal.level"></i>
           <span>{{ deal.company_name }}</span>
-          <small>{{ deal.score }}% risk</small>
+          <small>Риск {{ deal.score }}%</small>
           <strong>{{ crmStore.money(deal.amount) }}</strong>
         </RouterLink>
         <RouterLink v-for="deal in stuckDeals" v-if="!topRiskDeals.length" :key="deal.deal_id" to="/deals" class="risk-row" @click.stop>
           <i :class="deal.risk_level"></i>
           <span>{{ deal.company_name }}</span>
-          <small>{{ deal.days_in_stage }} days</small>
+          <small>{{ deal.days_in_stage }} дней</small>
           <strong>{{ crmStore.money(deal.amount) }}</strong>
         </RouterLink>
-        <p v-if="!topRiskDeals.length && !stuckDeals.length" class="empty compact">No open deals at risk</p>
+        <p v-if="!topRiskDeals.length && !stuckDeals.length" class="empty compact">Открытых сделок под риском нет</p>
       </section>
 
       <section class="analytics-panel activity-panel interactive-card" role="button" tabindex="0" @click="openPanel('activity')" @keydown.enter.space.prevent="openPanel('activity')">
         <div class="panel-title">
           <div>
-            <p class="eyebrow">Team Activity</p>
-            <h3>Deal Velocity</h3>
+            <p class="eyebrow">Активность команды</p>
+            <h3>Скорость работы</h3>
           </div>
           <span>{{ taskSla?.sla_rate ?? 0 }}% SLA</span>
         </div>
         <dl>
           <div>
-            <dt>Completed tasks</dt>
+            <dt>Завершено задач</dt>
             <dd>{{ completedTasks }}</dd>
           </div>
           <div>
-            <dt>Response time</dt>
+            <dt>Время ответа</dt>
             <dd>{{ avgResolution }}</dd>
           </div>
           <div>
-            <dt>Meetings this period</dt>
+            <dt>Встреч за период</dt>
             <dd>{{ meetingsThisWeek }}</dd>
           </div>
         </dl>
         <div class="ask-analytics">
-          <span>Ask Analytics</span>
+          <span>Спросить аналитику</span>
           <button type="button" @click.stop="openPanel('conversion')">Почему упала конверсия?</button>
           <button type="button" @click.stop="openPanel('risk')">Какие сделки требуют внимания?</button>
         </div>
@@ -417,10 +417,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
     <section v-if="unhealthyCompanies.length" class="analytics-panel company-strip">
       <div class="panel-title">
         <div>
-          <p class="eyebrow">Company Health</p>
-          <h3>Accounts needing attention</h3>
+          <p class="eyebrow">Состояние компаний</p>
+          <h3>Компании, требующие внимания</h3>
         </div>
-        <span>{{ unhealthyCompanies.length }} shown</span>
+        <span>Показано: {{ unhealthyCompanies.length }}</span>
       </div>
       <RouterLink v-for="company in unhealthyCompanies" :key="company.company_id" :to="`/companies/${company.company_id}`" class="company-row">
         <i :class="company.risk_level">{{ company.score }}</i>
@@ -434,13 +434,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
 
     <section class="next-action">
       <div>
-        <p class="eyebrow">AI Recommendation</p>
+        <p class="eyebrow">Рекомендация AI</p>
         <strong>
           Свяжитесь с {{ nextBestDeal?.company_name ?? "ключевым клиентом" }} сегодня.
           Это снизит риск потери {{ crmStore.money(nextBestDeal?.amount ?? riskMap?.revenue_at_risk ?? 0) }}.
         </strong>
       </div>
-      <RouterLink class="button-link" :to="nextBestDeal ? '/deals' : '/companies'">Open Deal →</RouterLink>
+      <RouterLink class="button-link" :to="nextBestDeal ? '/deals' : '/companies'">Открыть сделку →</RouterLink>
     </section>
 
     <div v-if="detail" class="analytics-modal-backdrop" @click.self="closePanel">
@@ -450,7 +450,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
             <p class="eyebrow">{{ detail.eyebrow }}</p>
             <h3>{{ detail.title }}</h3>
           </div>
-          <button type="button" class="analytics-modal-close" aria-label="Close analytics details" @click="closePanel">×</button>
+          <button type="button" class="analytics-modal-close" aria-label="Закрыть детали аналитики" @click="closePanel">×</button>
         </header>
         <p class="analytics-modal-summary">{{ detail.summary }}</p>
         <dl class="analytics-modal-metrics">
@@ -464,10 +464,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
             <strong>{{ row[0] }}</strong>
             <span>{{ row[1] }}</span>
           </article>
-          <p v-if="!detail.rows.length" class="empty">No detailed data for this period</p>
+          <p v-if="!detail.rows.length" class="empty">Подробных данных за период нет</p>
         </div>
         <footer>
-          <span>Generated {{ generatedAt(data?.generated_at) }}</span>
+          <span>Обновлено {{ generatedAt(data?.generated_at) }}</span>
           <RouterLink class="button-link" :to="detail.link" @click="closePanel">{{ detail.linkLabel }} →</RouterLink>
         </footer>
       </section>

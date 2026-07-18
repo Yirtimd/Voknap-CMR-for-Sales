@@ -257,9 +257,9 @@ const focusDeals = computed(() =>
 
     <section class="home-ai">
       <div class="home-ai-copy">
-        <p class="home-ai-label"><span>✦</span> AI рекомендует <b>Backend copilot</b></p>
-        <h2>{{ homeCopilot?.title ?? "Copilot анализирует рабочую очередь…" }}</h2>
-        <p>{{ homeCopilot?.rationale ?? "Рекомендация загружается с backend." }}</p>
+        <p class="home-ai-label"><span>✦</span> Рекомендация <b>AI-ассистента</b></p>
+        <h2>{{ homeCopilot?.title ?? "Анализирую рабочую очередь…" }}</h2>
+        <p>{{ homeCopilot?.rationale ?? "Готовим рекомендацию на основе текущих данных." }}</p>
         <small>
           {{ homeCopilot?.company_name ?? "Нет компании" }}
           <template v-if="homeCopilot?.deal_title"> · {{ homeCopilot.deal_title }} · {{ crmStore.money(homeCopilot.amount) }}</template>
@@ -320,7 +320,7 @@ const focusDeals = computed(() =>
           <h2><span>◎</span> Следующее лучшее действие</h2>
         </header>
         <h3>{{ homeCopilot?.title ?? "Проверить рабочую очередь" }}</h3>
-        <p>{{ homeCopilot?.rationale ?? "Backend copilot формирует следующий лучший шаг." }}</p>
+        <p>{{ homeCopilot?.rationale ?? "AI-ассистент формирует следующий лучший шаг." }}</p>
         <div>
           <RouterLink class="button-link secondary-link" :to="homeCopilot?.primary_url ?? '/companies'">
             {{ homeCopilot?.action_label ?? "Открыть" }}

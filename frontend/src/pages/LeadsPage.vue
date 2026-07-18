@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onMounted, ref } from "vue";
 
 import { crmStore } from "../stores/crm";
 
 onMounted(() => {
   void crmStore.refreshAll();
 });
+
+const creationMode = ref<"lead" | "contact">("lead");
 
 function companyName(companyId: string) {
   return crmStore.companies.value.find((company) => company.id === companyId)?.name ?? "Компания";
@@ -14,32 +16,33 @@ function companyName(companyId: string) {
 
 <template>
   <section class="stack">
-    <section class="workspace-hero compact-hero">
-      <div>
-        <p class="eyebrow">Demand Pipeline</p>
-        <h1>Leads</h1>
-        <p>Новые обращения, контакты и источники до создания сделки.</p>
-      </div>
-      <RouterLink class="button-link secondary-link" to="/inbox">Communication Hub</RouterLink>
+    <section class="workspace-hero compact-hero leads-intro">
+      <p>Новые обращения и контакты до создания сделки.</p>
+      <RouterLink class="button-link secondary-link" to="/inbox">Открыть входящие</RouterLink>
     </section>
 
+    <div class="mode-tabs leads-create-tabs" role="tablist" aria-label="Тип новой записи">
+      <button type="button" role="tab" :aria-selected="creationMode === 'lead'" :class="{ active: creationMode === 'lead' }" @click="creationMode = 'lead'">Новый лид</button>
+      <button type="button" role="tab" :aria-selected="creationMode === 'contact'" :class="{ active: creationMode === 'contact' }" @click="creationMode = 'contact'">Новый контакт</button>
+    </div>
+
     <section class="section-grid">
-    <form class="panel" @submit.prevent="crmStore.createContact">
+    <form v-if="creationMode === 'contact'" class="panel wide" @submit.prevent="crmStore.createContact">
       <h2>Новый контакт</h2>
-      <label>Компания
+      <label>Компания в CRM
         <select v-model="crmStore.contactForm.value.company_id" required>
           <option value="">Выбрать</option>
           <option v-for="company in crmStore.companies.value" :key="company.id" :value="company.id">{{ company.name }}</option>
         </select>
       </label>
-      <label>Имя<input v-model="crmStore.contactForm.value.name" /></label>
-      <label>Телефон<input v-model="crmStore.contactForm.value.phone" /></label>
-      <label>Email<input v-model="crmStore.contactForm.value.email" /></label>
-      <label>Компания<input v-model="crmStore.contactForm.value.company_name" /></label>
+      <label>Имя<input v-model="crmStore.contactForm.value.name" required autocomplete="name" /></label>
+      <label>Телефон<input v-model="crmStore.contactForm.value.phone" type="tel" autocomplete="tel" /></label>
+      <label>Email<input v-model="crmStore.contactForm.value.email" type="email" autocomplete="email" /></label>
+      <label>Новая компания, если её нет в списке<input v-model="crmStore.contactForm.value.company_name" placeholder="Название компании" /></label>
       <button type="submit">Создать контакт</button>
     </form>
 
-    <form class="panel" @submit.prevent="crmStore.createLead">
+    <form v-else class="panel wide" @submit.prevent="crmStore.createLead">
       <h2>Новый лид</h2>
       <label>Компания
         <select v-model="crmStore.leadForm.value.company_id" required>
@@ -47,7 +50,7 @@ function companyName(companyId: string) {
           <option v-for="company in crmStore.companies.value" :key="company.id" :value="company.id">{{ company.name }}</option>
         </select>
       </label>
-      <label>Название<input v-model="crmStore.leadForm.value.title" /></label>
+      <label>Название<input v-model="crmStore.leadForm.value.title" required /></label>
       <label>Источник<input v-model="crmStore.leadForm.value.source" /></label>
       <label>Контакт
         <select v-model="crmStore.leadForm.value.contact_id">
@@ -76,3 +79,9 @@ function companyName(companyId: string) {
     </section>
   </section>
 </template>
+
+<style scoped>
+.leads-intro { min-height: 0; }
+.leads-intro > p { margin: 0; color: var(--muted); }
+.leads-create-tabs { width: fit-content; }
+</style>

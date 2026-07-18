@@ -8,7 +8,7 @@ from app.modules.ai_agent.models import AgentMessage
 from app.modules.connectors.models import ConnectorAccount
 from app.modules.knowledge.models import KnowledgeDocument
 from app.modules.production.models import AuditLog, FeatureFlag, TenantPlan
-from app.modules.sales.models import Contact, Deal, Lead, Note, Pipeline, Task
+from app.modules.sales.models import Contact, Deal, Lead, Task
 from app.modules.templates.models import AppliedTemplate
 
 
@@ -160,4 +160,3 @@ class ProductionService:
             "documents_limit": plan.documents_limit,
             "ai_requests_limit": plan.ai_requests_limit,
         }
-

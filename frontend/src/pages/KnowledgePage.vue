@@ -10,20 +10,20 @@ const uploadTitle = ref("");
 const uploadInProgress = ref(false);
 
 const suggestedQuestions = [
-  "How do we qualify leads?",
-  "Where is pricing stored?",
-  "Explain onboarding.",
-  "How do we work with enterprise clients?",
-  "Show company policies.",
-  "Find contract template."
+  "Как мы квалифицируем лиды?",
+  "Где хранятся цены?",
+  "Объясни процесс адаптации.",
+  "Как мы работаем с крупными клиентами?",
+  "Покажи правила компании.",
+  "Найди шаблон договора."
 ];
 
 const relatedKnowledge = [
-  { title: "Lead Qualification", children: ["Sales Script", "Pricing", "Discovery", "Proposal"] },
-  { title: "Enterprise Sales", children: ["Security review", "Stakeholders", "Commercial terms"] }
+  { title: "Квалификация лидов", children: ["Сценарий продаж", "Цены", "Исследование", "Предложение"] },
+  { title: "Продажи крупным клиентам", children: ["Проверка безопасности", "Участники", "Коммерческие условия"] }
 ];
 
-const aiActions = ["Create task", "Create deal checklist", "Open document", "Summarize", "Explain simply", "Generate SOP", "Send to Agent"];
+const aiActions = ["Создать задачу", "Создать чек-лист", "Открыть документ", "Сделать выжимку", "Объяснить проще", "Создать инструкцию", "Отправить агенту"];
 
 const confidence = computed(() => {
   const citations = crmStore.knowledgeAnswer.value?.citations ?? [];
@@ -33,8 +33,8 @@ const confidence = computed(() => {
 
 const sourceSummary = computed(() => {
   const count = new Set((crmStore.knowledgeAnswer.value?.citations ?? []).map((item) => item.document_id)).size;
-  if (!count) return "Ask a question to see how the answer was built.";
-  return `Answer built from ${count} general workspace ${count === 1 ? "document" : "documents"}.`;
+  if (!count) return "Задайте вопрос, чтобы увидеть источники ответа.";
+  return `Ответ сформирован по документам рабочего пространства: ${count}.`;
 });
 
 function askSuggested(question: string) {
@@ -43,7 +43,7 @@ function askSuggested(question: string) {
 }
 
 function relevance(score: number) {
-  return `${Math.min(99, Math.max(61, Math.round(score * 100)))}% relevance`;
+  return `Релевантность ${Math.min(99, Math.max(61, Math.round(score * 100)))}%`;
 }
 
 function selectUpload(event: Event) {
@@ -75,31 +75,31 @@ onMounted(() => {
 
 <template>
   <section class="brain-page">
-    <nav class="brain-tabs" aria-label="Brain sections">
-      <button type="button" :class="{ active: activeTab === 'chat' }" @click="activeTab = 'chat'">Chat</button>
-      <button type="button" :class="{ active: activeTab === 'documents' }" @click="activeTab = 'documents'">Documents</button>
-      <button type="button" :class="{ active: activeTab === 'collections' }" @click="activeTab = 'collections'">Collections</button>
-      <button type="button" :class="{ active: activeTab === 'agents' }" @click="activeTab = 'agents'">AI Agents</button>
-      <button type="button" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">Settings</button>
+    <nav class="brain-tabs" aria-label="Разделы базы знаний">
+      <button type="button" :class="{ active: activeTab === 'chat' }" @click="activeTab = 'chat'">Вопросы</button>
+      <button type="button" :class="{ active: activeTab === 'documents' }" @click="activeTab = 'documents'">Документы</button>
+      <button type="button" :class="{ active: activeTab === 'collections' }" @click="activeTab = 'collections'">Коллекции</button>
+      <button type="button" :class="{ active: activeTab === 'agents' }" @click="activeTab = 'agents'">AI-агенты</button>
+      <button type="button" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">Настройки</button>
     </nav>
 
     <section v-if="activeTab === 'chat'" class="brain-chat-layout">
       <div class="brain-main">
         <section class="brain-ask">
-          <p class="eyebrow">Brain</p>
-          <h2>Good afternoon, Dmitry.</h2>
-          <p>What would you like to know?</p>
+          <p class="eyebrow">База знаний</p>
+          <h2>Добрый день, Дмитрий.</h2>
+          <p>Что вы хотите узнать?</p>
 
           <form class="brain-question" @submit.prevent="crmStore.askKnowledge()">
             <textarea
               v-model="crmStore.knowledgeAskForm.value.question"
               rows="3"
-              placeholder="Ask about sales, policies, onboarding, pricing, contracts..."
+              placeholder="Спросите о продажах, правилах, ценах или договорах..."
             ></textarea>
-            <button type="submit">Ask</button>
+            <button type="submit">Спросить</button>
           </form>
 
-          <div class="suggested-grid" aria-label="Suggested questions">
+          <div class="suggested-grid" aria-label="Предлагаемые вопросы">
             <button v-for="question in suggestedQuestions" :key="question" type="button" @click="askSuggested(question)">
               {{ question }}
             </button>
@@ -109,11 +109,11 @@ onMounted(() => {
         <section v-if="crmStore.knowledgeAnswer.value" class="panel brain-answer">
           <div class="brain-answer-head">
             <div>
-              <p class="eyebrow">Answer</p>
-              <h2>General knowledge answer</h2>
+              <p class="eyebrow">Ответ</p>
+              <h2>Ответ по базе знаний</h2>
             </div>
             <div class="confidence-meter">
-              <span>Confidence</span>
+              <span>Уверенность</span>
               <strong>{{ confidence }}%</strong>
             </div>
           </div>
@@ -121,7 +121,7 @@ onMounted(() => {
           <p class="answer-text">{{ crmStore.knowledgeAnswer.value.answer }}</p>
 
           <div class="reasoning-block">
-            <span>Reasoning</span>
+            <span>Основание ответа</span>
             <p>{{ sourceSummary }}</p>
           </div>
 
@@ -130,7 +130,7 @@ onMounted(() => {
           </div>
 
           <div class="source-list">
-            <h3>Sources</h3>
+            <h3>Источники</h3>
             <article
               v-for="citation in crmStore.knowledgeAnswer.value.citations"
               :key="citation.chunk_id"
@@ -141,7 +141,7 @@ onMounted(() => {
                 <small>{{ relevance(citation.score) }}</small>
               </div>
               <p>{{ citation.text }}</p>
-              <button type="button" class="secondary">Open</button>
+              <button type="button" class="secondary">Открыть</button>
             </article>
           </div>
         </section>
@@ -149,7 +149,7 @@ onMounted(() => {
 
       <aside class="brain-rail">
         <section class="panel compact-panel">
-          <h2>Related knowledge</h2>
+          <h2>Связанные знания</h2>
           <div v-for="group in relatedKnowledge" :key="group.title" class="knowledge-branch">
             <strong>{{ group.title }}</strong>
             <span v-for="child in group.children" :key="child">{{ child }}</span>
@@ -157,15 +157,15 @@ onMounted(() => {
         </section>
 
         <section class="panel compact-panel">
-          <h2>Documents</h2>
+          <h2>Документы</h2>
           <div v-for="document in crmStore.knowledgeDocuments.value.slice(0, 4)" :key="document.id" class="document-mini-row">
             <div>
               <strong>{{ document.title }}</strong>
-              <small>{{ document.chunks_count }} knowledge pieces</small>
+              <small>Фрагментов: {{ document.chunks_count }}</small>
             </div>
             <span :class="['status-pill', document.status]">{{ document.status }}</span>
           </div>
-          <p v-if="!crmStore.knowledgeDocuments.value.length" class="empty">No documents connected yet.</p>
+          <p v-if="!crmStore.knowledgeDocuments.value.length" class="empty">Документы пока не подключены.</p>
         </section>
       </aside>
     </section>
@@ -174,10 +174,10 @@ onMounted(() => {
       <section class="panel">
         <div class="panel-head">
           <div>
-            <p class="eyebrow">Workspace Memory</p>
-            <h2>Documents</h2>
+            <p class="eyebrow">Память рабочего пространства</p>
+            <h2>Документы</h2>
           </div>
-          <button type="button" @click="uploadInput?.click()">Upload file</button>
+          <button type="button" @click="uploadInput?.click()">Загрузить файл</button>
         </div>
 
         <form class="document-upload-form" @submit.prevent="uploadKnowledgeFile">
@@ -185,18 +185,18 @@ onMounted(() => {
             PDF, DOCX or TXT
             <input ref="uploadInput" type="file" accept=".pdf,.docx,.txt" required @change="selectUpload" />
           </label>
-          <label>Optional title<input v-model="uploadTitle" placeholder="Defaults to file name" /></label>
+          <label>Название, необязательно<input v-model="uploadTitle" placeholder="По умолчанию — имя файла" /></label>
           <button type="submit" :disabled="!uploadFile || uploadInProgress">
-            {{ uploadInProgress ? "Parsing and indexing…" : "Upload and index" }}
+            {{ uploadInProgress ? "Обработка и индексация…" : "Загрузить и проиндексировать" }}
           </button>
         </form>
 
         <form class="document-upload-form" @submit.prevent="crmStore.createKnowledgeDocument">
-          <h3 class="wide-field">Or add plain text</h3>
-          <label>Title<input v-model="crmStore.knowledgeDocumentForm.value.title" /></label>
-          <label>Collection<input v-model="crmStore.knowledgeDocumentForm.value.source_type" /></label>
-          <label class="wide-field">Content<textarea v-model="crmStore.knowledgeDocumentForm.value.text" class="large-textarea"></textarea></label>
-          <button type="submit">Add document</button>
+          <h3 class="wide-field">Или добавьте текст</h3>
+          <label>Название<input v-model="crmStore.knowledgeDocumentForm.value.title" required /></label>
+          <label>Коллекция<input v-model="crmStore.knowledgeDocumentForm.value.source_type" /></label>
+          <label class="wide-field">Содержание<textarea v-model="crmStore.knowledgeDocumentForm.value.text" class="large-textarea" required></textarea></label>
+          <button type="submit">Добавить документ</button>
         </form>
       </section>
 
@@ -204,21 +204,21 @@ onMounted(() => {
         <article v-for="document in crmStore.knowledgeDocuments.value" :key="document.id" class="document-row">
           <div>
             <strong>{{ document.title }}</strong>
-            <small>{{ document.chunks_count }} knowledge pieces · updated {{ new Date(document.created_at).toLocaleDateString() }}</small>
+            <small>Фрагментов: {{ document.chunks_count }} · обновлено {{ new Date(document.created_at).toLocaleDateString("ru-RU") }}</small>
           </div>
           <div>
-            <button v-if="document.download_url" type="button" class="secondary" @click="crmStore.downloadKnowledgeDocument(document)">Download</button>
+            <button v-if="document.download_url" type="button" class="secondary" @click="crmStore.downloadKnowledgeDocument(document)">Скачать</button>
             <span :class="['status-pill', document.status]">{{ document.status }}</span>
           </div>
         </article>
-        <p v-if="!crmStore.knowledgeDocuments.value.length" class="empty">Documents will appear here after upload.</p>
+        <section v-if="!crmStore.knowledgeDocuments.value.length" class="empty-state"><strong>Документов пока нет</strong><p>Загрузите файл или добавьте текст, чтобы AI мог отвечать по материалам компании.</p><button type="button" @click="uploadInput?.click()">Загрузить документ</button></section>
       </section>
     </section>
 
     <section v-else class="panel brain-placeholder">
       <p class="eyebrow">{{ activeTab }}</p>
-      <h2>{{ activeTab === "collections" ? "Collections" : activeTab === "agents" ? "AI Agents" : "Settings" }}</h2>
-      <p class="hint">This area is reserved for the next Brain screen.</p>
+      <h2>{{ activeTab === "collections" ? "Коллекции" : activeTab === "agents" ? "AI-агенты" : "Настройки" }}</h2>
+      <p class="hint">Раздел находится в разработке.</p>
     </section>
   </section>
 </template>

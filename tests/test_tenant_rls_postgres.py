@@ -12,75 +12,86 @@ pytestmark = pytest.mark.postgres
 
 
 @pytest.fixture
-def postgres_engine():
+def postgres_connection():
     database_url = os.getenv("TEST_DATABASE_URL")
     if not database_url:
-        pytest.skip("TEST_DATABASE_URL is required")
+        pytest.fail("TEST_DATABASE_URL is required for PostgreSQL integration tests")
     engine = create_engine(database_url)
     try:
-        yield engine
+        with engine.connect() as connection:
+            transaction = connection.begin()
+            tenant_a = uuid4()
+            tenant_b = uuid4()
+            company_a = uuid4()
+            company_b = uuid4()
+            connection.execute(
+                text(
+                    "INSERT INTO tenants (id, name, slug, is_active, created_at) VALUES "
+                    "(:tenant_a, 'Tenant A', :slug_a, true, now()), "
+                    "(:tenant_b, 'Tenant B', :slug_b, true, now())"
+                ),
+                {
+                    "tenant_a": tenant_a,
+                    "tenant_b": tenant_b,
+                    "slug_a": f"rls-a-{tenant_a}",
+                    "slug_b": f"rls-b-{tenant_b}",
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO companies (id, tenant_id, name, status, created_at) VALUES "
+                    "(:company_a, :tenant_a, 'Company A', 'active', now()), "
+                    "(:company_b, :tenant_b, 'Company B', 'active', now())"
+                ),
+                {
+                    "company_a": company_a,
+                    "company_b": company_b,
+                    "tenant_a": tenant_a,
+                    "tenant_b": tenant_b,
+                },
+            )
+            try:
+                yield connection, tenant_a, tenant_b, company_a, company_b
+            finally:
+                transaction.rollback()
     finally:
         engine.dispose()
 
 
-def test_rls_default_deny_and_tenant_scope(postgres_engine):
-    with postgres_engine.connect() as connection:
-        transaction = connection.begin()
-        try:
-            connection.exec_driver_sql(f'SET LOCAL ROLE "{settings.database_runtime_role}"')
-            assert connection.execute(text("SELECT count(*) FROM companies")).scalar_one() == 0
+def test_rls_default_deny_and_tenant_scope(postgres_connection):
+    connection, tenant_a, _tenant_b, _company_a, _company_b = postgres_connection
+    connection.exec_driver_sql(f'SET LOCAL ROLE "{settings.database_runtime_role}"')
+    assert connection.execute(text("SELECT count(*) FROM companies")).scalar_one() == 0
 
-            tenant_id = connection.execute(
-                text("SELECT id FROM tenants WHERE slug = 'developer-test'")
-            ).scalar_one()
-            connection.execute(
-                text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
-                {"tenant_id": str(tenant_id)},
-            )
-            visible_tenants = connection.execute(
-                text("SELECT DISTINCT tenant_id FROM companies")
-            ).scalars().all()
-            assert set(visible_tenants) <= {tenant_id}
-        finally:
-            transaction.rollback()
+    connection.execute(
+        text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_a)},
+    )
+    visible_tenants = connection.execute(
+        text("SELECT DISTINCT tenant_id FROM companies")
+    ).scalars().all()
+    assert visible_tenants == [tenant_a]
 
 
-def test_composite_fk_rejects_cross_tenant_reference(postgres_engine):
-    with postgres_engine.connect() as connection:
-        tenants = connection.execute(
+def test_composite_fk_rejects_cross_tenant_reference(postgres_connection):
+    connection, tenant_a, _tenant_b, _company_a, company_b = postgres_connection
+    connection.exec_driver_sql(f'SET LOCAL ROLE "{settings.database_runtime_role}"')
+    connection.execute(
+        text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_a)},
+    )
+    with pytest.raises(IntegrityError):
+        connection.execute(
             text(
-                "SELECT c.tenant_id, c.id FROM companies c "
-                "ORDER BY c.tenant_id, c.id"
-            )
-        ).all()
-        tenant_a, company_b = next(
-            (left[0], right[1])
-            for left in tenants
-            for right in tenants
-            if left[0] != right[0]
+                "INSERT INTO contacts "
+                "(id, tenant_id, company_id, name, can_call, can_email, "
+                "can_open_more, created_at) "
+                "VALUES (:id, :tenant_id, :company_id, 'cross-tenant', "
+                "true, true, true, now())"
+            ),
+            {
+                "id": uuid4(),
+                "tenant_id": tenant_a,
+                "company_id": company_b,
+            },
         )
-
-        transaction = connection.begin_nested()
-        try:
-            connection.exec_driver_sql(f'SET LOCAL ROLE "{settings.database_runtime_role}"')
-            connection.execute(
-                text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
-                {"tenant_id": str(tenant_a)},
-            )
-            with pytest.raises(IntegrityError):
-                connection.execute(
-                    text(
-                        "INSERT INTO contacts "
-                        "(id, tenant_id, company_id, name, can_call, can_email, "
-                        "can_open_more, created_at) "
-                        "VALUES (:id, :tenant_id, :company_id, 'cross-tenant', "
-                        "true, true, true, now())"
-                    ),
-                    {
-                        "id": uuid4(),
-                        "tenant_id": tenant_a,
-                        "company_id": company_b,
-                    },
-                )
-        finally:
-            transaction.rollback()

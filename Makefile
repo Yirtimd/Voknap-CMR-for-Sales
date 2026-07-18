@@ -48,8 +48,7 @@ seed: check db-ready migrate
 	$(PYTHON) scripts/seed_demo.py
 
 test: check
-	$(PYTHON) -m compileall -q app scripts
-	npm --prefix frontend run build
+	bash scripts/quality_gate.sh
 
 stop:
 	docker compose down

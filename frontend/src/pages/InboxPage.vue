@@ -24,7 +24,7 @@ onMounted(async () => {
 <template>
   <section class="section-grid">
     <section class="panel">
-      <h2>Communication Hub</h2>
+      <h2>Центр коммуникаций</h2>
 
       <div class="inbox-toolbar">
         <select v-model="channelFilter">
@@ -39,7 +39,7 @@ onMounted(async () => {
           <option value="">Все статусы</option>
           <option value="new">Не привязано</option>
           <option value="linked">Привязано</option>
-          <option value="activity_created">Activity создана</option>
+          <option value="activity_created">Активность создана</option>
         </select>
         <button type="button" @click="crmStore.refreshCommunication">Обновить</button>
       </div>
@@ -47,21 +47,21 @@ onMounted(async () => {
       <form class="form-grid" @submit.prevent="crmStore.createCommunicationEvent()">
         <select v-model="crmStore.communicationEventForm.value.channel">
           <option value="email">Email</option>
-          <option value="call">Call</option>
-          <option value="calendar">Meeting</option>
+          <option value="call">Звонок</option>
+          <option value="calendar">Встреча</option>
           <option value="telegram">Telegram</option>
           <option value="whatsapp">WhatsApp</option>
         </select>
         <select v-model="crmStore.communicationEventForm.value.company_id">
-          <option value="">No company</option>
+          <option value="">Без компании</option>
           <option v-for="company in crmStore.companies.value" :key="company.id" :value="company.id">
             {{ company.name }}
           </option>
         </select>
-        <input v-model="crmStore.communicationEventForm.value.sender" placeholder="Sender" />
-        <input v-model="crmStore.communicationEventForm.value.subject" placeholder="Subject" />
-        <textarea v-model="crmStore.communicationEventForm.value.body" placeholder="Message"></textarea>
-        <button type="submit">Create incoming</button>
+        <input v-model="crmStore.communicationEventForm.value.sender" placeholder="Отправитель" />
+        <input v-model="crmStore.communicationEventForm.value.subject" placeholder="Тема" required />
+        <textarea v-model="crmStore.communicationEventForm.value.body" placeholder="Сообщение"></textarea>
+        <button type="submit">Добавить входящее</button>
       </form>
 
       <article v-for="event in visibleEvents" :key="event.id" class="timeline-item">
@@ -72,16 +72,16 @@ onMounted(async () => {
             <small>{{ event.channel }} / {{ event.status }}</small>
           </header>
           <p v-if="event.body">{{ event.body }}</p>
-          <small>{{ event.sender || "Unknown sender" }} · {{ new Date(event.occurred_at).toLocaleString() }}</small>
+          <small>{{ event.sender || "Отправитель неизвестен" }} · {{ new Date(event.occurred_at).toLocaleString("ru-RU") }}</small>
           <div class="form-grid compact-form">
             <select v-model="event.company_id">
-              <option :value="null">No company</option>
+              <option :value="null">Без компании</option>
               <option v-for="company in crmStore.companies.value" :key="company.id" :value="company.id">
                 {{ company.name }}
               </option>
             </select>
             <select v-model="event.contact_id">
-              <option :value="null">No contact</option>
+              <option :value="null">Без контакта</option>
               <option
                 v-for="contact in crmStore.contacts.value.filter((item) => !event.company_id || item.company_id === event.company_id)"
                 :key="contact.id"
@@ -91,7 +91,7 @@ onMounted(async () => {
               </option>
             </select>
             <select v-model="event.deal_id">
-              <option :value="null">No deal</option>
+              <option :value="null">Без сделки</option>
               <option
                 v-for="deal in crmStore.deals.value.filter((item) => !event.company_id || item.company_id === event.company_id)"
                 :key="deal.id"
@@ -105,18 +105,18 @@ onMounted(async () => {
               type="button"
               :disabled="!event.company_id || Boolean(event.activity_id)"
               @click="crmStore.createActivityFromCommunication(event.id)"
-            >{{ event.activity_id ? "Activity создана" : "Создать activity" }}</button>
+            >{{ event.activity_id ? "Активность создана" : "Создать активность" }}</button>
           </div>
         </div>
       </article>
-      <p v-if="!visibleEvents.length" class="empty">Событий по выбранным фильтрам нет</p>
+      <section v-if="!visibleEvents.length" class="empty-state"><strong>Входящих событий нет</strong><p>Новые письма, звонки и встречи появятся здесь после синхронизации.</p></section>
     </section>
 
     <section class="panel">
-      <h2>Connector Runs</h2>
+      <h2>История синхронизации</h2>
       <article v-for="run in crmStore.connectorRuns.value.slice(0, 10)" :key="run.id" class="list-row">
         <span>{{ run.direction }} / {{ run.status }}</span>
-        <small>{{ run.created_count }} created</small>
+        <small>Создано: {{ run.created_count }}</small>
       </article>
       <p v-if="!crmStore.connectorRuns.value.length" class="empty">Синхронизаций пока нет</p>
     </section>

@@ -109,7 +109,7 @@ This protects the system from a forgotten application-level `tenant_id` filter.
 ### Requirements
 
 - Python 3.12;
-- Node.js and npm;
+- Node.js 20.19+ or 22.12+ and npm;
 - Docker with Docker Compose.
 
 ### Install dependencies
@@ -160,15 +160,14 @@ The seed is repeatable and recreates only the dedicated demo tenant.
 ## Verification
 
 ```bash
-.venv/bin/ruff check app tests scripts
-.venv/bin/pytest -q
-npm --prefix frontend run build
-.venv/bin/alembic check
+make test
 ```
 
-PostgreSQL-specific isolation tests require a separate `TEST_DATABASE_URL`.
-They should never run against a production or irreplaceable development
-database.
+The quality gate runs Ruff, backend unit tests, isolated PostgreSQL integration
+tests, frontend type checking and unit tests, a production build, and
+`alembic check`. By default it creates and removes only the dedicated
+`cmr_quality_gate_test` database. A CI environment may provide its own disposable
+`TEST_DATABASE_URL` instead.
 
 ## Configuration highlights
 

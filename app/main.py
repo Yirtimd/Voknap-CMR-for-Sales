@@ -1,14 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.modules.activity import models as activity_models
-from app.modules.ai_agent import models as ai_agent_models
-from app.modules.communication import models as communication_models
-from app.modules.connectors import models as connectors_models
-from app.modules.knowledge import models as knowledge_models
-from app.modules.production import models as production_models
-from app.modules.sales import models as sales_models
-from app.modules.templates import models as templates_models
+from app.modules.activity import models as activity_models  # noqa: F401
+from app.modules.ai_agent import models as ai_agent_models  # noqa: F401
+from app.modules.communication import models as communication_models  # noqa: F401
+from app.modules.connectors import models as connectors_models  # noqa: F401
+from app.modules.knowledge import models as knowledge_models  # noqa: F401
+from app.modules.production import models as production_models  # noqa: F401
+from app.modules.sales import models as sales_models  # noqa: F401
+from app.modules.templates import models as templates_models  # noqa: F401
 from app.modules.activity.router import router as activity_router
 from app.modules.ai_agent.router import router as ai_agent_router
 from app.modules.analytics.router import router as analytics_router

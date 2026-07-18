@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import CompanyDrawer from "../components/crm/CompanyDrawer.vue";
@@ -14,8 +14,24 @@ const companyNameInput = ref<HTMLInputElement | null>(null);
 const route = useRoute();
 const router = useRouter();
 
+function handleEscape(event: KeyboardEvent) {
+  if (event.key !== "Escape") return;
+  if (showCreateCompany.value) showCreateCompany.value = false;
+  else if (selectedCompany.value) closeCompany();
+}
+
 onMounted(() => {
   void crmStore.refreshAll();
+  window.addEventListener("keydown", handleEscape);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleEscape);
+  document.body.style.overflow = "";
+});
+
+watch(showCreateCompany, (open) => {
+  document.body.style.overflow = open ? "hidden" : "";
 });
 
 watch(
@@ -207,7 +223,7 @@ const averageHealth = computed(() => {
         </header>
         <form class="compact-form" @submit.prevent="createCompany">
           <label>Название<input ref="companyNameInput" v-model="crmStore.companyForm.value.name" required minlength="2" /></label>
-          <label>Сайт<input v-model="crmStore.companyForm.value.website" /></label>
+          <label>Сайт<input v-model="crmStore.companyForm.value.website" type="url" placeholder="https://example.ru" /></label>
           <label>Отрасль<input v-model="crmStore.companyForm.value.industry" /></label>
           <label>Описание<textarea v-model="crmStore.companyForm.value.description"></textarea></label>
           <button type="submit" :disabled="crmStore.isLoading.value">Создать</button>

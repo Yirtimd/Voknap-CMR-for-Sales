@@ -17,9 +17,9 @@ const isNextActionEditorOpen = ref(false);
 const nextActionForm = ref({ title: "", description: "", due_at: "", priority: "high" });
 const drawerActionMode = ref<"call" | "email" | "meeting" | "task" | null>(null);
 const callForm = ref({ subject: "Звонок клиенту", body: "", phone: "" });
-const emailForm = ref({ subject: "Follow-up", body: "", recipient: "" });
+const emailForm = ref({ subject: "Повторный контакт", body: "", recipient: "" });
 const meetingActionForm = ref({ subject: "Встреча с клиентом", body: "", occurred_at: "" });
-const drawerTaskForm = ref({ title: "Follow-up", description: "", due_at: "", priority: "high" });
+const drawerTaskForm = ref({ title: "Повторный контакт", description: "", due_at: "", priority: "high" });
 const activeTab = ref("overview");
 const isNotesSpaceOpen = ref(false);
 const notesSearch = ref("");
@@ -33,7 +33,7 @@ const tabs = [
   { code: "tasks", label: "Задачи" },
   { code: "files", label: "Файлы" },
   { code: "timeline", label: "Активности" },
-  { code: "knowledge", label: "Knowledge" },
+  { code: "knowledge", label: "База знаний" },
   { code: "history", label: "История" }
 ];
 
@@ -218,22 +218,22 @@ const copilotRecommendations = computed(() => {
   return [
     {
       type: copilot.value.deal_risk.level === "high" ? "warning" : "info",
-      title: "AI Deal Risk",
+      title: "Риск сделки по оценке AI",
       description: `${copilot.value.deal_risk.level}: ${copilot.value.deal_risk.reason}`,
     },
     {
       type: "success",
-      title: "AI Next Best Action",
+      title: "Следующее лучшее действие",
       description: copilot.value.next_best_action,
     },
     {
       type: "info",
-      title: "Follow-up Draft",
+      title: "Черновик повторного контакта",
       description: copilot.value.follow_up_draft,
     },
     {
       type: "info",
-      title: "Meeting Prep",
+      title: "Подготовка к встрече",
       description: copilot.value.meeting_prep,
     },
   ];
@@ -291,10 +291,10 @@ function isTaskOverdue(task: Task) {
 }
 
 function taskPriorityLabel(priority: string) {
-  if (priority === "urgent") return "Urgent";
-  if (priority === "high") return "High";
-  if (priority === "low") return "Low";
-  return "Medium";
+  if (priority === "urgent") return "Срочный";
+  if (priority === "high") return "Высокий";
+  if (priority === "low") return "Низкий";
+  return "Средний";
 }
 
 function taskPriorityTone(priority: string) {
@@ -344,9 +344,9 @@ async function runDrawerAction(action: () => Promise<void>) {
   try {
     await action();
     await reloadWorkspace();
-    crmStore.ok.value = "Company workspace updated";
+    crmStore.ok.value = "Данные компании обновлены";
   } catch (caught) {
-    crmStore.error.value = caught instanceof Error ? caught.message : "Unknown error";
+    crmStore.error.value = caught instanceof Error ? caught.message : "Неизвестная ошибка";
   } finally {
     isSaving.value = false;
   }
@@ -372,15 +372,15 @@ async function createActivity(type: string, channel: string, title: string, desc
 }
 
 function logCall() {
-  void runDrawerAction(() => createActivity("CALL", "Call", "Call completed", `Next action: ${nextAction.value}`));
+  void runDrawerAction(() => createActivity("CALL", "Звонок", "Звонок завершён", `Следующий шаг: ${nextAction.value}`));
 }
 
 function logEmail() {
-  void runDrawerAction(() => createActivity("EMAIL", "Email", "Email sent", `Follow-up email for ${workspace.value?.company.name ?? "company"}`));
+  void runDrawerAction(() => createActivity("EMAIL", "Email", "Письмо отправлено", `Повторный контакт с ${workspace.value?.company.name ?? "компанией"}`));
 }
 
 function logMeeting() {
-  void runDrawerAction(() => createActivity("MEETING", "Meeting", "Meeting scheduled", "Meeting was planned from company modal."));
+  void runDrawerAction(() => createActivity("MEETING", "Встреча", "Встреча запланирована", "Встреча создана из карточки компании."));
 }
 
 function addQuickTask() {
@@ -392,7 +392,7 @@ function addQuickTask() {
         company_id: props.company?.id,
         deal_id: currentDeal.value?.id ?? "",
         title: nextAction.value,
-        description: "Created from company modal quick action.",
+        description: "Создано быстрым действием из карточки компании.",
         priority: "high",
         due_at: ""
       })),
@@ -403,7 +403,7 @@ function addQuickTask() {
 }
 
 function logNote() {
-  void runDrawerAction(() => createActivity("COMMENT", "Message", "Note added", "Quick note from company modal."));
+  void runDrawerAction(() => createActivity("COMMENT", "Сообщение", "Добавлена заметка", "Быстрая заметка из карточки компании."));
 }
 
 function openDrawerAction(mode: "call" | "email" | "meeting" | "task") {
@@ -628,12 +628,12 @@ function saveNextAction() {
 
 <template>
   <div v-if="company" :class="embedded ? 'company-workspace-host' : 'workspace-modal-backdrop'" @click.self="embedded ? undefined : close()">
-    <section v-if="workspace" class="company-modal" :class="{ 'company-modal--embedded': embedded }" role="dialog" aria-modal="true">
+    <section v-if="workspace" class="company-modal" :class="{ 'company-modal--embedded': embedded }" :role="embedded ? undefined : 'dialog'" :aria-modal="embedded ? undefined : true" aria-labelledby="company-workspace-title">
       <header class="company-modal__header">
         <div class="company-modal__heading">
-          <div class="company-modal__breadcrumb">Companies / {{ workspace.company.name }}</div>
+          <div class="company-modal__breadcrumb">Компании / {{ workspace.company.name }}</div>
           <div class="company-modal__title-row">
-            <h1 class="company-modal__title">{{ workspace.company.name }}</h1>
+            <h2 id="company-workspace-title" class="company-modal__title">{{ workspace.company.name }}</h2>
             <span class="cm-badge cm-badge--neutral">{{ companyType }}</span>
             <span class="cm-badge cm-badge--success">{{ workspace.company.status_label ?? workspace.company.status }}</span>
           </div>
@@ -648,9 +648,9 @@ function saveNextAction() {
 
         <div class="company-modal__header-actions">
           <button type="button" aria-label="Дополнительные действия" :disabled="isSaving" @click="logNote">...</button>
-          <button type="button" @click="openDrawerAction('task')">Edit</button>
-          <button type="button" class="is-primary" @click="activeTab = 'deals'">+ Deal</button>
-          <button type="button" @click="close">{{ embedded ? "← Companies" : "×" }}</button>
+          <button type="button" @click="openDrawerAction('task')">Изменить</button>
+          <button type="button" class="is-primary" @click="activeTab = 'deals'">＋ Сделка</button>
+          <button type="button" :aria-label="embedded ? undefined : 'Закрыть'" @click="close">{{ embedded ? "← Компании" : "×" }}</button>
         </div>
       </header>
 
@@ -660,7 +660,7 @@ function saveNextAction() {
             <article class="cm-card company-kpi">
               <div class="company-kpi__top">
                 <div>
-                  <div class="cm-label">AI Health Score</div>
+                  <div class="cm-label">Рейтинг AI</div>
                   <div class="company-kpi__number">{{ health }}</div>
                 </div>
                 <span class="cm-badge cm-badge--success">{{ healthTrend }} {{ workspace.health.success_chance_delta ?? 12 }}</span>
@@ -671,11 +671,11 @@ function saveNextAction() {
 
             <article class="cm-card company-kpi company-kpi--with-visual">
               <div>
-                <div class="cm-label">Pipeline Value</div>
+                <div class="cm-label">Сумма портфеля</div>
                 <div class="company-kpi__number">{{ crmStore.money(pipeline) }}</div>
                 <div class="company-kpi__description">{{ deals.length }} открытых сделок</div>
               </div>
-              <div class="company-pipeline-donut" tabindex="0" aria-label="Pipeline breakdown">
+              <div class="company-pipeline-donut" tabindex="0" aria-label="Структура портфеля">
                 <span></span>
                 <div class="company-pipeline-tooltip" role="tooltip">
                   <strong>{{ crmStore.money(pipeline) }}</strong>
@@ -694,7 +694,7 @@ function saveNextAction() {
 
             <article class="cm-card company-kpi company-kpi--with-visual">
               <div>
-                <div class="cm-label">Open Tasks</div>
+                <div class="cm-label">Открытые задачи</div>
                 <div class="company-kpi__number">{{ openTasks.length }}</div>
                 <div class="company-kpi__description">{{ tasks.filter((task) => task.priority === "high" || task.priority === "urgent").length }} важных</div>
               </div>
@@ -713,7 +713,7 @@ function saveNextAction() {
           <section class="cm-card company-deals">
             <div class="cm-card__header">
               <h2 class="cm-card__title">Сделки ({{ deals.length }})</h2>
-              <button type="button" class="cm-card__link" @click="activeTab = 'deals'">View all</button>
+              <button type="button" class="cm-card__link" @click="activeTab = 'deals'">Показать все</button>
             </div>
             <div class="company-deals__grid">
               <RouterLink
@@ -741,23 +741,23 @@ function saveNextAction() {
           </section>
 
       <section v-if="drawerActionMode" class="drawer-action-panel">
-        <header><h2>{{ drawerActionMode === "call" ? "Call" : drawerActionMode === "email" ? "Email draft" : drawerActionMode === "meeting" ? "Meeting" : "Task" }}</h2><button class="secondary" type="button" @click="drawerActionMode = null">Close</button></header>
+        <header><h2>{{ drawerActionMode === "call" ? "Звонок" : drawerActionMode === "email" ? "Черновик письма" : drawerActionMode === "meeting" ? "Встреча" : "Задача" }}</h2><button class="secondary" type="button" @click="drawerActionMode = null">Закрыть</button></header>
         <form v-if="drawerActionMode === 'call'" class="compact-form" @submit.prevent="saveCall">
           <label>Телефон<input v-model="callForm.phone" type="tel" /></label><label>Тема<input v-model="callForm.subject" /></label><label>Результат<textarea v-model="callForm.body"></textarea></label>
           <div class="button-row"><a v-if="callForm.phone" class="button-link" :href="`tel:${callForm.phone}`">Начать звонок</a><button type="submit">Сохранить результат</button></div>
         </form>
         <form v-else-if="drawerActionMode === 'email'" class="compact-form" @submit.prevent="saveEmailDraft">
-          <label>Получатель<input v-model="emailForm.recipient" type="email" /></label><label>Тема<input v-model="emailForm.subject" /></label><label>AI draft<textarea v-model="emailForm.body" rows="7"></textarea></label><button type="submit">Сохранить draft</button>
+          <label>Получатель<input v-model="emailForm.recipient" type="email" /></label><label>Тема<input v-model="emailForm.subject" /></label><label>Черновик AI<textarea v-model="emailForm.body" rows="7"></textarea></label><button type="submit">Сохранить черновик</button>
         </form>
         <form v-else-if="drawerActionMode === 'meeting'" class="compact-form" @submit.prevent="saveMeeting">
           <label>Название<input v-model="meetingActionForm.subject" /></label><label>Дата<input v-model="meetingActionForm.occurred_at" type="datetime-local" required /></label><label>Повестка<textarea v-model="meetingActionForm.body"></textarea></label><button type="submit">Запланировать</button>
         </form>
         <form v-else class="compact-form" @submit.prevent="saveDrawerTask">
-          <label>Задача<input v-model="drawerTaskForm.title" /></label><label>Описание<textarea v-model="drawerTaskForm.description"></textarea></label><label>Срок<input v-model="drawerTaskForm.due_at" type="datetime-local" /></label><label>Приоритет<select v-model="drawerTaskForm.priority"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><button type="submit">Создать задачу</button>
+          <label>Задача<input v-model="drawerTaskForm.title" /></label><label>Описание<textarea v-model="drawerTaskForm.description"></textarea></label><label>Срок<input v-model="drawerTaskForm.due_at" type="datetime-local" /></label><label>Приоритет<select v-model="drawerTaskForm.priority"><option value="normal">Средний</option><option value="high">Высокий</option><option value="urgent">Срочный</option></select></label><button type="submit">Создать задачу</button>
         </form>
       </section>
 
-      <nav class="company-tabs" aria-label="Company workspace sections">
+      <nav class="company-tabs" aria-label="Разделы компании">
         <button v-for="tab in tabs" :key="tab.code" type="button" class="company-tab" :class="{ 'is-active': activeTab === tab.code }" @click="activeTab = tab.code">{{ tab.label }}</button>
       </nav>
 
@@ -811,17 +811,17 @@ function saveNextAction() {
 
       <main v-else class="reference-tab-body">
         <section v-if="activeTab === 'timeline'" class="ref-card tab-panel">
-          <h2>Timeline</h2>
+          <h2>История</h2>
           <article v-for="row in timelineRows" :key="row.id" class="history-row"><time>{{ row.when }}</time><span class="history-node"></span><span class="ui-icon" :class="row.icon"></span><div><strong>{{ row.title }}</strong><small>{{ row.by }}</small></div></article>
         </section>
 
         <section v-else-if="activeTab === 'contacts'" class="ref-card tab-panel">
           <div class="tab-panel-head">
             <div>
-              <h2>Contacts</h2>
-              <p class="hint">{{ contacts.length }} company contacts</p>
+              <h2>Контакты</h2>
+              <p class="hint">Контактов: {{ contacts.length }}</p>
             </div>
-            <button type="button" class="secondary">+ Add contact</button>
+            <button type="button" class="secondary">＋ Добавить контакт</button>
           </div>
           <section class="contact-tab-grid">
             <article v-for="contact in contacts" :key="contact.id" class="contact-tab-card">
@@ -829,30 +829,30 @@ function saveNextAction() {
                 <span class="contact-avatar">{{ contact.name.slice(0, 2).toUpperCase() }}</span>
                 <div>
                   <strong>{{ contact.name }}</strong>
-                  <small>{{ contact.role ?? contact.company_name ?? "Contact" }}</small>
+                  <small>{{ contact.role ?? contact.company_name ?? "Контакт" }}</small>
                 </div>
               </header>
               <dl>
-                <div><dt>Email</dt><dd>{{ contact.email ?? "not set" }}</dd></div>
-                <div><dt>Phone</dt><dd>{{ contact.phone ?? "not set" }}</dd></div>
+                <div><dt>Email</dt><dd>{{ contact.email ?? "не указан" }}</dd></div>
+                <div><dt>Телефон</dt><dd>{{ contact.phone ?? "не указан" }}</dd></div>
               </dl>
               <footer>
-                <button type="button" class="secondary" :disabled="!contact.email" @click="openContactAction('email', contact.id)">Email</button>
-                <button type="button" class="secondary" :disabled="!contact.phone" @click="openContactAction('call', contact.id)">Call</button>
-                <button type="button" class="secondary" @click="openContactAction('meeting', contact.id)">Meeting</button>
+                <button type="button" class="secondary" :disabled="!contact.email" @click="openContactAction('email', contact.id)">Написать</button>
+                <button type="button" class="secondary" :disabled="!contact.phone" @click="openContactAction('call', contact.id)">Позвонить</button>
+                <button type="button" class="secondary" @click="openContactAction('meeting', contact.id)">Встреча</button>
               </footer>
             </article>
           </section>
-          <p v-if="!contacts.length" class="empty">No contacts</p>
+          <section v-if="!contacts.length" class="empty-state"><strong>Контактов пока нет</strong><p>Добавьте контактное лицо компании.</p></section>
         </section>
 
         <section v-else-if="activeTab === 'deals'" class="ref-card tab-panel">
           <div class="tab-panel-head">
             <div>
-              <h2>Deals</h2>
-              <p class="hint">{{ deals.length }} active company deals</p>
+              <h2>Сделки</h2>
+              <p class="hint">Активных сделок: {{ deals.length }}</p>
             </div>
-            <RouterLink class="secondary-link" to="/deals">Open pipeline</RouterLink>
+            <RouterLink class="secondary-link" to="/deals">Открыть воронку</RouterLink>
           </div>
           <RouterLink
             v-for="row in dealStageRows"
@@ -879,7 +879,7 @@ function saveNextAction() {
               </div>
             </div>
           </RouterLink>
-          <p v-if="!deals.length" class="empty">No deals</p>
+          <section v-if="!deals.length" class="empty-state"><strong>Сделок пока нет</strong><p>Создайте первую сделку для этой компании.</p><RouterLink class="button-link" to="/deals?create=1">Создать сделку</RouterLink></section>
         </section>
 
         <section v-else-if="activeTab === 'tasks'" class="company-tasks-tab" aria-label="Задачи компании">
@@ -895,7 +895,7 @@ function saveNextAction() {
                   <strong class="company-tasks-summary-value">{{ taskStats.open }}</strong>
                 </div>
                 <div class="company-tasks-summary-item is-danger">
-                  <span class="company-tasks-summary-label">High</span>
+                  <span class="company-tasks-summary-label">Важные</span>
                   <strong class="company-tasks-summary-value">{{ taskStats.high }}</strong>
                 </div>
                 <div class="company-tasks-summary-item is-danger">
@@ -915,10 +915,10 @@ function saveNextAction() {
               <label class="company-task-search"><input v-model="taskSearch" type="search" placeholder="Поиск задач..." /></label>
               <select v-model="taskPriorityFilter" class="company-task-priority-select">
                 <option value="all">Приоритет: Все</option>
-                <option value="urgent">Urgent</option>
-                <option value="high">High</option>
-                <option value="normal">Medium</option>
-                <option value="low">Low</option>
+                <option value="urgent">Срочный</option>
+                <option value="high">Высокий</option>
+                <option value="normal">Средний</option>
+                <option value="low">Низкий</option>
               </select>
               <button type="button" class="company-task-view-button" aria-label="Дополнительные фильтры">☷</button>
             </div>
@@ -960,16 +960,16 @@ function saveNextAction() {
         </section>
 
         <section v-else-if="activeTab === 'files'" class="ref-card tab-panel">
-          <h2>Files</h2>
-          <article v-for="file in files" :key="file.id" class="entity-row"><div><strong>{{ file.name }}</strong><small>{{ file.file_type ?? "file" }} · {{ formatFileSize(file.file_size) }}</small></div><a v-if="file.download_url" class="button-link secondary-link" :href="file.download_url">Open</a></article>
-          <p v-if="!files.length" class="empty">No files</p>
+          <h2>Файлы</h2>
+          <article v-for="file in files" :key="file.id" class="entity-row"><div><strong>{{ file.name }}</strong><small>{{ file.file_type ?? "файл" }} · {{ formatFileSize(file.file_size) }}</small></div><a v-if="file.download_url" class="button-link secondary-link" :href="file.download_url">Открыть</a></article>
+          <section v-if="!files.length" class="empty-state"><strong>Файлов пока нет</strong><p>Загрузите документ в базе знаний компании.</p></section>
         </section>
 
-        <section v-else-if="activeTab === 'knowledge'" class="company-knowledge" aria-label="Company Knowledge">
+        <section v-else-if="activeTab === 'knowledge'" class="company-knowledge" aria-label="База знаний компании">
           <aside class="knowledge-card knowledge-sources">
             <header>
-              <h2>Company Knowledge</h2>
-              <p>Scope: {{ workspace.company.name }}<span v-if="currentDeal"> · {{ currentDeal.title }}</span></p>
+              <h2>База знаний компании</h2>
+              <p>Область: {{ workspace.company.name }}<span v-if="currentDeal"> · {{ currentDeal.title }}</span></p>
             </header>
             <section class="knowledge-primary-doc" v-if="knowledgeDocuments[0]">
               <strong>{{ knowledgeDocuments[0].title }}</strong>
@@ -1000,7 +1000,7 @@ function saveNextAction() {
           </aside>
 
           <section class="knowledge-card knowledge-workspace">
-            <h2>Ask Knowledge</h2>
+            <h2>Задать вопрос</h2>
             <form class="knowledge-composer" @submit.prevent="askCompanyKnowledge">
               <label>Ваш вопрос</label>
               <div class="knowledge-question-wrap">
@@ -1016,7 +1016,7 @@ function saveNextAction() {
             </form>
             <section class="knowledge-controls">
               <select>
-                <option>{{ currentDeal ? "Режим: deal + company" : "Режим: company only" }}</option>
+                <option>{{ currentDeal ? "Режим: сделка и компания" : "Режим: только компания" }}</option>
               </select>
               <label class="knowledge-toggle"><input v-model="includeGlobalKnowledge" type="checkbox" /><span></span>Включать общие знания</label>
               <button type="button">↺ История запросов</button>
@@ -1059,9 +1059,9 @@ function saveNextAction() {
         </section>
 
         <section v-else class="ref-card tab-panel">
-          <h2>Change History</h2>
-          <article v-for="row in historyRows" :key="`${row.activity.id}-${row.change.field}`" class="history-change-row"><span>{{ row.change.field.replace(/_/g, " ") }}</span><div><strong>{{ row.change.old ?? "empty" }}</strong><small>changed to</small><strong>{{ row.change.new ?? "empty" }}</strong></div><small>{{ new Date(row.activity.created_at).toLocaleString("ru-RU") }}</small></article>
-          <p v-if="!historyRows.length" class="empty">No tracked changes</p>
+          <h2>История изменений</h2>
+          <article v-for="row in historyRows" :key="`${row.activity.id}-${row.change.field}`" class="history-change-row"><span>{{ row.change.field.replace(/_/g, " ") }}</span><div><strong>{{ row.change.old ?? "пусто" }}</strong><small>изменено на</small><strong>{{ row.change.new ?? "пусто" }}</strong></div><small>{{ new Date(row.activity.created_at).toLocaleString("ru-RU") }}</small></article>
+          <p v-if="!historyRows.length" class="empty">Отслеживаемых изменений пока нет</p>
         </section>
       </main>
         </main>
@@ -1092,7 +1092,7 @@ function saveNextAction() {
         </section>
 
         <section class="cm-card company-rail-card company-rail-tasks">
-          <div class="cm-card__header"><h2 class="cm-card__title">Открытые задачи ({{ openTasks.length }})</h2><button type="button" class="cm-card__link" @click="activeTab = 'tasks'">View all</button></div>
+          <div class="cm-card__header"><h2 class="cm-card__title">Открытые задачи ({{ openTasks.length }})</h2><button type="button" class="cm-card__link" @click="activeTab = 'tasks'">Показать все</button></div>
           <form class="company-quick-task" @submit.prevent="saveDrawerTask">
             <input v-model="drawerTaskForm.title" placeholder="Добавить задачу..." />
             <button type="submit" :disabled="isSaving || !drawerTaskForm.title.trim()">+</button>
@@ -1181,8 +1181,8 @@ function saveNextAction() {
     </section>
 
     <section v-else class="company-workspace-modal company-workspace-loading" role="dialog" aria-modal="true">
-      <button class="secondary modal-close" type="button" @click="close">Close</button>
-      <p class="eyebrow">Workspace Modal</p>
+      <button class="secondary modal-close" type="button" @click="close">Закрыть</button>
+      <p class="eyebrow">Рабочее пространство</p>
       <h2>{{ company.name }}</h2>
       <p class="hint">Загружаю рабочее пространство компании...</p>
     </section>
