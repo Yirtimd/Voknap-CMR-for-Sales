@@ -7,6 +7,7 @@ def tenant_table_args(
     table: str,
     *,
     relations: Iterable[tuple[str, str]] = (),
+    deferred_relations: Iterable[tuple[str, str]] = (),
     membership_columns: Iterable[str] = (),
     extra: Iterable[object] = (),
 ) -> tuple[object, ...]:
@@ -25,6 +26,15 @@ def tenant_table_args(
             name=f"fk_{table}_tenant_{column}",
         )
         for column, target in relations
+    )
+    constraints.extend(
+        ForeignKeyConstraint(
+            ["tenant_id", column],
+            [f"{target}.tenant_id", f"{target}.id"],
+            name=f"fk_{table}_tenant_{column}",
+            use_alter=True,
+        )
+        for column, target in deferred_relations
     )
     constraints.extend(
         ForeignKeyConstraint(

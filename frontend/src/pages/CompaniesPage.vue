@@ -127,40 +127,37 @@ const averageHealth = computed(() => {
 
     <template v-else>
     <header class="companies-head">
-      <div>
-        <h1>Companies</h1>
-        <p>{{ crmStore.companies.value.length }} компаний</p>
-      </div>
+      <p>{{ crmStore.companies.value.length }} компаний в базе</p>
     </header>
 
     <section class="companies-controls">
       <label class="companies-search">
-        <span>⌕</span>
-        <input v-model="query" placeholder="Поиск компаний..." />
+        <span aria-hidden="true">⌕</span>
+        <input v-model="query" type="search" placeholder="Поиск компаний..." aria-label="Поиск компаний" />
       </label>
       <label class="companies-filter">
-        <span>▿</span>
-        <select v-model="sort">
-          <option value="health">Фильтры</option>
-          <option value="pipeline">Pipeline</option>
-          <option value="name">Name</option>
+        <span aria-hidden="true">⇅</span>
+        <select v-model="sort" aria-label="Сортировка компаний">
+          <option value="health">Сначала высокий рейтинг</option>
+          <option value="pipeline">Сначала крупный портфель</option>
+          <option value="name">По названию</option>
         </select>
       </label>
-      <button type="button" class="new-company-button" @click="openCreateCompany">+ New Company</button>
+      <button type="button" class="new-company-button" @click="openCreateCompany"><span aria-hidden="true">＋</span> Новая компания</button>
     </section>
 
     <section class="companies-metrics">
       <article class="company-metric-card">
-        <div><span>Deals</span><strong>{{ totalDeals }}</strong><small>Открытых сделок</small></div>
-        <span class="metric-orb blue">□</span>
+        <div><span>Сделки</span><strong>{{ totalDeals }}</strong><small>Открытых сделок</small></div>
+        <span class="metric-orb blue" aria-hidden="true">◇</span>
       </article>
       <article class="company-metric-card">
-        <div><span>Pipeline</span><strong>{{ crmStore.money(totalPipeline) }}</strong><small>Сумма пайплайна</small></div>
-        <span class="metric-orb green">⌘</span>
+        <div><span>Портфель</span><strong>{{ crmStore.money(totalPipeline) }}</strong><small>Сумма активных сделок</small></div>
+        <span class="metric-orb green" aria-hidden="true">₽</span>
       </article>
       <article class="company-metric-card">
-        <div><span>Avg. Health</span><strong>{{ averageHealth }}</strong><small>Средний Health</small></div>
-        <span class="metric-orb purple">♡</span>
+        <div><span>Средний рейтинг</span><strong>{{ averageHealth }}</strong><small>Состояние отношений</small></div>
+        <span class="metric-orb purple" aria-hidden="true">♥</span>
       </article>
     </section>
 
@@ -169,7 +166,11 @@ const averageHealth = computed(() => {
         v-for="company in filteredCompanies"
         :key="company.id"
         class="company-list-row clickable-row"
+        role="button"
+        tabindex="0"
         @click="openCompany(company)"
+        @keydown.enter="openCompany(company)"
+        @keydown.space.prevent="openCompany(company)"
       >
         <span class="company-avatar" :class="healthTone(company)">{{ companyInitial(company) }}</span>
         <div class="company-main">
@@ -177,27 +178,32 @@ const averageHealth = computed(() => {
           <small>B2B · {{ company.website?.replace("https://", "") ?? "example.com" }}</small>
         </div>
         <div class="health-cell">
-          <span>Health {{ companyHealth(company) }}</span>
+          <span>Рейтинг {{ companyHealth(company) }}</span>
           <div class="company-health-line" :class="healthTone(company)">
             <span :style="{ width: `${companyHealth(company)}%` }"></span>
           </div>
         </div>
-        <div class="row-stat"><strong>{{ companyDeals(company).length }}</strong><small>Deals</small></div>
-        <div class="row-stat"><strong>{{ companyTasks(company).length }}</strong><small>Tasks</small></div>
+        <div class="row-stat"><strong>{{ companyDeals(company).length }}</strong><small>Сделки</small></div>
+        <div class="row-stat"><strong>{{ companyTasks(company).length }}</strong><small>Задачи</small></div>
         <div class="next-cell">
-          <small>Next Action</small>
+          <small>Следующий шаг</small>
           <span>{{ nextAction(company) }}</span>
         </div>
       </article>
 
-      <p v-if="!filteredCompanies.length" class="empty">Компаний не найдено</p>
+      <section v-if="!filteredCompanies.length" class="empty-state" aria-live="polite">
+        <strong>{{ query ? "Ничего не найдено" : "Компаний пока нет" }}</strong>
+        <p>{{ query ? "Измените запрос или сбросьте поиск." : "Добавьте первую компанию, чтобы создать сделку и задачи." }}</p>
+        <button v-if="query" type="button" class="secondary" @click="query = ''">Сбросить поиск</button>
+        <button v-else type="button" @click="openCreateCompany">Добавить компанию</button>
+      </section>
     </section>
 
     <div v-if="showCreateCompany" class="workspace-modal-backdrop" @click.self="showCreateCompany = false">
       <section class="panel company-create-modal" role="dialog" aria-modal="true" aria-labelledby="new-company-title">
         <header class="panel-head">
-          <div><p class="eyebrow">Company</p><h2 id="new-company-title">New Company</h2></div>
-          <button class="secondary" type="button" @click="showCreateCompany = false">Close</button>
+          <div><p class="eyebrow">Компания</p><h2 id="new-company-title">Новая компания</h2></div>
+          <button class="secondary" type="button" @click="showCreateCompany = false">Закрыть</button>
         </header>
         <form class="compact-form" @submit.prevent="createCompany">
           <label>Название<input ref="companyNameInput" v-model="crmStore.companyForm.value.name" required minlength="2" /></label>

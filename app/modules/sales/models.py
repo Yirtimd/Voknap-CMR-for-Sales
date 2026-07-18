@@ -40,7 +40,7 @@ class Company(Base):
     __tablename__ = "companies"
     __table_args__ = tenant_table_args(
         "companies",
-        relations=(("next_action_id", "next_actions"),),
+        deferred_relations=(("next_action_id", "next_actions"),),
         membership_columns=("owner_id",),
     )
 
@@ -55,7 +55,13 @@ class Company(Base):
     health_score: Mapped[int | None] = mapped_column(Integer)
     client_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     owner_id: Mapped[UUID | None] = mapped_column()
-    next_action_id: Mapped[UUID | None] = mapped_column(ForeignKey("next_actions.id"))
+    next_action_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "next_actions.id",
+            name="fk_companies_next_action_id_next_actions",
+            use_alter=True,
+        )
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
@@ -131,8 +137,8 @@ class Deal(Base):
             ("company_id", "companies"),
             ("lead_id", "leads"),
             ("stage_id", "pipeline_stages"),
-            ("next_action_id", "next_actions"),
         ),
+        deferred_relations=(("next_action_id", "next_actions"),),
         membership_columns=("owner_id",),
     )
 
@@ -151,7 +157,13 @@ class Deal(Base):
     risk_level: Mapped[str | None] = mapped_column(String(40))
     forecast_category: Mapped[str | None] = mapped_column(String(40))
     owner_id: Mapped[UUID | None] = mapped_column()
-    next_action_id: Mapped[UUID | None] = mapped_column(ForeignKey("next_actions.id"))
+    next_action_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "next_actions.id",
+            name="fk_deals_next_action_id_next_actions",
+            use_alter=True,
+        )
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     lead: Mapped[Lead | None] = relationship(
