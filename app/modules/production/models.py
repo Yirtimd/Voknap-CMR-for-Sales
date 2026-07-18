@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.tenancy import tenant_table_args
 
 
 def utc_now() -> datetime:
@@ -13,6 +14,7 @@ def utc_now() -> datetime:
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+    __table_args__ = tenant_table_args("audit_logs", membership_columns=("user_id",))
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -26,6 +28,7 @@ class AuditLog(Base):
 
 class FeatureFlag(Base):
     __tablename__ = "feature_flags"
+    __table_args__ = tenant_table_args("feature_flags")
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -37,6 +40,7 @@ class FeatureFlag(Base):
 
 class TenantPlan(Base):
     __tablename__ = "tenant_plans"
+    __table_args__ = tenant_table_args("tenant_plans")
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -46,4 +50,3 @@ class TenantPlan(Base):
     documents_limit: Mapped[int] = mapped_column(default=50)
     ai_requests_limit: Mapped[int] = mapped_column(default=1000)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-

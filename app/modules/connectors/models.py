@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.tenancy import tenant_table_args
 
 
 def utc_now() -> datetime:
@@ -13,6 +14,7 @@ def utc_now() -> datetime:
 
 class ConnectorAccount(Base):
     __tablename__ = "connector_accounts"
+    __table_args__ = tenant_table_args("connector_accounts")
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -29,6 +31,9 @@ class ConnectorAccount(Base):
 
 class ConnectorSyncRun(Base):
     __tablename__ = "connector_sync_runs"
+    __table_args__ = tenant_table_args(
+        "connector_sync_runs", relations=(("account_id", "connector_accounts"),)
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)

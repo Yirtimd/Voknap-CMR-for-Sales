@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.tenancy import tenant_table_args
 
 
 def utc_now() -> datetime:
@@ -13,6 +14,7 @@ def utc_now() -> datetime:
 
 class AgentMessage(Base):
     __tablename__ = "agent_messages"
+    __table_args__ = tenant_table_args("agent_messages", membership_columns=("user_id",))
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -24,6 +26,7 @@ class AgentMessage(Base):
 
 class AgentAction(Base):
     __tablename__ = "agent_actions"
+    __table_args__ = tenant_table_args("agent_actions", membership_columns=("user_id",))
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -34,4 +37,3 @@ class AgentAction(Base):
     result_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-

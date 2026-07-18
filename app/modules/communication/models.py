@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.tenancy import tenant_table_args
 
 
 def utc_now() -> datetime:
@@ -13,8 +14,24 @@ def utc_now() -> datetime:
 
 class CommunicationEvent(Base):
     __tablename__ = "communication_events"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "channel", "external_id", name="uq_communication_event_external"),
+    __table_args__ = tenant_table_args(
+        "communication_events",
+        relations=(
+            ("company_id", "companies"),
+            ("contact_id", "contacts"),
+            ("deal_id", "deals"),
+            ("activity_id", "activities"),
+            ("connector_account_id", "connector_accounts"),
+        ),
+        membership_columns=("created_by",),
+        extra=(
+            UniqueConstraint(
+                "tenant_id",
+                "channel",
+                "external_id",
+                name="uq_communication_event_external",
+            ),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)

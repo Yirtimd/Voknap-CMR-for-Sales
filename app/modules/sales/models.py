@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.tenancy import tenant_table_args
 
 
 def utc_now() -> datetime:
@@ -13,6 +14,9 @@ def utc_now() -> datetime:
 
 class Contact(Base):
     __tablename__ = "contacts"
+    __table_args__ = tenant_table_args(
+        "contacts", relations=(("company_id", "companies"),)
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -27,11 +31,18 @@ class Contact(Base):
     can_open_more: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    leads: Mapped[list["Lead"]] = relationship(back_populates="contact")
+    leads: Mapped[list["Lead"]] = relationship(
+        back_populates="contact", foreign_keys="Lead.contact_id"
+    )
 
 
 class Company(Base):
     __tablename__ = "companies"
+    __table_args__ = tenant_table_args(
+        "companies",
+        relations=(("next_action_id", "next_actions"),),
+        membership_columns=("owner_id",),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -43,13 +54,14 @@ class Company(Base):
     company_type: Mapped[str | None] = mapped_column(String(40))
     health_score: Mapped[int | None] = mapped_column(Integer)
     client_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    owner_id: Mapped[UUID | None] = mapped_column()
     next_action_id: Mapped[UUID | None] = mapped_column(ForeignKey("next_actions.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class Pipeline(Base):
     __tablename__ = "pipelines"
+    __table_args__ = tenant_table_args("pipelines")
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -59,12 +71,16 @@ class Pipeline(Base):
     stages: Mapped[list["PipelineStage"]] = relationship(
         back_populates="pipeline",
         cascade="all, delete-orphan",
+        foreign_keys="PipelineStage.pipeline_id",
         order_by="PipelineStage.sort_order",
     )
 
 
 class PipelineStage(Base):
     __tablename__ = "pipeline_stages"
+    __table_args__ = tenant_table_args(
+        "pipeline_stages", relations=(("pipeline_id", "pipelines"),)
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -72,12 +88,20 @@ class PipelineStage(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     sort_order: Mapped[int] = mapped_column(default=0)
 
-    pipeline: Mapped[Pipeline] = relationship(back_populates="stages")
-    deals: Mapped[list["Deal"]] = relationship(back_populates="stage")
+    pipeline: Mapped[Pipeline] = relationship(
+        back_populates="stages", foreign_keys=[pipeline_id]
+    )
+    deals: Mapped[list["Deal"]] = relationship(
+        back_populates="stage", foreign_keys="Deal.stage_id"
+    )
 
 
 class Lead(Base):
     __tablename__ = "leads"
+    __table_args__ = tenant_table_args(
+        "leads",
+        relations=(("company_id", "companies"), ("contact_id", "contacts")),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -88,13 +112,29 @@ class Lead(Base):
     status: Mapped[str] = mapped_column(String(80), default="new")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    contact: Mapped[Contact | None] = relationship(back_populates="leads")
-    deals: Mapped[list["Deal"]] = relationship(back_populates="lead")
-    notes: Mapped[list["Note"]] = relationship(back_populates="lead")
+    contact: Mapped[Contact | None] = relationship(
+        back_populates="leads", foreign_keys=[contact_id]
+    )
+    deals: Mapped[list["Deal"]] = relationship(
+        back_populates="lead", foreign_keys="Deal.lead_id"
+    )
+    notes: Mapped[list["Note"]] = relationship(
+        back_populates="lead", foreign_keys="Note.lead_id"
+    )
 
 
 class Deal(Base):
     __tablename__ = "deals"
+    __table_args__ = tenant_table_args(
+        "deals",
+        relations=(
+            ("company_id", "companies"),
+            ("lead_id", "leads"),
+            ("stage_id", "pipeline_stages"),
+            ("next_action_id", "next_actions"),
+        ),
+        membership_columns=("owner_id",),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -110,18 +150,31 @@ class Deal(Base):
     next_step: Mapped[str | None] = mapped_column(String(255))
     risk_level: Mapped[str | None] = mapped_column(String(40))
     forecast_category: Mapped[str | None] = mapped_column(String(40))
-    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    owner_id: Mapped[UUID | None] = mapped_column()
     next_action_id: Mapped[UUID | None] = mapped_column(ForeignKey("next_actions.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    lead: Mapped[Lead | None] = relationship(back_populates="deals")
-    stage: Mapped[PipelineStage] = relationship(back_populates="deals")
-    tasks: Mapped[list["Task"]] = relationship(back_populates="deal")
-    notes: Mapped[list["Note"]] = relationship(back_populates="deal")
+    lead: Mapped[Lead | None] = relationship(
+        back_populates="deals", foreign_keys=[lead_id]
+    )
+    stage: Mapped[PipelineStage] = relationship(
+        back_populates="deals", foreign_keys=[stage_id]
+    )
+    tasks: Mapped[list["Task"]] = relationship(
+        back_populates="deal", foreign_keys="Task.deal_id"
+    )
+    notes: Mapped[list["Note"]] = relationship(
+        back_populates="deal", foreign_keys="Note.deal_id"
+    )
 
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = tenant_table_args(
+        "tasks",
+        relations=(("company_id", "companies"), ("deal_id", "deals")),
+        membership_columns=("assigned_to_id",),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -136,11 +189,22 @@ class Task(Base):
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    deal: Mapped[Deal | None] = relationship(back_populates="tasks")
+    deal: Mapped[Deal | None] = relationship(
+        back_populates="tasks", foreign_keys=[deal_id]
+    )
 
 
 class Note(Base):
     __tablename__ = "notes"
+    __table_args__ = tenant_table_args(
+        "notes",
+        relations=(
+            ("company_id", "companies"),
+            ("lead_id", "leads"),
+            ("deal_id", "deals"),
+        ),
+        membership_columns=("author_id",),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -151,12 +215,25 @@ class Note(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    lead: Mapped[Lead | None] = relationship(back_populates="notes")
-    deal: Mapped[Deal | None] = relationship(back_populates="notes")
+    lead: Mapped[Lead | None] = relationship(
+        back_populates="notes", foreign_keys=[lead_id]
+    )
+    deal: Mapped[Deal | None] = relationship(
+        back_populates="notes", foreign_keys=[deal_id]
+    )
 
 
 class NextAction(Base):
     __tablename__ = "next_actions"
+    __table_args__ = tenant_table_args(
+        "next_actions",
+        relations=(
+            ("company_id", "companies"),
+            ("deal_id", "deals"),
+            ("contact_id", "contacts"),
+        ),
+        membership_columns=("assigned_to_id",),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -176,6 +253,16 @@ class NextAction(Base):
 
 class CompanyFile(Base):
     __tablename__ = "files"
+    __table_args__ = tenant_table_args(
+        "files",
+        relations=(
+            ("company_id", "companies"),
+            ("deal_id", "deals"),
+            ("contact_id", "contacts"),
+            ("activity_id", "activities"),
+        ),
+        membership_columns=("uploaded_by_id",),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -196,7 +283,15 @@ class CompanyFile(Base):
 
 class CustomerInsight(Base):
     __tablename__ = "customer_insights"
-    __table_args__ = (UniqueConstraint("tenant_id", "company_id", name="uq_customer_insight_tenant_company"),)
+    __table_args__ = tenant_table_args(
+        "customer_insights",
+        relations=(("company_id", "companies"),),
+        extra=(
+            UniqueConstraint(
+                "tenant_id", "company_id", name="uq_customer_insight_tenant_company"
+            ),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)

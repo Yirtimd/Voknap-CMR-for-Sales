@@ -5,7 +5,7 @@ from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import get_db, set_tenant_context
 from app.core.security import decode_access_token
 from app.modules.accounts.models import Membership, User
 
@@ -51,5 +51,5 @@ def get_current_tenant(
     if membership is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant access denied")
 
+    set_tenant_context(db, x_tenant_id)
     return CurrentTenant(id=x_tenant_id, user_id=user.id, role=membership.role)
-

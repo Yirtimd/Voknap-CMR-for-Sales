@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.tenancy import tenant_table_args
 
 
 def utc_now() -> datetime:
@@ -13,6 +14,11 @@ def utc_now() -> datetime:
 
 class Activity(Base):
     __tablename__ = "activities"
+    __table_args__ = tenant_table_args(
+        "activities",
+        relations=(("company_id", "companies"), ("contact_id", "contacts"), ("deal_id", "deals")),
+        membership_columns=("created_by",),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)

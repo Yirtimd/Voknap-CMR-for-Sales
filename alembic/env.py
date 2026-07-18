@@ -5,14 +5,15 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
 from app.core.database import Base
-from app.modules.accounts import models as accounts_models
-from app.modules.activity import models as activity_models
-from app.modules.ai_agent import models as ai_agent_models
-from app.modules.connectors import models as connectors_models
-from app.modules.knowledge import models as knowledge_models
-from app.modules.production import models as production_models
-from app.modules.sales import models as sales_models
-from app.modules.templates import models as templates_models
+from app.modules.accounts import models as accounts_models  # noqa: F401
+from app.modules.activity import models as activity_models  # noqa: F401
+from app.modules.ai_agent import models as ai_agent_models  # noqa: F401
+from app.modules.communication import models as communication_models  # noqa: F401
+from app.modules.connectors import models as connectors_models  # noqa: F401
+from app.modules.knowledge import models as knowledge_models  # noqa: F401
+from app.modules.production import models as production_models  # noqa: F401
+from app.modules.sales import models as sales_models  # noqa: F401
+from app.modules.templates import models as templates_models  # noqa: F401
 
 
 config = context.config
@@ -56,4 +57,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

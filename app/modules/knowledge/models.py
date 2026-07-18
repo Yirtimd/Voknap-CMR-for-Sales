@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import VECTOR
 
 from app.core.database import Base
+from app.core.tenancy import tenant_table_args
 
 
 PGVECTOR_DIMENSIONS = 1536
@@ -17,6 +18,10 @@ def utc_now() -> datetime:
 
 class KnowledgeDocument(Base):
     __tablename__ = "knowledge_documents"
+    __table_args__ = tenant_table_args(
+        "knowledge_documents",
+        relations=(("company_id", "companies"), ("deal_id", "deals"), ("file_id", "files")),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -34,12 +39,21 @@ class KnowledgeDocument(Base):
     chunks: Mapped[list["KnowledgeChunk"]] = relationship(
         back_populates="document",
         cascade="all, delete-orphan",
+        foreign_keys="KnowledgeChunk.document_id",
         order_by="KnowledgeChunk.chunk_index",
     )
 
 
 class KnowledgeChunk(Base):
     __tablename__ = "knowledge_chunks"
+    __table_args__ = tenant_table_args(
+        "knowledge_chunks",
+        relations=(
+            ("document_id", "knowledge_documents"),
+            ("company_id", "companies"),
+            ("deal_id", "deals"),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -65,11 +79,18 @@ class KnowledgeChunk(Base):
     token_estimate: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    document: Mapped[KnowledgeDocument] = relationship(back_populates="chunks")
+    document: Mapped[KnowledgeDocument] = relationship(
+        back_populates="chunks", foreign_keys=[document_id]
+    )
 
 
 class KnowledgeQuery(Base):
     __tablename__ = "knowledge_queries"
+    __table_args__ = tenant_table_args(
+        "knowledge_queries",
+        relations=(("company_id", "companies"), ("deal_id", "deals")),
+        membership_columns=("user_id",),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)

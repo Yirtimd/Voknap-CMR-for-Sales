@@ -23,7 +23,10 @@ router = APIRouter()
 
 
 @router.get("/definitions", response_model=list[ConnectorDefinitionResponse])
-def definitions(db: Session = Depends(get_db)) -> list[ConnectorDefinitionResponse]:
+def definitions(
+    db: Session = Depends(get_db),
+    _tenant: CurrentTenant = Depends(get_current_tenant),
+) -> list[ConnectorDefinitionResponse]:
     service = ConnectorService(db)
     return [ConnectorDefinitionResponse(**connector.__dict__) for connector in service.definitions()]
 

@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.core.tenancy import tenant_table_args
 
 
 def utc_now() -> datetime:
@@ -13,6 +14,7 @@ def utc_now() -> datetime:
 
 class AppliedTemplate(Base):
     __tablename__ = "applied_templates"
+    __table_args__ = tenant_table_args("applied_templates")
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
@@ -21,4 +23,3 @@ class AppliedTemplate(Base):
     status: Mapped[str] = mapped_column(String(40), default="applied")
     result_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-

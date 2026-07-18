@@ -165,6 +165,29 @@ run repeatedly during interface testing.
    - `X-Tenant-Id: <tenant_id>`
 5. Verify `GET /me`.
 
+## Tenant Isolation
+
+Tenant isolation has two independent layers:
+
+- API queries validate the authenticated membership and scope records by
+  `tenant_id`;
+- PostgreSQL applies `ENABLE ROW LEVEL SECURITY` plus
+  `FORCE ROW LEVEL SECURITY` to every tenant-owned business table.
+
+API sessions switch each transaction to the restricted `cmr_app` role and set
+`app.tenant_id` only after membership validation. Without that context, RLS is
+default deny and tenant tables return no rows. The context is restored after
+service-level commits. Migrations and maintenance scripts do not switch roles.
+
+`0011_tenant_rls` also adds tenant-aware composite foreign keys so a row cannot
+reference a company, contact, deal, document, connector account, or user
+membership owned by another tenant. The local `owner@example.com` login and its
+`developer-test` membership are unchanged.
+
+When migration and API connections use different PostgreSQL login roles, grant
+the API login membership in `cmr_app`; it must use `SET ROLE`, not inherit broad
+migration privileges.
+
 ## CRM Core
 
 Backend endpoints:

@@ -18,7 +18,10 @@ router = APIRouter()
 
 
 @router.get("", response_model=list[TemplateResponse])
-def list_templates(db: Session = Depends(get_db)) -> list[TemplateResponse]:
+def list_templates(
+    db: Session = Depends(get_db),
+    _tenant: CurrentTenant = Depends(get_current_tenant),
+) -> list[TemplateResponse]:
     service = TemplateService(db)
     return [
         TemplateResponse(
@@ -71,4 +74,3 @@ def _applied_response(applied: AppliedTemplate) -> AppliedTemplateResponse:
         result=json.loads(applied.result_json),
         created_at=applied.created_at,
     )
-
