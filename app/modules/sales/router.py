@@ -7,6 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import CurrentTenant, get_current_tenant
+from app.core.rbac import (
+    Permission,
+    require_allowed_fields,
+    require_object_owner,
+    require_permission,
+)
 from app.modules.activity.service import ActivityService
 from app.modules.accounts.models import User
 from app.modules.knowledge.models import KnowledgeDocument
@@ -61,9 +67,14 @@ router = APIRouter()
 def create_company(
     payload: CompanyCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> Company:
-    company = Company(tenant_id=tenant.id, **payload.model_dump())
+    restricted_fields = {"owner_id", "health_score", "client_since"}
+    require_allowed_fields(tenant.role, payload.model_fields_set, restricted_fields)
+    company_data = payload.model_dump()
+    if tenant.role.value == "sales_rep":
+        company_data["owner_id"] = tenant.user_id
+    company = Company(tenant_id=tenant.id, **company_data)
     db.add(company)
     db.flush()
     ActivityService(db).create(
@@ -94,11 +105,17 @@ def update_company(
     company_id: UUID,
     payload: CompanyUpdate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> CompanyResponse:
     company = _get_for_tenant(db, Company, tenant.id, company_id)
+    require_object_owner(tenant.role, tenant.user_id, company.owner_id)
     changes = []
     update_data = payload.model_dump(exclude_unset=True)
+    require_allowed_fields(
+        tenant.role,
+        set(update_data),
+        {"owner_id", "health_score", "client_since"},
+    )
     for field_name, new_value in update_data.items():
         old_value = getattr(company, field_name)
         if old_value == new_value:
@@ -239,9 +256,10 @@ def create_company_file(
     company_id: UUID,
     payload: CompanyFileCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> CompanyFileResponse:
-    _get_for_tenant(db, Company, tenant.id, company_id)
+    company = _get_for_tenant(db, Company, tenant.id, company_id)
+    require_object_owner(tenant.role, tenant.user_id, company.owner_id)
     if payload.company_id != company_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="company_id does not match path")
     if payload.deal_id is not None:
@@ -300,7 +318,7 @@ def upsert_customer_insight(
     company_id: UUID,
     payload: CustomerInsightUpsert,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.SALES_MANAGE)),
 ) -> CustomerInsightResponse:
     _get_for_tenant(db, Company, tenant.id, company_id)
     insight = (
@@ -329,9 +347,10 @@ def upsert_customer_insight(
 def create_contact(
     payload: ContactCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> Contact:
-    _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    company = _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    require_object_owner(tenant.role, tenant.user_id, company.owner_id)
     contact = Contact(tenant_id=tenant.id, **payload.model_dump())
     db.add(contact)
     db.flush()
@@ -363,9 +382,10 @@ def list_contacts(
 def create_lead(
     payload: LeadCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> Lead:
-    _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    company = _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    require_object_owner(tenant.role, tenant.user_id, company.owner_id)
     if payload.contact_id is not None:
         contact = _get_for_tenant(db, Contact, tenant.id, payload.contact_id)
         if contact.company_id != payload.company_id:
@@ -411,7 +431,7 @@ def get_lead(
 def create_pipeline(
     payload: PipelineCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.SALES_MANAGE)),
 ) -> Pipeline:
     pipeline = Pipeline(tenant_id=tenant.id, name=payload.name)
     db.add(pipeline)
@@ -444,16 +464,25 @@ def list_pipelines(
 def create_deal(
     payload: DealCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> Deal:
-    _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    company = _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    require_object_owner(tenant.role, tenant.user_id, company.owner_id)
+    require_allowed_fields(
+        tenant.role,
+        payload.model_fields_set,
+        {"owner_id", "probability", "risk_level", "forecast_category"},
+    )
     _get_for_tenant(db, PipelineStage, tenant.id, payload.stage_id)
     if payload.lead_id is not None:
         lead = _get_for_tenant(db, Lead, tenant.id, payload.lead_id)
         if lead.company_id != payload.company_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lead belongs to another company")
 
-    deal = Deal(tenant_id=tenant.id, **payload.model_dump())
+    deal_data = payload.model_dump()
+    if tenant.role.value == "sales_rep":
+        deal_data["owner_id"] = tenant.user_id
+    deal = Deal(tenant_id=tenant.id, **deal_data)
     db.add(deal)
     db.flush()
     ActivityService(db).create(
@@ -484,9 +513,12 @@ def list_deals(
 def create_next_action(
     payload: NextActionCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> NextAction:
     company = _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    require_object_owner(tenant.role, tenant.user_id, company.owner_id)
+    if payload.assigned_to_id not in {None, tenant.user_id}:
+        require_allowed_fields(tenant.role, {"assigned_to_id"}, {"assigned_to_id"})
     if payload.deal_id is not None:
         deal = _get_for_tenant(db, Deal, tenant.id, payload.deal_id)
         if deal.company_id != payload.company_id:
@@ -547,9 +579,10 @@ def set_next_action_done(
     next_action_id: UUID,
     payload: NextActionDoneRequest,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> NextAction:
     next_action = _get_for_tenant(db, NextAction, tenant.id, next_action_id)
+    require_object_owner(tenant.role, tenant.user_id, next_action.assigned_to_id)
     next_action.status = "done" if payload.is_done else "open"
     next_action.completed_at = datetime.now(timezone.utc) if payload.is_done else None
     company = _get_for_tenant(db, Company, tenant.id, next_action.company_id)
@@ -590,9 +623,10 @@ def move_deal(
     deal_id: UUID,
     payload: DealMoveRequest,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> Deal:
     deal = _get_for_tenant(db, Deal, tenant.id, deal_id)
+    require_object_owner(tenant.role, tenant.user_id, deal.owner_id)
     old_stage_id = deal.stage_id
     new_stage = _get_for_tenant(db, PipelineStage, tenant.id, payload.stage_id)
 
@@ -617,9 +651,10 @@ def move_deal(
 def create_task(
     payload: TaskCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> Task:
-    _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    company = _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    require_object_owner(tenant.role, tenant.user_id, company.owner_id)
     if payload.deal_id is not None:
         deal = _get_for_tenant(db, Deal, tenant.id, payload.deal_id)
         if deal.company_id != payload.company_id:
@@ -657,9 +692,10 @@ def set_task_done(
     task_id: UUID,
     payload: TaskDoneRequest,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> Task:
     task = _get_for_tenant(db, Task, tenant.id, task_id)
+    require_object_owner(tenant.role, tenant.user_id, task.assigned_to_id)
     task.done_at = datetime.now(timezone.utc) if payload.is_done else None
     task.status = "done" if payload.is_done else "open"
     ActivityService(db).create(
@@ -682,9 +718,10 @@ def set_task_done(
 def create_note(
     payload: NoteCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> Note:
-    _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    company = _get_for_tenant(db, Company, tenant.id, payload.company_id)
+    require_object_owner(tenant.role, tenant.user_id, company.owner_id)
     if payload.lead_id is not None:
         lead = _get_for_tenant(db, Lead, tenant.id, payload.lead_id)
         if lead.company_id != payload.company_id:

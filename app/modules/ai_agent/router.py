@@ -6,6 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import CurrentTenant, get_current_tenant
+from app.core.rbac import (
+    Permission,
+    deny_access,
+    has_permission,
+    require_object_owner,
+    require_permission,
+)
 from app.modules.ai_agent.models import AgentAction
 from app.modules.ai_agent.schemas import (
     AgentActionResponse,
@@ -16,6 +23,10 @@ from app.modules.ai_agent.schemas import (
     HomeCopilotResponse,
 )
 from app.modules.ai_agent.service import AgentService
+from app.modules.sales.authorization import (
+    require_company_write_access,
+    require_deal_write_access,
+)
 
 
 router = APIRouter()
@@ -55,7 +66,7 @@ def company_copilot(
 def chat(
     payload: AgentChatRequest,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.AI_USE)),
 ) -> AgentChatResponse:
     service = AgentService(db)
     answer, actions, sources = service.chat(
@@ -78,6 +89,9 @@ def history(
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> list[AgentHistoryMessage]:
     service = AgentService(db)
+    messages = service.list_history(tenant.id)
+    if not has_permission(tenant.role, Permission.ASSIGNMENTS_MANAGE):
+        messages = [message for message in messages if message.user_id == tenant.user_id]
     return [
         AgentHistoryMessage(
             id=message.id,
@@ -85,7 +99,7 @@ def history(
             content=message.content,
             created_at=message.created_at,
         )
-        for message in service.list_history(tenant.id)
+        for message in messages
     ]
 
 
@@ -95,16 +109,24 @@ def list_actions(
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> list[AgentActionResponse]:
     service = AgentService(db)
-    return [_action_response(action) for action in service.list_actions(tenant.id)]
+    actions = service.list_actions(tenant.id)
+    if not has_permission(tenant.role, Permission.ASSIGNMENTS_MANAGE):
+        actions = [action for action in actions if action.user_id == tenant.user_id]
+    return [_action_response(action) for action in actions]
 
 
 @router.post("/actions/{action_id}/confirm", response_model=AgentActionResponse)
 def confirm_action(
     action_id: UUID,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> AgentActionResponse:
     service = AgentService(db)
+    action = next((row for row in service.list_actions(tenant.id) if row.id == action_id), None)
+    if action is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action not found")
+    require_object_owner(tenant.role, tenant.user_id, action.user_id)
+    _authorize_action_target(db, tenant, action)
     action = service.confirm_action(tenant.id, action_id)
     if action is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action not found")
@@ -115,9 +137,13 @@ def confirm_action(
 def reject_action(
     action_id: UUID,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> AgentActionResponse:
     service = AgentService(db)
+    action = next((row for row in service.list_actions(tenant.id) if row.id == action_id), None)
+    if action is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action not found")
+    require_object_owner(tenant.role, tenant.user_id, action.user_id)
     action = service.reject_action(tenant.id, action_id)
     if action is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action not found")
@@ -134,3 +160,15 @@ def _action_response(action: AgentAction) -> AgentActionResponse:
         created_at=action.created_at,
         confirmed_at=action.confirmed_at,
     )
+
+
+def _authorize_action_target(db: Session, tenant: CurrentTenant, action: AgentAction) -> None:
+    payload = json.loads(action.payload_json)
+    if action.action_type == "update_customer_insight":
+        if not has_permission(tenant.role, Permission.SALES_MANAGE):
+            deny_access("Customer insight updates require manager permission")
+        return
+    if payload.get("company_id"):
+        require_company_write_access(db, tenant, UUID(payload["company_id"]))
+    if payload.get("deal_id"):
+        require_deal_write_access(db, tenant, UUID(payload["deal_id"]))

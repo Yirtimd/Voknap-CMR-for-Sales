@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import CurrentTenant, get_current_tenant
+from app.core.rbac import Permission, require_permission
 from app.modules.knowledge.files import KnowledgeFileError
 from app.modules.knowledge.models import KnowledgeDocument
 from app.modules.knowledge.schemas import (
@@ -22,6 +23,7 @@ from app.modules.knowledge.schemas import (
 )
 from app.modules.knowledge.service import KnowledgeService
 from app.modules.knowledge.storage import open_knowledge_file
+from app.modules.sales.authorization import require_company_write_access
 from app.modules.sales.models import CompanyFile
 
 
@@ -36,8 +38,10 @@ async def upload_document(
     company_id: UUID | None = Form(default=None),
     deal_id: UUID | None = Form(default=None),
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.KNOWLEDGE_WRITE)),
 ) -> DocumentResponse:
+    if company_id is not None:
+        require_company_write_access(db, tenant, company_id)
     data = await file.read(settings.knowledge_max_upload_bytes + 1)
     await file.close()
     service = KnowledgeService(db)
@@ -62,8 +66,10 @@ async def upload_document(
 def create_document(
     payload: DocumentCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.KNOWLEDGE_WRITE)),
 ) -> DocumentResponse:
+    if payload.company_id is not None:
+        require_company_write_access(db, tenant, payload.company_id)
     service = KnowledgeService(db)
     try:
         document = service.create_document(
@@ -109,8 +115,9 @@ def create_company_document(
     company_id: UUID,
     payload: DocumentCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.KNOWLEDGE_WRITE)),
 ) -> DocumentResponse:
+    require_company_write_access(db, tenant, company_id)
     service = KnowledgeService(db)
     try:
         document = service.create_document(
@@ -202,7 +209,7 @@ def get_document(
 def search(
     payload: SearchRequest,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_READ)),
 ) -> list[SearchResultResponse]:
     service = KnowledgeService(db)
     try:
@@ -237,7 +244,7 @@ def search(
 def ask(
     payload: AskRequest,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.AI_USE)),
 ) -> AskResponse:
     service = KnowledgeService(db)
     try:

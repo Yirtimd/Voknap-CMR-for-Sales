@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import CurrentTenant, get_current_tenant
+from app.core.rbac import Permission, require_permission
 from app.modules.communication.models import CommunicationEvent
 from app.modules.communication.schemas import (
     CommunicationEventCreate,
@@ -14,6 +15,7 @@ from app.modules.communication.schemas import (
     CommunicationIngestRequest,
 )
 from app.modules.communication.service import CommunicationService
+from app.modules.sales.authorization import require_company_write_access
 
 
 router = APIRouter()
@@ -45,8 +47,10 @@ def list_events(
 def create_event(
     payload: CommunicationEventCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> CommunicationEventResponse:
+    if payload.company_id is not None:
+        require_company_write_access(db, tenant, payload.company_id)
     event = CommunicationService(db).create(tenant_id=tenant.id, created_by=tenant.user_id, payload=payload)
     return _event_response(event)
 
@@ -55,7 +59,7 @@ def create_event(
 def ingest_events(
     payload: CommunicationIngestRequest,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.INTEGRATIONS_MANAGE)),
 ) -> list[CommunicationEventResponse]:
     service = CommunicationService(db)
     events = service.ingest(
@@ -72,8 +76,10 @@ def link_event(
     event_id: UUID,
     payload: CommunicationEventLink,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> CommunicationEventResponse:
+    if payload.company_id is not None:
+        require_company_write_access(db, tenant, payload.company_id)
     try:
         event = CommunicationService(db).link(tenant_id=tenant.id, event_id=event_id, payload=payload)
     except ValueError as error:
@@ -87,8 +93,17 @@ def link_event(
 def create_activity_from_event(
     event_id: UUID,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> CommunicationEventResponse:
+    existing_event = (
+        db.query(CommunicationEvent)
+        .filter(CommunicationEvent.id == event_id, CommunicationEvent.tenant_id == tenant.id)
+        .one_or_none()
+    )
+    if existing_event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Communication event not found")
+    if existing_event.company_id is not None:
+        require_company_write_access(db, tenant, existing_event.company_id)
     event = CommunicationService(db).create_activity(tenant_id=tenant.id, event_id=event_id, created_by=tenant.user_id)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Communication event not found")

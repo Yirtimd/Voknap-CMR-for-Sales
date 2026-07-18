@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.core.dependencies import CurrentTenant, get_current_tenant, get_current_user
+from app.core.rbac import ROLE_PERMISSIONS
 from app.modules.accounts.models import User
 from app.modules.me.schemas import MeResponse
 
@@ -19,5 +20,5 @@ def me(
         full_name=user.full_name,
         tenant_id=tenant.id,
         role=tenant.role,
+        permissions=sorted(ROLE_PERMISSIONS[tenant.role]),
     )
-

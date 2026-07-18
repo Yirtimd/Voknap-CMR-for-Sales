@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import CurrentTenant, get_current_tenant
+from app.core.rbac import Permission, require_permission
 from app.modules.connectors.models import ConnectorAccount, ConnectorSyncRun
 from app.modules.connectors.schemas import (
     ConnectorAccountCreate,
@@ -35,7 +36,7 @@ def definitions(
 def create_account(
     payload: ConnectorAccountCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.INTEGRATIONS_MANAGE)),
 ) -> ConnectorAccountResponse:
     service = ConnectorService(db)
     try:
@@ -54,7 +55,7 @@ def create_account(
 @router.get("/accounts", response_model=list[ConnectorAccountResponse])
 def list_accounts(
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.INTEGRATIONS_MANAGE)),
 ) -> list[ConnectorAccountResponse]:
     service = ConnectorService(db)
     return [_account_response(account) for account in service.list_accounts(tenant.id)]
@@ -65,7 +66,7 @@ def import_csv(
     account_id: UUID,
     payload: CsvImportRequest,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.INTEGRATIONS_MANAGE)),
 ) -> ConnectorSyncResponse:
     service = ConnectorService(db)
     return _run_response(service.import_csv_leads(tenant.id, account_id, payload.csv_text))
@@ -76,7 +77,7 @@ def sync_account(
     account_id: UUID,
     payload: ConnectorSyncRequest,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.INTEGRATIONS_MANAGE)),
 ) -> ConnectorSyncResponse:
     service = ConnectorService(db)
     return _run_response(service.sync_account(tenant.id, account_id, payload.payload))
@@ -86,7 +87,7 @@ def sync_account(
 def retry_run(
     run_id: UUID,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.INTEGRATIONS_MANAGE)),
 ) -> ConnectorSyncResponse:
     service = ConnectorService(db)
     run = service.retry_run(tenant.id, run_id)
@@ -98,7 +99,7 @@ def retry_run(
 @router.get("/csv/export", response_model=CsvExportResponse)
 def export_csv(
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.DATA_EXPORT)),
 ) -> CsvExportResponse:
     service = ConnectorService(db)
     return CsvExportResponse(filename="leads.csv", csv_text=service.export_csv_leads(tenant.id))
@@ -107,7 +108,7 @@ def export_csv(
 @router.get("/runs", response_model=list[ConnectorSyncResponse])
 def list_runs(
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.INTEGRATIONS_MANAGE)),
 ) -> list[ConnectorSyncResponse]:
     service = ConnectorService(db)
     return [_run_response(run) for run in service.list_runs(tenant.id)]

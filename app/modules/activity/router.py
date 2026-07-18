@@ -6,9 +6,11 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import CurrentTenant, get_current_tenant
+from app.core.rbac import Permission, require_permission
 from app.modules.activity.models import Activity
 from app.modules.activity.schemas import ActivityCreate, ActivityResponse
 from app.modules.activity.service import ActivityService
+from app.modules.sales.authorization import require_company_write_access
 
 
 router = APIRouter()
@@ -42,8 +44,9 @@ def list_activities(
 def create_activity(
     payload: ActivityCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
 ) -> ActivityResponse:
+    require_company_write_access(db, tenant, payload.company_id)
     service = ActivityService(db)
     activity = service.create(
         tenant_id=tenant.id,

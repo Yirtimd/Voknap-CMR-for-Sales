@@ -9,8 +9,8 @@ with Salesforce or another established commercial platform.
 
 > **Project status:** functional pre-production platform. The core sales workflow,
 > tenant isolation, company workspace, knowledge retrieval, AI assistance,
-> analytics, and selected integrations are implemented. Operational hardening,
-> full RBAC, automation, and CI/CD remain in progress.
+> analytics, role-based access control, and selected integrations are implemented.
+> Operational hardening, automation, and deployment remain in progress.
 
 ## Product direction
 
@@ -79,6 +79,15 @@ tenant context. Without that context, tenant-owned rows are unavailable.
 Tenant-aware composite foreign keys also reject cross-tenant object references.
 
 This protects the system from a forgotten application-level `tenant_id` filter.
+
+## Role-based access control
+
+Every membership has one of five fail-closed roles: `owner`, `admin`,
+`sales_manager`, `sales_rep`, or `viewer`. A centralized permission matrix
+protects tenant administration, billing, feature flags, integrations, exports,
+knowledge writes, AI actions, and CRM mutations. Sales representatives can
+change only their assigned objects and cannot write manager-controlled fields.
+The `/me` response exposes effective permissions for frontend capability checks.
 
 ## CRM and AI safety model
 
@@ -195,21 +204,20 @@ The complete development template is available in `.env.example`.
 ## Implemented
 
 - modular CRM backend and Vue workspace;
-- PostgreSQL migrations through `0011_tenant_rls`;
+- PostgreSQL migrations through `0013_membership_roles`;
 - native pgvector storage and scoped retrieval;
 - company workspace and activity timeline;
 - analytics and AI-assisted recommendations;
 - IMAP and CSV connector flows;
 - MinIO/S3 file storage and OCR;
 - forced tenant RLS and tenant-aware constraints;
-- negative tenant-isolation tests.
+- centralized RBAC with object- and field-level write protection;
+- negative tenant-isolation and authorization tests;
+- local and GitHub Actions quality gates.
 
 ## Hardening in progress
 
-- migration/model schema alignment;
-- role-based access control and administrative permissions;
 - complete CRUD, pagination, filtering, and server-side search;
-- CI quality gates and broader API/frontend test coverage;
 - background processing for integrations and document ingestion;
 - structured audit events, monitoring, tracing, and alerting;
 - AI/RAG evaluation and production guardrails.

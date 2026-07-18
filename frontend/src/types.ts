@@ -4,12 +4,31 @@ export type Tenant = {
   slug: string;
 };
 
+export type MembershipRole = "owner" | "admin" | "sales_manager" | "sales_rep" | "viewer";
+
+export type Permission =
+  | "crm:read"
+  | "crm:write"
+  | "sales:manage"
+  | "assignments:manage"
+  | "ai:use"
+  | "knowledge:write"
+  | "integrations:manage"
+  | "templates:manage"
+  | "settings:read"
+  | "audit:read"
+  | "feature_flags:manage"
+  | "billing:manage"
+  | "data:export"
+  | "members:manage";
+
 export type Me = {
   user_id: string;
   email: string;
   full_name: string;
   tenant_id: string;
-  role: string;
+  role: MembershipRole;
+  permissions: Permission[];
 };
 
 export type AuthResponse = {

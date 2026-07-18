@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import CurrentTenant, get_current_tenant
+from app.core.rbac import Permission, require_permission
 from app.modules.templates.models import AppliedTemplate
 from app.modules.templates.schemas import (
     AppliedTemplateResponse,
@@ -41,7 +42,7 @@ def list_templates(
 def apply_template(
     payload: ApplyTemplateRequest,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.TEMPLATES_MANAGE)),
 ) -> AppliedTemplateResponse:
     service = TemplateService(db)
     try:

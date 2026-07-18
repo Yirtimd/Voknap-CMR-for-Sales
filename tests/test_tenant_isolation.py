@@ -18,6 +18,7 @@ from app.modules.sales.models import Company, Lead
 
 
 PROTECTED_PREFIXES = (
+    "/accounts",
     "/activities",
     "/ai-agent",
     "/analytics",

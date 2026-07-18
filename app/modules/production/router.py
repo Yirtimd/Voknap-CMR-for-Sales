@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import CurrentTenant, get_current_tenant
+from app.core.dependencies import CurrentTenant
+from app.core.rbac import Permission, require_permission
 from app.modules.production.models import AuditLog, FeatureFlag, TenantPlan
 from app.modules.production.schemas import (
     AuditLogResponse,
@@ -26,7 +27,7 @@ router = APIRouter()
 @router.get("/overview", response_model=ProductionOverviewResponse)
 def overview(
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.SETTINGS_READ)),
 ) -> dict:
     return ProductionService(db).overview(tenant.id)
 
@@ -34,7 +35,7 @@ def overview(
 @router.get("/audit", response_model=list[AuditLogResponse])
 def audit(
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.AUDIT_READ)),
 ) -> list[AuditLogResponse]:
     return [_audit_response(row) for row in ProductionService(db).list_audit(tenant.id)]
 
@@ -42,7 +43,7 @@ def audit(
 @router.post("/audit", response_model=AuditLogResponse, status_code=status.HTTP_201_CREATED)
 def create_audit_marker(
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.AUDIT_READ)),
 ) -> AuditLogResponse:
     row = ProductionService(db).log(
         tenant_id=tenant.id,
@@ -57,7 +58,7 @@ def create_audit_marker(
 @router.get("/flags", response_model=list[FeatureFlagResponse])
 def flags(
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.SETTINGS_READ)),
 ) -> list[FeatureFlagResponse]:
     return [_flag_response(flag) for flag in ProductionService(db).list_flags(tenant.id)]
 
@@ -66,7 +67,7 @@ def flags(
 def create_flag(
     payload: FeatureFlagCreate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.FEATURE_FLAGS_MANAGE)),
 ) -> FeatureFlagResponse:
     service = ProductionService(db)
     flag = service.create_flag(tenant.id, payload.code, payload.title, payload.enabled)
@@ -79,7 +80,7 @@ def update_flag(
     flag_id: UUID,
     payload: FeatureFlagUpdate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.FEATURE_FLAGS_MANAGE)),
 ) -> FeatureFlagResponse:
     service = ProductionService(db)
     flag = service.update_flag(tenant.id, flag_id, payload.enabled)
@@ -92,7 +93,7 @@ def update_flag(
 @router.get("/plan", response_model=TenantPlanResponse)
 def get_plan(
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.SETTINGS_READ)),
 ) -> TenantPlanResponse:
     return _plan_response(ProductionService(db).get_or_create_plan(tenant.id))
 
@@ -101,7 +102,7 @@ def get_plan(
 def update_plan(
     payload: TenantPlanUpdate,
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.BILLING_MANAGE)),
 ) -> TenantPlanResponse:
     service = ProductionService(db)
     plan = service.update_plan(tenant.id, payload)
@@ -112,7 +113,7 @@ def update_plan(
 @router.get("/export", response_model=DataExportResponse)
 def export_data(
     db: Session = Depends(get_db),
-    tenant: CurrentTenant = Depends(get_current_tenant),
+    tenant: CurrentTenant = Depends(require_permission(Permission.DATA_EXPORT)),
 ) -> DataExportResponse:
     service = ProductionService(db)
     data = service.export_tenant_data(tenant.id)
@@ -152,4 +153,3 @@ def _plan_response(plan: TenantPlan) -> TenantPlanResponse:
         ai_requests_limit=plan.ai_requests_limit,
         created_at=plan.created_at,
     )
-
