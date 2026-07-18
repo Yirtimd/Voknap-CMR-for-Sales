@@ -35,7 +35,7 @@ from app.modules.sales.models import (
 
 
 DEMO_TENANT_SLUG = "demo-sales-ai"
-DEMO_USER_EMAIL = "demo@cmrsales.app"
+DEMO_USER_EMAIL = "demo@crmsales.app"
 DEMO_USER_PASSWORD = "password123"
 
 
@@ -518,7 +518,7 @@ def create_communication_events(db: Session, tenant: Tenant, user: User) -> None
                 f"Re: {deal.title if deal else 'CRM project'}",
                 f"{contact.name} просит уточнить сроки внедрения, миграцию данных и следующий шаг по компании {company.name}.",
                 contact.email,
-                "sales@cmrsales.app",
+                "sales@crmsales.app",
                 -index,
             ),
             (
@@ -536,7 +536,7 @@ def create_communication_events(db: Session, tenant: Tenant, user: User) -> None
                 "Discovery meeting scheduled",
                 f"Встреча по требованиям {company.name}: интеграции, роли пользователей, RAG и отчетность.",
                 contact.email,
-                "calendar@cmrsales.app",
+                "calendar@crmsales.app",
                 index + 1,
             ),
         ]

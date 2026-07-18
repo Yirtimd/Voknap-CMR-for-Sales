@@ -1,5 +1,5 @@
 [project]
-name = "cmr-sales-app"
+name = "crm-sales-app"
 version = "0.1.0"
 description = "Modular CRM foundation for sales teams"
 requires-python = ">=3.11"

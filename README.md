@@ -1,6 +1,9 @@
-# CMR Sales App
+# CRM Sales App
 
 AI-first CRM platform for sales teams.
+
+**Brand terminology:** CRM means Customer Relationship Management. `CRM Sales`
+is the canonical product and repository name; previous misspellings are deprecated.
 
 The system is built around the company workspace: companies, activity timeline,
 deals, tasks, knowledge, RAG, AI agent actions, connectors, templates, analytics,
@@ -149,7 +152,7 @@ python scripts/seed_demo.py
 
 Demo login:
 
-- email: `demo@cmrsales.app`
+- email: `demo@crmsales.app`
 - password: `password123`
 
 The seed script recreates only the demo tenant `demo-sales-ai`, so it can be

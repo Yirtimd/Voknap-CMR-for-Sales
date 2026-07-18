@@ -161,7 +161,7 @@ const communicationEventForm = ref({
   channel: "email",
   direction: "inbound",
   sender: "client@example.com",
-  recipient: "sales@cmrsales.app",
+  recipient: "sales@crmsales.app",
   subject: "Новый входящий запрос",
   body: "Клиент просит уточнить стоимость, сроки внедрения и следующий шаг.",
   company_id: "",

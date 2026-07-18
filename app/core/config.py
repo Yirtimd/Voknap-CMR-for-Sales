@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "CMR Sales App"
+    app_name: str = "CRM Sales App"
     database_url: str = "postgresql+psycopg://cmr:cmr@localhost:5432/cmr"
     database_runtime_role: str = "cmr_app"
     secret_key: str = "change-me-in-production"

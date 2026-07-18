@@ -23,7 +23,7 @@ from app.modules.sales.router import router as sales_router
 from app.modules.templates.router import router as templates_router
 
 
-app = FastAPI(title="CMR Sales App", version="0.1.0")
+app = FastAPI(title="CRM Sales App", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,7 +37,7 @@ app.add_middleware(
 @app.get("/")
 def root() -> dict[str, str]:
     return {
-        "app": "CMR Sales App",
+        "app": "CRM Sales App",
         "status": "running",
         "docs": "/docs",
         "health": "/health",

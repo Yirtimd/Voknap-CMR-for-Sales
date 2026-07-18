@@ -6,7 +6,7 @@ ALEMBIC := .venv/bin/alembic
 .PHONY: help check db db-ready infra infra-ready migrate dev production seed test stop
 
 help:
-	@echo "CMR Sales App"
+	@echo "CRM Sales App"
 	@echo "  make dev   - start database, backend, and frontend"
 	@echo "  make production - start PostgreSQL, MinIO, and OCR-ready backend"
 	@echo "  make seed  - recreate demo workspace data"
