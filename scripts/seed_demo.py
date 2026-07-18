@@ -25,6 +25,7 @@ from app.modules.sales.models import (
     Contact,
     CustomerInsight,
     Deal,
+    FieldChange,
     Lead,
     NextAction,
     Note,
@@ -50,6 +51,7 @@ def remove_existing_demo(db: Session) -> None:
     if tenant:
         tenant_id = tenant.id
         for model in (
+            FieldChange,
             ConnectorSyncRun,
             ConnectorAccount,
             CommunicationEvent,

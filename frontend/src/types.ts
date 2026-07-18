@@ -46,12 +46,17 @@ export type Contact = {
   email: string | null;
   company_name: string | null;
   role?: string | null;
+  owner_id?: string | null;
   actions?: {
     call: boolean;
     email: boolean;
     more: boolean;
   };
+  is_archived: boolean;
+  deleted_at: string | null;
+  version: number;
   created_at?: string;
+  updated_at?: string;
 };
 
 export type Owner = {
@@ -85,7 +90,16 @@ export type Lead = {
   source: string | null;
   status: string;
   contact_id: string | null;
+  owner_id?: string | null;
+  qualified_at?: string | null;
+  converted_at?: string | null;
+  converted_deal_id?: string | null;
+  disqualification_reason?: string | null;
+  is_archived: boolean;
+  deleted_at: string | null;
+  version: number;
   created_at?: string;
+  updated_at?: string;
 };
 
 export type PipelineStage = {
@@ -118,7 +132,11 @@ export type Deal = {
   owner_id?: string | null;
   next_action_id?: string | null;
   age_days?: number | null;
+  is_archived: boolean;
+  deleted_at: string | null;
+  version: number;
   created_at?: string;
+  updated_at?: string;
 };
 
 export type Task = {
@@ -127,11 +145,16 @@ export type Task = {
   title: string;
   description: string | null;
   deal_id: string | null;
+  assigned_to_id: string;
   status: string;
   priority: string;
   due_at: string | null;
   done_at: string | null;
+  is_archived: boolean;
+  deleted_at: string | null;
+  version: number;
   created_at?: string;
+  updated_at?: string;
 };
 
 export type Note = {
@@ -141,7 +164,11 @@ export type Note = {
   lead_id: string | null;
   deal_id: string | null;
   author_id?: string;
+  is_archived: boolean;
+  deleted_at: string | null;
+  version: number;
   created_at?: string;
+  updated_at?: string;
 };
 
 export type KnowledgeDocument = {

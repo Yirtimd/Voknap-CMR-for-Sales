@@ -802,7 +802,12 @@ async function createDeal() {
 
 async function moveDeal(deal: Deal, stageId: string) {
   await run(async () => {
-    await api<Deal>(`/sales/deals/${deal.id}/move`, post({ stage_id: stageId }, "PATCH"), token.value, tenantId.value);
+    await api<Deal>(
+      `/sales/deals/${deal.id}/move`,
+      post({ stage_id: stageId, version: deal.version }, "PATCH"),
+      token.value,
+      tenantId.value
+    );
     await refreshAll();
   }, "Сделка перемещена");
 }
@@ -845,7 +850,7 @@ async function toggleTask(task: Task) {
   await run(async () => {
     await api<Task>(
       `/sales/tasks/${task.id}/done`,
-      post({ is_done: task.done_at === null }, "PATCH"),
+      post({ is_done: task.done_at === null, version: task.version }, "PATCH"),
       token.value,
       tenantId.value
     );

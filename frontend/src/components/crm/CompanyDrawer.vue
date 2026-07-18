@@ -508,7 +508,7 @@ function toggleDrawerTask(task: Task) {
   void runDrawerAction(async () => {
     await api<Task>(
       `/sales/tasks/${task.id}/done`,
-      post({ is_done: !task.done_at }, "PATCH"),
+      post({ is_done: !task.done_at, version: task.version }, "PATCH"),
       crmStore.token.value,
       crmStore.tenantId.value
     );

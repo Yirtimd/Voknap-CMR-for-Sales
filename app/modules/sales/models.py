@@ -15,7 +15,9 @@ def utc_now() -> datetime:
 class Contact(Base):
     __tablename__ = "contacts"
     __table_args__ = tenant_table_args(
-        "contacts", relations=(("company_id", "companies"),)
+        "contacts",
+        relations=(("company_id", "companies"),),
+        membership_columns=("owner_id", "deleted_by_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -26,10 +28,20 @@ class Contact(Base):
     email: Mapped[str | None] = mapped_column(String(255))
     company_name: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str | None] = mapped_column(String(120))
+    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
     can_call: Mapped[bool] = mapped_column(Boolean, default=True)
     can_email: Mapped[bool] = mapped_column(Boolean, default=True)
     can_open_more: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deleted_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    __mapper_args__ = {"version_id_col": version}
 
     leads: Mapped[list["Lead"]] = relationship(
         back_populates="contact", foreign_keys="Lead.contact_id"
@@ -107,6 +119,8 @@ class Lead(Base):
     __table_args__ = tenant_table_args(
         "leads",
         relations=(("company_id", "companies"), ("contact_id", "contacts")),
+        deferred_relations=(("converted_deal_id", "deals"),),
+        membership_columns=("owner_id", "qualified_by_id", "converted_by_id", "deleted_by_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -116,7 +130,23 @@ class Lead(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source: Mapped[str | None] = mapped_column(String(80))
     status: Mapped[str] = mapped_column(String(80), default="new")
+    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
+    qualified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    qualified_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    converted_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    converted_deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id", use_alter=True))
+    disqualification_reason: Mapped[str | None] = mapped_column(Text)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deleted_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    __mapper_args__ = {"version_id_col": version}
 
     contact: Mapped[Contact | None] = relationship(
         back_populates="leads", foreign_keys=[contact_id]
@@ -139,7 +169,7 @@ class Deal(Base):
             ("stage_id", "pipeline_stages"),
         ),
         deferred_relations=(("next_action_id", "next_actions"),),
-        membership_columns=("owner_id",),
+        membership_columns=("owner_id", "deleted_by_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -164,7 +194,16 @@ class Deal(Base):
             use_alter=True,
         )
     )
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deleted_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    __mapper_args__ = {"version_id_col": version}
 
     lead: Mapped[Lead | None] = relationship(
         back_populates="deals", foreign_keys=[lead_id]
@@ -185,7 +224,7 @@ class Task(Base):
     __table_args__ = tenant_table_args(
         "tasks",
         relations=(("company_id", "companies"), ("deal_id", "deals")),
-        membership_columns=("assigned_to_id",),
+        membership_columns=("assigned_to_id", "deleted_by_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -199,7 +238,16 @@ class Task(Base):
     priority: Mapped[str] = mapped_column(String(40), default="normal")
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deleted_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    __mapper_args__ = {"version_id_col": version}
 
     deal: Mapped[Deal | None] = relationship(
         back_populates="tasks", foreign_keys=[deal_id]
@@ -215,7 +263,7 @@ class Note(Base):
             ("lead_id", "leads"),
             ("deal_id", "deals"),
         ),
-        membership_columns=("author_id",),
+        membership_columns=("author_id", "deleted_by_id"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -225,7 +273,16 @@ class Note(Base):
     lead_id: Mapped[UUID | None] = mapped_column(ForeignKey("leads.id"))
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"))
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deleted_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    __mapper_args__ = {"version_id_col": version}
 
     lead: Mapped[Lead | None] = relationship(
         back_populates="notes", foreign_keys=[lead_id]
@@ -316,3 +373,22 @@ class CustomerInsight(Base):
     success_chance_delta: Mapped[int | None] = mapped_column(Integer)
     ai_recommendations_json: Mapped[str] = mapped_column(Text, default="[]")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class FieldChange(Base):
+    __tablename__ = "crm_field_changes"
+    __table_args__ = tenant_table_args(
+        "crm_field_changes",
+        membership_columns=("changed_by_id",),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    entity_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
+    field_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    old_value_json: Mapped[str | None] = mapped_column(Text)
+    new_value_json: Mapped[str | None] = mapped_column(Text)
+    changed_by_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    entity_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

@@ -1,14 +1,17 @@
 import json
 from datetime import datetime, timezone
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import CurrentTenant, get_current_tenant
 from app.core.rbac import (
     Permission,
+    deny_access,
+    has_permission,
     require_allowed_fields,
     require_object_owner,
     require_permission,
@@ -16,6 +19,7 @@ from app.core.rbac import (
 from app.modules.activity.service import ActivityService
 from app.modules.accounts.models import User
 from app.modules.knowledge.models import KnowledgeDocument
+from app.modules.sales.lifecycle import add_history, commit_versioned, ensure_member, require_version
 from app.modules.sales.models import (
     Company,
     CompanyFile,
@@ -29,6 +33,7 @@ from app.modules.sales.models import (
     PipelineStage,
     Task,
 )
+from app.modules.sales.querying import apply_list_contract
 from app.modules.sales.stages import stage_label_ru
 from app.modules.sales.schemas import (
     CompanyCreate,
@@ -351,7 +356,13 @@ def create_contact(
 ) -> Contact:
     company = _get_for_tenant(db, Company, tenant.id, payload.company_id)
     require_object_owner(tenant.role, tenant.user_id, company.owner_id)
-    contact = Contact(tenant_id=tenant.id, **payload.model_dump())
+    require_allowed_fields(tenant.role, payload.model_fields_set, {"owner_id"})
+    contact_data = payload.model_dump()
+    if tenant.role.value == "sales_rep":
+        contact_data["owner_id"] = tenant.user_id
+    elif contact_data["owner_id"] is not None:
+        ensure_member(db, tenant.id, contact_data["owner_id"])
+    contact = Contact(tenant_id=tenant.id, **contact_data)
     db.add(contact)
     db.flush()
     ActivityService(db).create(
@@ -372,10 +383,35 @@ def create_contact(
 
 @router.get("/contacts", response_model=list[ContactResponse])
 def list_contacts(
+    response: Response,
+    search: str | None = None,
+    company_id: UUID | None = None,
+    owner_id: UUID | None = None,
+    include_archived: bool = False,
+    include_deleted: bool = False,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=200),
+    sort: str = "created_at",
+    order: Literal["asc", "desc"] = "desc",
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> list[Contact]:
-    return db.query(Contact).filter(Contact.tenant_id == tenant.id).order_by(Contact.created_at.desc()).all()
+    _require_deleted_access(tenant, include_deleted)
+    return apply_list_contract(
+        db.query(Contact).filter(Contact.tenant_id == tenant.id),
+        Contact,
+        response,
+        search=search,
+        search_fields=("name", "email", "phone", "company_name", "role"),
+        filters={"company_id": company_id, "owner_id": owner_id},
+        include_archived=include_archived,
+        include_deleted=include_deleted,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        order=order,
+        sortable_fields={"name", "created_at", "updated_at"},
+    )
 
 
 @router.post("/leads", response_model=LeadResponse, status_code=status.HTTP_201_CREATED)
@@ -391,7 +427,13 @@ def create_lead(
         if contact.company_id != payload.company_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contact belongs to another company")
 
-    lead = Lead(tenant_id=tenant.id, **payload.model_dump())
+    require_allowed_fields(tenant.role, payload.model_fields_set, {"owner_id"})
+    lead_data = payload.model_dump()
+    if tenant.role.value == "sales_rep":
+        lead_data["owner_id"] = tenant.user_id
+    elif lead_data["owner_id"] is not None:
+        ensure_member(db, tenant.id, lead_data["owner_id"])
+    lead = Lead(tenant_id=tenant.id, **lead_data)
     db.add(lead)
     db.flush()
     ActivityService(db).create(
@@ -412,10 +454,44 @@ def create_lead(
 
 @router.get("/leads", response_model=list[LeadResponse])
 def list_leads(
+    response: Response,
+    search: str | None = None,
+    company_id: UUID | None = None,
+    contact_id: UUID | None = None,
+    owner_id: UUID | None = None,
+    status_filter: str | None = None,
+    source: str | None = None,
+    include_archived: bool = False,
+    include_deleted: bool = False,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=200),
+    sort: str = "created_at",
+    order: Literal["asc", "desc"] = "desc",
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> list[Lead]:
-    return db.query(Lead).filter(Lead.tenant_id == tenant.id).order_by(Lead.created_at.desc()).all()
+    _require_deleted_access(tenant, include_deleted)
+    return apply_list_contract(
+        db.query(Lead).filter(Lead.tenant_id == tenant.id),
+        Lead,
+        response,
+        search=search,
+        search_fields=("title", "source", "status", "disqualification_reason"),
+        filters={
+            "company_id": company_id,
+            "contact_id": contact_id,
+            "owner_id": owner_id,
+            "status": status_filter,
+            "source": source,
+        },
+        include_archived=include_archived,
+        include_deleted=include_deleted,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        order=order,
+        sortable_fields={"title", "status", "created_at", "updated_at", "qualified_at"},
+    )
 
 
 @router.get("/leads/{lead_id}", response_model=LeadResponse)
@@ -424,7 +500,10 @@ def get_lead(
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> Lead:
-    return _get_for_tenant(db, Lead, tenant.id, lead_id)
+    lead = _get_for_tenant(db, Lead, tenant.id, lead_id)
+    if lead.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    return lead
 
 
 @router.post("/pipelines", response_model=PipelineResponse, status_code=status.HTTP_201_CREATED)
@@ -503,10 +582,46 @@ def create_deal(
 
 @router.get("/deals", response_model=list[DealResponse])
 def list_deals(
+    response: Response,
+    search: str | None = None,
+    company_id: UUID | None = None,
+    lead_id: UUID | None = None,
+    stage_id: UUID | None = None,
+    owner_id: UUID | None = None,
+    status_filter: str | None = None,
+    risk_level: str | None = None,
+    include_archived: bool = False,
+    include_deleted: bool = False,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=200),
+    sort: str = "created_at",
+    order: Literal["asc", "desc"] = "desc",
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> list[Deal]:
-    return db.query(Deal).filter(Deal.tenant_id == tenant.id).order_by(Deal.created_at.desc()).all()
+    _require_deleted_access(tenant, include_deleted)
+    return apply_list_contract(
+        db.query(Deal).filter(Deal.tenant_id == tenant.id),
+        Deal,
+        response,
+        search=search,
+        search_fields=("title", "status", "risk_level", "forecast_category", "next_step"),
+        filters={
+            "company_id": company_id,
+            "lead_id": lead_id,
+            "stage_id": stage_id,
+            "owner_id": owner_id,
+            "status": status_filter,
+            "risk_level": risk_level,
+        },
+        include_archived=include_archived,
+        include_deleted=include_deleted,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        order=order,
+        sortable_fields={"title", "amount", "status", "created_at", "updated_at", "expected_close_date"},
+    )
 
 
 @router.post("/next-actions", response_model=NextActionResponse, status_code=status.HTTP_201_CREATED)
@@ -627,10 +742,21 @@ def move_deal(
 ) -> Deal:
     deal = _get_for_tenant(db, Deal, tenant.id, deal_id)
     require_object_owner(tenant.role, tenant.user_id, deal.owner_id)
+    require_version(deal, payload.version)
     old_stage_id = deal.stage_id
     new_stage = _get_for_tenant(db, PipelineStage, tenant.id, payload.stage_id)
 
     deal.stage_id = payload.stage_id
+    add_history(
+        db,
+        tenant,
+        "deals",
+        deal.id,
+        "stage_id",
+        old_stage_id,
+        payload.stage_id,
+        deal.version + 1,
+    )
     ActivityService(db).create(
         tenant_id=tenant.id,
         created_by=tenant.user_id,
@@ -642,8 +768,7 @@ def move_deal(
         metadata={"old_stage_id": str(old_stage_id), "new_stage_id": str(payload.stage_id)},
         commit=False,
     )
-    db.commit()
-    db.refresh(deal)
+    commit_versioned(db, deal)
     return deal
 
 
@@ -660,7 +785,16 @@ def create_task(
         if deal.company_id != payload.company_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Deal belongs to another company")
 
-    task = Task(tenant_id=tenant.id, assigned_to_id=tenant.user_id, **payload.model_dump())
+    require_allowed_fields(tenant.role, payload.model_fields_set, {"assigned_to_id"})
+    task_data = payload.model_dump(exclude={"assigned_to_id"})
+    assigned_to_id = payload.assigned_to_id or tenant.user_id
+    if assigned_to_id != tenant.user_id:
+        ensure_member(db, tenant.id, assigned_to_id)
+    task = Task(
+        tenant_id=tenant.id,
+        assigned_to_id=assigned_to_id,
+        **task_data,
+    )
     db.add(task)
     db.flush()
     ActivityService(db).create(
@@ -681,10 +815,44 @@ def create_task(
 
 @router.get("/tasks", response_model=list[TaskResponse])
 def list_tasks(
+    response: Response,
+    search: str | None = None,
+    company_id: UUID | None = None,
+    deal_id: UUID | None = None,
+    assigned_to_id: UUID | None = None,
+    status_filter: str | None = None,
+    priority: str | None = None,
+    include_archived: bool = False,
+    include_deleted: bool = False,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=200),
+    sort: str = "created_at",
+    order: Literal["asc", "desc"] = "desc",
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> list[Task]:
-    return db.query(Task).filter(Task.tenant_id == tenant.id).order_by(Task.created_at.desc()).all()
+    _require_deleted_access(tenant, include_deleted)
+    return apply_list_contract(
+        db.query(Task).filter(Task.tenant_id == tenant.id),
+        Task,
+        response,
+        search=search,
+        search_fields=("title", "description", "status", "priority"),
+        filters={
+            "company_id": company_id,
+            "deal_id": deal_id,
+            "assigned_to_id": assigned_to_id,
+            "status": status_filter,
+            "priority": priority,
+        },
+        include_archived=include_archived,
+        include_deleted=include_deleted,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        order=order,
+        sortable_fields={"title", "status", "priority", "due_at", "created_at", "updated_at"},
+    )
 
 
 @router.patch("/tasks/{task_id}/done", response_model=TaskResponse)
@@ -696,8 +864,33 @@ def set_task_done(
 ) -> Task:
     task = _get_for_tenant(db, Task, tenant.id, task_id)
     require_object_owner(tenant.role, tenant.user_id, task.assigned_to_id)
-    task.done_at = datetime.now(timezone.utc) if payload.is_done else None
-    task.status = "done" if payload.is_done else "open"
+    require_version(task, payload.version)
+    new_done_at = datetime.now(timezone.utc) if payload.is_done else None
+    new_status = "done" if payload.is_done else "open"
+    if task.status != new_status:
+        add_history(
+            db,
+            tenant,
+            "tasks",
+            task.id,
+            "status",
+            task.status,
+            new_status,
+            task.version + 1,
+        )
+    if task.done_at != new_done_at:
+        add_history(
+            db,
+            tenant,
+            "tasks",
+            task.id,
+            "done_at",
+            task.done_at,
+            new_done_at,
+            task.version + 1,
+        )
+    task.done_at = new_done_at
+    task.status = new_status
     ActivityService(db).create(
         tenant_id=tenant.id,
         created_by=tenant.user_id,
@@ -709,8 +902,7 @@ def set_task_done(
         metadata={"task_id": str(task.id), "done": payload.is_done},
         commit=False,
     )
-    db.commit()
-    db.refresh(task)
+    commit_versioned(db, task)
     return task
 
 
@@ -752,17 +944,42 @@ def create_note(
 
 @router.get("/notes", response_model=list[NoteResponse])
 def list_notes(
+    response: Response,
+    search: str | None = None,
+    company_id: UUID | None = None,
     lead_id: UUID | None = None,
     deal_id: UUID | None = None,
+    author_id: UUID | None = None,
+    include_archived: bool = False,
+    include_deleted: bool = False,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=200),
+    sort: str = "created_at",
+    order: Literal["asc", "desc"] = "desc",
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(get_current_tenant),
 ) -> list[Note]:
-    query = db.query(Note).filter(Note.tenant_id == tenant.id)
-    if lead_id is not None:
-        query = query.filter(Note.lead_id == lead_id)
-    if deal_id is not None:
-        query = query.filter(Note.deal_id == deal_id)
-    return query.order_by(Note.created_at.desc()).all()
+    _require_deleted_access(tenant, include_deleted)
+    return apply_list_contract(
+        db.query(Note).filter(Note.tenant_id == tenant.id),
+        Note,
+        response,
+        search=search,
+        search_fields=("text",),
+        filters={
+            "company_id": company_id,
+            "lead_id": lead_id,
+            "deal_id": deal_id,
+            "author_id": author_id,
+        },
+        include_archived=include_archived,
+        include_deleted=include_deleted,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        order=order,
+        sortable_fields={"created_at", "updated_at"},
+    )
 
 
 def _company_response(company: Company, owner: User | None, source: str | None) -> CompanyResponse:
@@ -804,12 +1021,17 @@ def _contact_response(contact: Contact) -> ContactResponse:
         email=contact.email,
         company_name=contact.company_name,
         role=contact.role,
+        owner_id=contact.owner_id,
         actions={
             "call": bool(contact.can_call and contact.phone),
             "email": bool(contact.can_email and contact.email),
             "more": bool(contact.can_open_more),
         },
+        is_archived=contact.is_archived,
+        deleted_at=contact.deleted_at,
+        version=contact.version,
         created_at=contact.created_at,
+        updated_at=contact.updated_at,
     )
 
 
@@ -831,7 +1053,11 @@ def _deal_response(deal: Deal) -> DealResponse:
         owner_id=deal.owner_id,
         next_action_id=deal.next_action_id,
         age_days=_age_days(deal.created_at),
+        is_archived=deal.is_archived,
+        deleted_at=deal.deleted_at,
+        version=deal.version,
         created_at=deal.created_at,
+        updated_at=deal.updated_at,
     )
 
 
@@ -1066,3 +1292,8 @@ def _get_for_tenant(db: Session, model, tenant_id: UUID, entity_id: UUID):
     if entity is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{model.__name__} not found")
     return entity
+
+
+def _require_deleted_access(tenant: CurrentTenant, include_deleted: bool) -> None:
+    if include_deleted and not has_permission(tenant.role, Permission.SALES_MANAGE):
+        deny_access("Deleted records require manager permission")

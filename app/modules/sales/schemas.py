@@ -11,6 +11,7 @@ class ContactCreate(BaseModel):
     email: EmailStr | None = None
     company_name: str | None = Field(default=None, max_length=255)
     role: str | None = Field(default=None, max_length=120)
+    owner_id: UUID | None = None
 
 
 class ContactResponse(BaseModel):
@@ -21,8 +22,13 @@ class ContactResponse(BaseModel):
     email: str | None
     company_name: str | None
     role: str | None
+    owner_id: UUID | None = None
     actions: dict[str, bool] = Field(default_factory=dict)
+    is_archived: bool = False
+    deleted_at: datetime | None = None
+    version: int = 1
     created_at: datetime
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -146,6 +152,7 @@ class LeadCreate(BaseModel):
     title: str = Field(min_length=2, max_length=255)
     source: str | None = Field(default=None, max_length=80)
     contact_id: UUID | None = None
+    owner_id: UUID | None = None
 
 
 class LeadResponse(BaseModel):
@@ -155,7 +162,16 @@ class LeadResponse(BaseModel):
     source: str | None
     status: str
     contact_id: UUID | None
+    owner_id: UUID | None = None
+    qualified_at: datetime | None = None
+    converted_at: datetime | None = None
+    converted_deal_id: UUID | None = None
+    disqualification_reason: str | None = None
+    is_archived: bool = False
+    deleted_at: datetime | None = None
+    version: int = 1
     created_at: datetime
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -200,6 +216,7 @@ class DealCreate(BaseModel):
 
 class DealMoveRequest(BaseModel):
     stage_id: UUID
+    version: int = Field(ge=1)
 
 
 class DealResponse(BaseModel):
@@ -219,7 +236,11 @@ class DealResponse(BaseModel):
     owner_id: UUID | None = None
     next_action_id: UUID | None = None
     age_days: int | None = None
+    is_archived: bool = False
+    deleted_at: datetime | None = None
+    version: int = 1
     created_at: datetime
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -231,10 +252,12 @@ class TaskCreate(BaseModel):
     deal_id: UUID | None = None
     priority: str = Field(default="normal", max_length=40)
     due_at: datetime | None = None
+    assigned_to_id: UUID | None = None
 
 
 class TaskDoneRequest(BaseModel):
     is_done: bool = True
+    version: int = Field(ge=1)
 
 
 class TaskResponse(BaseModel):
@@ -243,11 +266,16 @@ class TaskResponse(BaseModel):
     title: str
     description: str | None
     deal_id: UUID | None
+    assigned_to_id: UUID
     status: str
     priority: str
     due_at: datetime | None
     done_at: datetime | None
+    is_archived: bool = False
+    deleted_at: datetime | None = None
+    version: int = 1
     created_at: datetime
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -272,7 +300,11 @@ class NoteResponse(BaseModel):
     lead_id: UUID | None
     deal_id: UUID | None
     author_id: UUID
+    is_archived: bool = False
+    deleted_at: datetime | None = None
+    version: int = 1
     created_at: datetime
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

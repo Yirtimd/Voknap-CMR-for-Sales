@@ -29,6 +29,8 @@ permissions, integrations, terminology, and industry requirements.
 
 - company-first sales workspace with customer context in one place;
 - contacts, leads, pipelines, deals, tasks, notes, and next actions;
+- complete CRM record lifecycle with qualification, conversion, merge, archive,
+  soft delete, restore, bulk actions, reassignment, and optimistic locking;
 - unified activity timeline and communication inbox;
 - tenant-safe PostgreSQL data model with database-enforced isolation;
 - document upload, OCR, S3-compatible storage, and scoped RAG;
@@ -204,7 +206,7 @@ The complete development template is available in `.env.example`.
 ## Implemented
 
 - modular CRM backend and Vue workspace;
-- PostgreSQL migrations through `0013_membership_roles`;
+- PostgreSQL migrations through `0014_crm_lifecycle`;
 - native pgvector storage and scoped retrieval;
 - company workspace and activity timeline;
 - analytics and AI-assisted recommendations;
@@ -212,6 +214,7 @@ The complete development template is available in `.env.example`.
 - MinIO/S3 file storage and OCR;
 - forced tenant RLS and tenant-aware constraints;
 - centralized RBAC with object- and field-level write protection;
+- searchable and paginated CRM CRUD with field-change history;
 - negative tenant-isolation and authorization tests;
 - local and GitHub Actions quality gates.
 
