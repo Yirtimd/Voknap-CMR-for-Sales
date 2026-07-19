@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import type { Deal } from "../types";
+import EntityCrudDrawer from "../components/crm/EntityCrudDrawer.vue";
+import type { Deal, Note } from "../types";
 import { crmStore } from "../stores/crm";
 import { formatStageName } from "../utils/stages";
 
@@ -10,6 +11,9 @@ const route = useRoute();
 const router = useRouter();
 const mode = ref<"kanban" | "table" | "list" | "forecast">("kanban");
 const selectedDeal = ref<Deal | null>(null);
+const isDealCrudOpen = ref(false);
+const isNoteCrudOpen = ref(false);
+const noteCrudRecord = ref<Note | null>(null);
 const showCreateDeal = ref(false);
 const search = ref("");
 const filters = ref({ stage: "", owner: "", company: "", minAmount: 0, risk: "", minScore: 0 });
@@ -511,11 +515,12 @@ watch(
             </div>
           </div>
           <div class="deal-window-actions">
+            <button class="secondary" type="button" @click="isDealCrudOpen = true">Редактировать</button>
             <button class="secondary icon-button" type="button" title="Скопировать ссылку" aria-label="Скопировать ссылку" @click="copyDealLink">↗</button>
             <button class="secondary icon-button" type="button" title="Скопировать сводку" aria-label="Скопировать сводку" @click="copyDealSummary">⧉</button>
             <div class="deal-more-wrap">
               <button class="secondary icon-button" type="button" title="Ещё" aria-label="Дополнительные действия" @click="showMoreMenu = !showMoreMenu">•••</button>
-              <section v-if="showMoreMenu" class="deal-more-menu"><button type="button" @click="openSelectedCompany">Открыть компанию</button><button type="button" @click="crmStore.createNote('deal', selectedDeal.id); showMoreMenu = false">Добавить заметку</button><button type="button" @click="completeSelectedNextAction(); showMoreMenu = false">Завершить следующий шаг</button></section>
+              <section v-if="showMoreMenu" class="deal-more-menu"><button type="button" @click="isDealCrudOpen = true; showMoreMenu = false">Редактировать · история · lifecycle</button><button type="button" @click="openSelectedCompany">Открыть компанию</button><button type="button" @click="crmStore.createNote('deal', selectedDeal.id); showMoreMenu = false">Добавить заметку</button><button type="button" @click="completeSelectedNextAction(); showMoreMenu = false">Завершить следующий шаг</button></section>
             </div>
             <button class="secondary icon-button" type="button" title="Закрыть" aria-label="Закрыть" @click="selectedDeal = null">×</button>
           </div>
@@ -627,12 +632,13 @@ watch(
           <article class="deal-section-card">
             <header>
               <h3>Заметки</h3>
-              <button class="secondary text-button" type="button" @click="crmStore.createNote('deal', selectedDeal.id)">Добавить</button>
+              <button class="secondary text-button" type="button" @click="noteCrudRecord = null; isNoteCrudOpen = true">Добавить</button>
             </header>
             <div v-if="notesForDeal(selectedDeal).length" class="note-preview">
               <strong>Последняя заметка</strong>
               <p>{{ notesForDeal(selectedDeal)[0].text }}</p>
               <small>{{ dateLabel(notesForDeal(selectedDeal)[0].created_at) }}</small>
+              <button class="secondary text-button" type="button" @click="noteCrudRecord = notesForDeal(selectedDeal)[0]; isNoteCrudOpen = true">Редактировать</button>
             </div>
             <p v-else class="empty">К сделке пока нет заметок.</p>
           </article>
@@ -696,5 +702,7 @@ watch(
         </form>
       </section>
     </div>
+    <EntityCrudDrawer v-if="isDealCrudOpen && selectedDeal" entity-type="deals" :record="selectedDeal" @saved="selectedDeal = $event as Deal" @close="isDealCrudOpen = false" @removed="selectedDeal = null; isDealCrudOpen = false" />
+    <EntityCrudDrawer v-if="isNoteCrudOpen && selectedDeal" entity-type="notes" :record="noteCrudRecord" :initial-values="{ company_id: selectedDeal.company_id, deal_id: selectedDeal.id }" :initial-mode="noteCrudRecord ? 'view' : 'create'" @close="isNoteCrudOpen = false" @saved="isNoteCrudOpen = false" @removed="isNoteCrudOpen = false" />
   </section>
 </template>

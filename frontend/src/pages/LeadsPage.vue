@@ -1,13 +1,48 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
+import EntityCrudDrawer from "../components/crm/EntityCrudDrawer.vue";
 import { crmStore } from "../stores/crm";
+import type { Contact, EntityType, Lead, Note } from "../types";
 
-onMounted(() => {
-  void crmStore.refreshAll();
+const route = useRoute();
+const router = useRouter();
+
+onMounted(async () => {
+  await crmStore.refreshAll();
+  openFromRoute();
 });
 
-const creationMode = ref<"lead" | "contact">("lead");
+const crudType = ref<EntityType | null>(null);
+const crudRecord = ref<Contact | Lead | Note | null>(null);
+const crudMode = ref<"view" | "edit" | "create">("view");
+const crudInitialValues = ref<Record<string, unknown>>({});
+
+function openCrud(type: "contacts" | "leads" | "notes", record: Contact | Lead | Note | null = null, mode: "view" | "edit" | "create" = record ? "view" : "create", initialValues: Record<string, unknown> = {}) {
+  crudType.value = type;
+  crudRecord.value = record;
+  crudMode.value = mode;
+  crudInitialValues.value = initialValues;
+}
+
+function openFromRoute() {
+  const leadId = typeof route.query.record === "string" ? route.query.record : "";
+  const contactId = typeof route.query.contact === "string" ? route.query.contact : "";
+  const lead = crmStore.leads.value.find((item) => item.id === leadId);
+  const contact = crmStore.contacts.value.find((item) => item.id === contactId);
+  if (lead) openCrud("leads", lead);
+  else if (contact) openCrud("contacts", contact);
+}
+
+function closeCrud() {
+  crudType.value = null;
+  crudRecord.value = null;
+  crudInitialValues.value = {};
+  if (route.query.record || route.query.contact) void router.replace({ query: { ...route.query, record: undefined, contact: undefined } });
+}
+
+watch(() => [route.query.record, route.query.contact], openFromRoute);
 
 function companyName(companyId: string) {
   return crmStore.companies.value.find((company) => company.id === companyId)?.name ?? "Компания";
@@ -21,62 +56,32 @@ function companyName(companyId: string) {
       <RouterLink class="button-link secondary-link" to="/inbox">Открыть входящие</RouterLink>
     </section>
 
-    <div class="mode-tabs leads-create-tabs" role="tablist" aria-label="Тип новой записи">
-      <button type="button" role="tab" :aria-selected="creationMode === 'lead'" :class="{ active: creationMode === 'lead' }" @click="creationMode = 'lead'">Новый лид</button>
-      <button type="button" role="tab" :aria-selected="creationMode === 'contact'" :class="{ active: creationMode === 'contact' }" @click="creationMode = 'contact'">Новый контакт</button>
+    <div class="mode-tabs leads-create-tabs" aria-label="Создание записей">
+      <button type="button" class="active" @click="openCrud('leads')">＋ Новый лид</button>
+      <button type="button" @click="openCrud('contacts')">＋ Новый контакт</button>
     </div>
 
     <section class="section-grid">
-    <form v-if="creationMode === 'contact'" class="panel wide" @submit.prevent="crmStore.createContact">
-      <h2>Новый контакт</h2>
-      <label>Компания в CRM
-        <select v-model="crmStore.contactForm.value.company_id" required>
-          <option value="">Выбрать</option>
-          <option v-for="company in crmStore.companies.value" :key="company.id" :value="company.id">{{ company.name }}</option>
-        </select>
-      </label>
-      <label>Имя<input v-model="crmStore.contactForm.value.name" required autocomplete="name" /></label>
-      <label>Телефон<input v-model="crmStore.contactForm.value.phone" type="tel" autocomplete="tel" /></label>
-      <label>Email<input v-model="crmStore.contactForm.value.email" type="email" autocomplete="email" /></label>
-      <label>Новая компания, если её нет в списке<input v-model="crmStore.contactForm.value.company_name" placeholder="Название компании" /></label>
-      <button type="submit">Создать контакт</button>
-    </form>
-
-    <form v-else class="panel wide" @submit.prevent="crmStore.createLead">
-      <h2>Новый лид</h2>
-      <label>Компания
-        <select v-model="crmStore.leadForm.value.company_id" required>
-          <option value="">Выбрать</option>
-          <option v-for="company in crmStore.companies.value" :key="company.id" :value="company.id">{{ company.name }}</option>
-        </select>
-      </label>
-      <label>Название<input v-model="crmStore.leadForm.value.title" required /></label>
-      <label>Источник<input v-model="crmStore.leadForm.value.source" /></label>
-      <label>Контакт
-        <select v-model="crmStore.leadForm.value.contact_id">
-          <option value="">Без контакта</option>
-          <option
-            v-for="contact in crmStore.contacts.value.filter((item) => item.company_id === crmStore.leadForm.value.company_id)"
-            :key="contact.id"
-            :value="contact.id"
-          >{{ contact.name }}</option>
-        </select>
-      </label>
-      <button type="submit">Создать лид</button>
-    </form>
-
     <section class="panel wide">
       <h2>Лиды</h2>
-      <div v-for="lead in crmStore.leads.value" :key="lead.id" class="entity-row">
+      <div v-for="lead in crmStore.leads.value" :key="lead.id" class="entity-row" @click="openCrud('leads', lead)">
         <div>
           <strong>{{ lead.title }}</strong>
           <small>{{ companyName(lead.company_id) }} · {{ lead.source ?? "Источник не указан" }} · {{ lead.status }}</small>
         </div>
-        <button class="secondary" type="button" @click="crmStore.createNote('lead', lead.id)">Заметка</button>
+        <div class="button-row" @click.stop><button class="secondary" type="button" @click="openCrud('leads', lead, 'edit')">Редактировать</button><button class="secondary" type="button" @click="openCrud('notes', null, 'create', { company_id: lead.company_id, lead_id: lead.id })">Заметка</button></div>
       </div>
       <p v-if="!crmStore.leads.value.length" class="empty">Лидов пока нет</p>
     </section>
+
+    <section class="panel wide">
+      <div class="panel-head"><div><h2>Контакты</h2><p class="hint">Карточки контактных лиц и полный CRUD.</p></div><button type="button" @click="openCrud('contacts')">＋ Контакт</button></div>
+      <div v-for="contact in crmStore.contacts.value" :key="contact.id" class="entity-row" @click="openCrud('contacts', contact)"><div><strong>{{ contact.name }}</strong><small>{{ contact.company_name || companyName(contact.company_id) }} · {{ contact.email || contact.phone || 'Нет контактов' }}</small></div><button class="secondary" type="button" @click.stop="openCrud('contacts', contact, 'edit')">Редактировать</button></div>
+      <p v-if="!crmStore.contacts.value.length" class="empty">Контактов пока нет</p>
     </section>
+    </section>
+
+    <EntityCrudDrawer v-if="crudType" :entity-type="crudType" :record="crudRecord" :initial-mode="crudMode" :initial-values="crudInitialValues" @close="closeCrud" />
   </section>
 </template>
 

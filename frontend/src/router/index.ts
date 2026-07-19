@@ -8,6 +8,7 @@ import InboxPage from "../pages/InboxPage.vue";
 import LoginPage from "../pages/LoginPage.vue";
 import KnowledgePage from "../pages/KnowledgePage.vue";
 import LeadsPage from "../pages/LeadsPage.vue";
+import LifecyclePage from "../pages/LifecyclePage.vue";
 import AnalyticsPage from "../pages/AnalyticsPage.vue";
 import SettingsPage from "../pages/SettingsPage.vue";
 import TasksPage from "../pages/TasksPage.vue";
@@ -27,6 +28,12 @@ export const router = createRouter({
         { path: "companies", name: "companies", component: CompaniesPage, meta: { title: "Компании", eyebrow: "Клиентская база" } },
         { path: "companies/:id", redirect: (to) => ({ path: "/companies", query: { company: String(to.params.id), ...(typeof to.query.tab === "string" ? { tab: to.query.tab } : {}) } }) },
         { path: "leads", name: "leads", component: LeadsPage, meta: { title: "Лиды", eyebrow: "Входящий спрос" } },
+        {
+          path: "crm/:entity(contacts|leads|deals|tasks|notes)",
+          name: "lifecycle",
+          component: LifecyclePage,
+          meta: { title: "Архив и корзина", eyebrow: "Администрирование CRM" }
+        },
         { path: "deals", name: "deals", component: DealsPage, meta: { title: "Сделки", eyebrow: "Воронка продаж" } },
         { path: "tasks", name: "tasks", component: TasksPage, meta: { title: "Задачи", eyebrow: "Рабочий процесс" } },
         { path: "inbox", name: "inbox", component: InboxPage, meta: { title: "Входящие", eyebrow: "Коммуникации" } },

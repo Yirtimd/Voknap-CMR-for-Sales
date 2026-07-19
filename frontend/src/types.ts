@@ -22,6 +22,69 @@ export type Permission =
   | "data:export"
   | "members:manage";
 
+export type EntityType = "contacts" | "leads" | "deals" | "tasks" | "notes";
+
+export type EntityVersion = {
+  id: string;
+  version: number;
+};
+
+export type Pagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export type FieldChange = {
+  id: string;
+  entity_type: EntityType;
+  entity_id: string;
+  field_name: string;
+  old_value: unknown | null;
+  new_value: unknown | null;
+  changed_by_id: string;
+  entity_version: number;
+  created_at: string;
+};
+
+export type LifecycleResult = EntityVersion & {
+  is_archived: boolean;
+  deleted_at: string | null;
+};
+
+export type BulkAction = "archive" | "unarchive" | "delete" | "restore" | "reassign";
+
+export type BulkActionRequest = {
+  action: BulkAction;
+  items: EntityVersion[];
+  owner_id?: string | null;
+};
+
+export type BulkActionResult = {
+  affected: number;
+  action: BulkAction;
+};
+
+export type MergeRequest = {
+  target_version: number;
+  sources: EntityVersion[];
+};
+
+export type MergeResult = {
+  target_id: string;
+  merged_ids: string[];
+  version: number;
+};
+
+export type LeadConversionRequest = {
+  version: number;
+  stage_id: string;
+  title?: string | null;
+  amount?: number | null;
+  owner_id?: string | null;
+};
+
 export type Me = {
   user_id: string;
   email: string;
@@ -137,6 +200,11 @@ export type Deal = {
   version: number;
   created_at?: string;
   updated_at?: string;
+};
+
+export type LeadConversionResponse = {
+  lead: Lead;
+  deal: Deal;
 };
 
 export type Task = {

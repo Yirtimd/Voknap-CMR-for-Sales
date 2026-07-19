@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import EntityCrudDrawer from "../components/crm/EntityCrudDrawer.vue";
 import { crmStore } from "../stores/crm";
 import type { Task } from "../types";
 
@@ -12,6 +13,7 @@ const route = useRoute();
 const router = useRouter();
 const createDrawer = ref<HTMLDetailsElement | null>(null);
 const selectedTask = ref<Task | null>(null);
+const isTaskCrudOpen = ref(false);
 const statusFilter = ref<StatusFilter>("all");
 const priorityFilter = ref("all");
 const searchQuery = ref("");
@@ -32,6 +34,19 @@ watch(
   () => route.query.create,
   (value) => {
     if (value === "1") requestAnimationFrame(() => { if (createDrawer.value) createDrawer.value.open = true; });
+  },
+  { immediate: true }
+);
+
+watch(
+  [() => route.query.record, () => crmStore.tasks.value],
+  ([recordId]) => {
+    if (typeof recordId !== "string") return;
+    const task = crmStore.tasks.value.find((item) => item.id === recordId);
+    if (task) {
+      selectedTask.value = task;
+      isTaskCrudOpen.value = true;
+    }
   },
   { immediate: true }
 );
@@ -202,6 +217,11 @@ function closeCreateDrawer() {
   if (route.query.create) void router.replace({ query: { ...route.query, create: undefined } });
 }
 
+function closeTaskCrud() {
+  isTaskCrudOpen.value = false;
+  if (route.query.record) void router.replace({ query: { ...route.query, record: undefined } });
+}
+
 function refreshActivities() {
   void crmStore.refreshActivities().catch(() => undefined);
 }
@@ -322,9 +342,12 @@ function refreshActivities() {
       <header><div><small>Задача</small><h2>{{ selectedTask.title }}</h2></div><button type="button" aria-label="Закрыть" @click="selectedTask = null">×</button></header>
       <p>{{ selectedTask.description || "Описание не добавлено." }}</p>
       <dl><div><dt>Компания</dt><dd><button type="button" @click="openCompany(selectedTask)">{{ companyName(selectedTask.company_id) }}</button></dd></div><div><dt>Сделка</dt><dd>{{ dealName(selectedTask.deal_id) }}</dd></div><div><dt>Срок</dt><dd>{{ dueLabel(selectedTask) }}</dd></div><div><dt>Приоритет</dt><dd><span class="tasks-priority" :class="`is-${priorityTone(selectedTask.priority)}`">{{ priorityLabel(selectedTask.priority) }}</span></dd></div></dl>
+      <button class="secondary" type="button" @click="isTaskCrudOpen = true">Редактировать · история · lifecycle</button>
       <button v-if="!isCompleted(selectedTask)" type="button" class="details-primary" @click="completeTask(selectedTask); selectedTask = null">Завершить задачу</button>
     </aside>
     <div v-if="selectedTask" class="tasks-drawer-backdrop" @click="selectedTask = null"></div>
+
+    <EntityCrudDrawer v-if="isTaskCrudOpen && selectedTask" entity-type="tasks" :record="selectedTask" @saved="selectedTask = $event as Task" @close="closeTaskCrud" @removed="selectedTask = null; closeTaskCrud()" />
 
     <div v-if="undoTaskId" class="tasks-toast" role="status"><span>Задача завершена</span><button type="button" @click="undoComplete">Отменить</button></div>
   </section>

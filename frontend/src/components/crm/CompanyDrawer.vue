@@ -2,7 +2,8 @@
 import { computed, ref, watch } from "vue";
 
 import { api, emptyToNull, post } from "../../api";
-import type { Activity, CommunicationEvent, Company, NextAction, Task } from "../../types";
+import EntityCrudDrawer from "./EntityCrudDrawer.vue";
+import type { Activity, CommunicationEvent, Company, Contact, NextAction, Note, Task } from "../../types";
 import { crmStore } from "../../stores/crm";
 import { formatStageName } from "../../utils/stages";
 
@@ -22,6 +23,9 @@ const meetingActionForm = ref({ subject: "Встреча с клиентом", b
 const drawerTaskForm = ref({ title: "Повторный контакт", description: "", due_at: "", priority: "high" });
 const activeTab = ref("overview");
 const isNotesSpaceOpen = ref(false);
+const crudEntityType = ref<"contacts" | "notes" | null>(null);
+const crudRecord = ref<Contact | Note | null>(null);
+const crudInitialMode = ref<"view" | "edit" | "create">("view");
 const notesSearch = ref("");
 const taskSearch = ref("");
 const taskFilter = ref<"all" | "open" | "overdue" | "done">("all");
@@ -327,6 +331,24 @@ function formatFileSize(value: number | null) {
 
 function close() {
   emit("close");
+}
+
+function openContactCrud(contact: Contact | null = null, mode: "view" | "edit" | "create" = contact ? "view" : "create") {
+  crudEntityType.value = "contacts";
+  crudRecord.value = contact;
+  crudInitialMode.value = mode;
+}
+
+function openNoteCrud(note: Note | null = null, mode: "view" | "edit" | "create" = note ? "view" : "create") {
+  crudEntityType.value = "notes";
+  crudRecord.value = note;
+  crudInitialMode.value = mode;
+}
+
+async function closeCrud(refresh = false) {
+  crudEntityType.value = null;
+  crudRecord.value = null;
+  if (refresh) await reloadWorkspace();
 }
 
 async function reloadWorkspace() {
@@ -821,7 +843,7 @@ function saveNextAction() {
               <h2>Контакты</h2>
               <p class="hint">Контактов: {{ contacts.length }}</p>
             </div>
-            <button type="button" class="secondary">＋ Добавить контакт</button>
+            <button type="button" class="secondary" @click="openContactCrud()">＋ Добавить контакт</button>
           </div>
           <section class="contact-tab-grid">
             <article v-for="contact in contacts" :key="contact.id" class="contact-tab-card">
@@ -840,6 +862,7 @@ function saveNextAction() {
                 <button type="button" class="secondary" :disabled="!contact.email" @click="openContactAction('email', contact.id)">Написать</button>
                 <button type="button" class="secondary" :disabled="!contact.phone" @click="openContactAction('call', contact.id)">Позвонить</button>
                 <button type="button" class="secondary" @click="openContactAction('meeting', contact.id)">Встреча</button>
+                <button type="button" @click="openContactCrud(contact, 'edit')">Редактировать</button>
               </footer>
             </article>
           </section>
@@ -1135,6 +1158,7 @@ function saveNextAction() {
             <textarea v-model="crmStore.noteForm.value.text" class="notes-drawer__input" rows="1" placeholder="Добавить заметку..."></textarea>
             <button class="notes-drawer__submit" type="submit" :disabled="crmStore.isLoading.value">Добавить</button>
           </form>
+          <button v-if="currentDeal" class="secondary" type="button" @click="openNoteCrud()">Расширенный редактор заметки</button>
         </section>
 
         <section class="notes-drawer__filters">
@@ -1157,11 +1181,11 @@ function saveNextAction() {
               <div class="notes-drawer__avatar avatar-mini">{{ ownerInitials }}</div>
               <span class="notes-drawer__author">{{ ownerName }}</span>
               <time class="notes-drawer__date">{{ note.created_at ? new Date(note.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Сегодня" }}</time>
-              <button class="notes-drawer__menu" type="button" aria-label="Действия с заметкой">•••</button>
+              <button class="notes-drawer__menu" type="button" aria-label="Действия с заметкой" @click="openNoteCrud(note)">•••</button>
             </header>
             <p class="notes-drawer__note-body">{{ note.text }}</p>
             <footer v-if="index === 0" class="notes-drawer__note-actions">
-              <button class="notes-drawer__note-action" type="button">Редактировать</button>
+              <button class="notes-drawer__note-action" type="button" @click="openNoteCrud(note, 'edit')">Редактировать</button>
               <button class="notes-drawer__note-action" type="button">Открепить</button>
             </footer>
           </article>
@@ -1178,6 +1202,16 @@ function saveNextAction() {
           <button class="notes-drawer__load-more" type="button">Загрузить ещё</button>
         </footer>
       </aside>
+      <EntityCrudDrawer
+        v-if="crudEntityType"
+        :entity-type="crudEntityType"
+        :record="crudRecord"
+        :initial-mode="crudInitialMode"
+        :initial-values="crudEntityType === 'contacts' ? { company_id: company.id } : { company_id: company.id, deal_id: currentDeal?.id ?? '' }"
+        @saved="closeCrud(true)"
+        @removed="closeCrud(true)"
+        @close="closeCrud()"
+      />
     </section>
 
     <section v-else class="company-workspace-modal company-workspace-loading" role="dialog" aria-modal="true">

@@ -15,6 +15,7 @@ const navItems = [
   { to: "/leads", label: "Лиды", icon: "leads" },
   { to: "/deals", label: "Сделки", icon: "deals" },
   { to: "/tasks", label: "Задачи", icon: "tasks" },
+  { to: "/crm/contacts", label: "Архив и корзина", icon: "records" },
   { to: "/inbox", label: "Входящие", icon: "inbox" },
   { to: "/knowledge", label: "База знаний", icon: "knowledge" },
   { to: "/analytics", label: "Аналитика", icon: "analytics" },
@@ -27,6 +28,7 @@ const navIconPaths: Record<string, string> = {
   leads: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
   deals: "M3 7h18v12H3zM3 7l3-4h12l3 4M8 12h8",
   tasks: "M9 11 11 13l4-4M9 17l2 2 4-4M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
+  records: "M4 5.5C4 4.12 7.58 3 12 3s8 1.12 8 2.5S16.42 8 12 8 4 6.88 4 5.5Zm0 0v6C4 12.88 7.58 14 12 14s8-1.12 8-2.5v-6M4 11.5v7C4 19.88 7.58 21 12 21s8-1.12 8-2.5v-7",
   inbox: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm-2 3 10 6L22 7",
   knowledge: "M4 5.5A2.5 2.5 0 0 1 6.5 3H12v17H6.5A2.5 2.5 0 0 0 4 22.5v-17ZM20 5.5A2.5 2.5 0 0 0 17.5 3H12v17h5.5a2.5 2.5 0 0 1 2.5 2.5v-17Z",
   analytics: "M4 20V10M10 20V4M16 20v-7M22 20H2",
@@ -55,11 +57,14 @@ const searchResults = computed(() => {
     .map((item) => ({ id: `deal-${item.id}`, type: "Сделка", title: item.title, meta: crmStore.money(item.amount), to: `/deals?deal=${item.id}` }));
   const leads = crmStore.leads.value
     .filter((item) => [item.title, item.source, item.status].some((value) => String(value ?? "").toLowerCase().includes(needle)))
-    .map((item) => ({ id: `lead-${item.id}`, type: "Лид", title: item.title, meta: item.source ?? item.status, to: "/leads" }));
+    .map((item) => ({ id: `lead-${item.id}`, type: "Лид", title: item.title, meta: item.source ?? item.status, to: `/leads?record=${item.id}` }));
   const tasks = crmStore.tasks.value
     .filter((item) => [item.title, item.description].some((value) => String(value ?? "").toLowerCase().includes(needle)))
-    .map((item) => ({ id: `task-${item.id}`, type: "Задача", title: item.title, meta: item.due_at ? new Date(item.due_at).toLocaleString("ru-RU") : "Без срока", to: "/tasks" }));
-  return [...companies, ...leads, ...deals, ...tasks].slice(0, 10);
+    .map((item) => ({ id: `task-${item.id}`, type: "Задача", title: item.title, meta: item.due_at ? new Date(item.due_at).toLocaleString("ru-RU") : "Без срока", to: `/tasks?record=${item.id}` }));
+  const contacts = crmStore.contacts.value
+    .filter((item) => [item.name, item.email, item.phone, item.company_name].some((value) => String(value ?? "").toLowerCase().includes(needle)))
+    .map((item) => ({ id: `contact-${item.id}`, type: "Контакт", title: item.name, meta: item.company_name ?? item.email ?? "Контакт", to: `/leads?contact=${item.id}` }));
+  return [...companies, ...contacts, ...leads, ...deals, ...tasks].slice(0, 10);
 });
 
 const notifications = computed(() => {
