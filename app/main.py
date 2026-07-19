@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.modules.activity import models as activity_models  # noqa: F401
 from app.modules.ai_agent import models as ai_agent_models  # noqa: F401
+from app.modules.automation import models as automation_models  # noqa: F401
 from app.modules.communication import models as communication_models  # noqa: F401
 from app.modules.connectors import models as connectors_models  # noqa: F401
 from app.modules.knowledge import models as knowledge_models  # noqa: F401
@@ -14,6 +15,7 @@ from app.modules.accounts.router import router as accounts_router
 from app.modules.accounts.team_router import router as team_router
 from app.modules.ai_agent.router import router as ai_agent_router
 from app.modules.analytics.router import router as analytics_router
+from app.modules.automation.router import router as automation_router
 from app.modules.auth.router import router as auth_router
 from app.modules.communication.router import router as communication_router
 from app.modules.connectors.router import router as connectors_router
@@ -58,6 +60,7 @@ app.include_router(sales_lifecycle_router, prefix="/sales", tags=["sales-lifecyc
 app.include_router(knowledge_router, prefix="/knowledge", tags=["knowledge"])
 app.include_router(ai_agent_router, prefix="/ai-agent", tags=["ai-agent"])
 app.include_router(analytics_router, prefix="/analytics", tags=["analytics"])
+app.include_router(automation_router, prefix="/automations", tags=["automations"])
 app.include_router(communication_router, prefix="/communication", tags=["communication"])
 app.include_router(connectors_router, prefix="/connectors", tags=["connectors"])
 app.include_router(templates_router, prefix="/templates", tags=["templates"])

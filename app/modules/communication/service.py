@@ -9,6 +9,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.modules.activity.service import ActivityService
+from app.modules.automation.service import AutomationEngine
 from app.modules.communication.models import CommunicationEvent
 from app.modules.communication.schemas import CommunicationEventCreate, CommunicationEventLink
 from app.modules.sales.models import Company, Contact, Deal
@@ -79,6 +80,26 @@ class CommunicationService:
             created_by=created_by,
         )
         self.db.add(event)
+        self.db.flush()
+        AutomationEngine(self.db).emit(
+            tenant_id=tenant_id,
+            trigger_type="communication.created",
+            entity_type="communication",
+            entity_id=event.id,
+            event_key=f"communication.created:{event.id}",
+            context={
+                "channel": event.channel,
+                "direction": event.direction,
+                "status": event.status,
+                "sender": event.sender,
+                "recipient": event.recipient,
+                "company_id": str(event.company_id) if event.company_id else None,
+                "contact_id": str(event.contact_id) if event.contact_id else None,
+                "deal_id": str(event.deal_id) if event.deal_id else None,
+                "subject": event.subject,
+            },
+            actor_id=created_by,
+        )
         self.db.commit()
         self.db.refresh(event)
         return event

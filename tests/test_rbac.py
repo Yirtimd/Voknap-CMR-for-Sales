@@ -23,6 +23,7 @@ PROTECTED_PREFIXES = (
     "/accounts",
     "/activities",
     "/ai-agent",
+    "/automations",
     "/communication",
     "/connectors",
     "/knowledge",
@@ -65,6 +66,8 @@ def test_permission_matrix_is_fail_closed():
     assert Permission.FEATURE_FLAGS_MANAGE in ROLE_PERMISSIONS[Role.ADMIN]
     assert Permission.FEATURE_FLAGS_MANAGE not in ROLE_PERMISSIONS[Role.SALES_MANAGER]
     assert Permission.CRM_WRITE in ROLE_PERMISSIONS[Role.SALES_REP]
+    assert Permission.AUTOMATIONS_MANAGE in ROLE_PERMISSIONS[Role.SALES_MANAGER]
+    assert Permission.AUTOMATIONS_MANAGE not in ROLE_PERMISSIONS[Role.SALES_REP]
 
 
 @pytest.fixture

@@ -36,6 +36,8 @@ permissions, integrations, terminology, and industry requirements.
 - document upload, OCR, S3-compatible storage, and scoped RAG;
 - AI copilot with grounded context and confirmation before CRM mutations;
 - pipeline analytics, forecasting, deal risk, and manager-level signals;
+- configurable trigger-condition-action automation, approvals, scheduled checks,
+  message templates, and transactional delivery outbox;
 - connector framework with CSV and IMAP email synchronization;
 - industry templates, feature flags, tenant plans, audit data, and export;
 - Vue-based responsive workspace backed by a modular FastAPI API.
@@ -189,6 +191,12 @@ tests, frontend type checking and unit tests, a production build, and
 `cmr_quality_gate_test` database. A CI environment may provide its own disposable
 `TEST_DATABASE_URL` instead.
 
+Run scheduled automation once from cron or a worker scheduler:
+
+```bash
+make automation-run
+```
+
 ## Configuration highlights
 
 ```text
@@ -215,7 +223,7 @@ The complete development template is available in `.env.example`.
 ## Implemented
 
 - modular CRM backend and Vue workspace;
-- PostgreSQL migrations through `0015_team_management`;
+- PostgreSQL migrations through `0016_automation_engine`;
 - native pgvector storage and scoped retrieval;
 - company workspace and activity timeline;
 - analytics and AI-assisted recommendations;
@@ -225,6 +233,8 @@ The complete development template is available in `.env.example`.
 - centralized RBAC with object- and field-level write protection;
 - secure invitations, membership deactivation, teams, manager hierarchies,
   lead queues, assignment rules, and account territories;
+- workflow automation with idempotent runs, approval decisions, scheduled
+  inactive-deal processing, and auditable failures;
 - searchable and paginated CRM CRUD with field-change history;
 - negative tenant-isolation and authorization tests;
 - local and GitHub Actions quality gates.
@@ -237,7 +247,6 @@ The complete development template is available in `.env.example`.
 
 ## Planned product capabilities
 
-- configurable workflow automation and approvals;
 - custom fields and customer-specific process configuration;
 - sales sequences and calendar synchronization;
 - products, price books, quotes, and contract workflows;

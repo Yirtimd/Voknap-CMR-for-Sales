@@ -188,6 +188,7 @@ class Deal(Base):
     stage_id: Mapped[UUID] = mapped_column(ForeignKey("pipeline_stages.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     amount: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    discount_percent: Mapped[float | None] = mapped_column(Numeric(5, 2))
     status: Mapped[str] = mapped_column(String(40), default="open")
     probability: Mapped[int | None] = mapped_column(Integer)
     expected_close_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

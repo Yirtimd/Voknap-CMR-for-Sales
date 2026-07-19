@@ -17,6 +17,7 @@ from app.core.rbac import (
     require_permission,
 )
 from app.modules.activity.service import ActivityService
+from app.modules.automation.service import AutomationEngine
 from app.modules.accounts.models import User
 from app.modules.accounts.assignment import assign_company, assign_lead
 from app.modules.knowledge.models import KnowledgeDocument
@@ -461,6 +462,21 @@ def create_lead(
         metadata={"lead_id": str(lead.id), "source": lead.source},
         commit=False,
     )
+    AutomationEngine(db).emit(
+        tenant_id=tenant.id,
+        trigger_type="lead.created",
+        entity_type="lead",
+        entity_id=lead.id,
+        event_key=f"lead.created:{lead.id}",
+        context={
+            "source": lead.source,
+            "status": lead.status,
+            "owner_id": str(lead.owner_id) if lead.owner_id else None,
+            "company_id": str(lead.company_id),
+            "title": lead.title,
+        },
+        actor_id=tenant.user_id,
+    )
     db.commit()
     db.refresh(lead)
     return lead
@@ -588,6 +604,16 @@ def create_deal(
         description=deal.title,
         metadata={"deal_id": str(deal.id), "amount": float(deal.amount or 0)},
         commit=False,
+    )
+    automation = AutomationEngine(db)
+    automation.emit(
+        tenant_id=tenant.id,
+        trigger_type="deal.created",
+        entity_type="deal",
+        entity_id=deal.id,
+        event_key=f"deal.created:{deal.id}",
+        context=automation.deal_context(deal),
+        actor_id=tenant.user_id,
     )
     db.commit()
     db.refresh(deal)
@@ -781,6 +807,18 @@ def move_deal(
         description=f"{deal.title}: новый этап — {stage_label_ru(new_stage.name)}",
         metadata={"old_stage_id": str(old_stage_id), "new_stage_id": str(payload.stage_id)},
         commit=False,
+    )
+    automation = AutomationEngine(db)
+    context = automation.deal_context(deal)
+    context["old_stage_id"] = str(old_stage_id)
+    automation.emit(
+        tenant_id=tenant.id,
+        trigger_type="deal.stage_changed",
+        entity_type="deal",
+        entity_id=deal.id,
+        event_key=f"deal.stage_changed:{deal.id}:{deal.version + 1}",
+        context=context,
+        actor_id=tenant.user_id,
     )
     commit_versioned(db, deal)
     return deal
@@ -1058,6 +1096,9 @@ def _deal_response(deal: Deal) -> DealResponse:
         company_id=deal.company_id,
         title=deal.title,
         amount=float(deal.amount) if deal.amount is not None else None,
+        discount_percent=(
+            float(deal.discount_percent) if deal.discount_percent is not None else None
+        ),
         status=deal.status,
         lead_id=deal.lead_id,
         stage_id=deal.stage_id,

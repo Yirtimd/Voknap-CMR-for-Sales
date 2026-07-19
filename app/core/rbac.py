@@ -29,6 +29,8 @@ class Permission(StrEnum):
     BILLING_MANAGE = "billing:manage"
     DATA_EXPORT = "data:export"
     MEMBERS_MANAGE = "members:manage"
+    AUTOMATIONS_MANAGE = "automations:manage"
+    APPROVALS_MANAGE = "approvals:manage"
 
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
@@ -48,6 +50,8 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.FEATURE_FLAGS_MANAGE,
             Permission.DATA_EXPORT,
             Permission.MEMBERS_MANAGE,
+            Permission.AUTOMATIONS_MANAGE,
+            Permission.APPROVALS_MANAGE,
         }
     ),
     Role.SALES_MANAGER: frozenset(
@@ -58,6 +62,8 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.ASSIGNMENTS_MANAGE,
             Permission.AI_USE,
             Permission.KNOWLEDGE_WRITE,
+            Permission.AUTOMATIONS_MANAGE,
+            Permission.APPROVALS_MANAGE,
         }
     ),
     Role.SALES_REP: frozenset(

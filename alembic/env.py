@@ -8,6 +8,7 @@ from app.core.database import Base
 from app.modules.accounts import models as accounts_models  # noqa: F401
 from app.modules.activity import models as activity_models  # noqa: F401
 from app.modules.ai_agent import models as ai_agent_models  # noqa: F401
+from app.modules.automation import models as automation_models  # noqa: F401
 from app.modules.communication import models as communication_models  # noqa: F401
 from app.modules.connectors import models as connectors_models  # noqa: F401
 from app.modules.knowledge import models as knowledge_models  # noqa: F401

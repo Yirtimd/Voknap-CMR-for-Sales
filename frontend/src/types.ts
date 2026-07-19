@@ -20,7 +20,9 @@ export type Permission =
   | "feature_flags:manage"
   | "billing:manage"
   | "data:export"
-  | "members:manage";
+  | "members:manage"
+  | "automations:manage"
+  | "approvals:manage";
 
 export type EntityType = "contacts" | "leads" | "deals" | "tasks" | "notes";
 
@@ -262,6 +264,7 @@ export type Deal = {
   company_id: string;
   title: string;
   amount: number | null;
+  discount_percent?: number | null;
   status: string;
   lead_id: string | null;
   stage_id: string;

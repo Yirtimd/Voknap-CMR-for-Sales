@@ -36,6 +36,7 @@ class DealUpdate(VersionedRequest):
     stage_id: UUID | None = None
     title: str | None = Field(default=None, min_length=2, max_length=255)
     amount: float | None = Field(default=None, ge=0)
+    discount_percent: float | None = Field(default=None, ge=0, le=100)
     status: str | None = Field(default=None, max_length=40)
     probability: int | None = Field(default=None, ge=0, le=100)
     expected_close_date: datetime | None = None

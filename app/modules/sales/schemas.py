@@ -212,6 +212,7 @@ class DealCreate(BaseModel):
     stage_id: UUID
     lead_id: UUID | None = None
     amount: float | None = Field(default=None, ge=0)
+    discount_percent: float | None = Field(default=None, ge=0, le=100)
     probability: int | None = Field(default=None, ge=0, le=100)
     expected_close_date: datetime | None = None
     expected_next_event: str | None = Field(default=None, max_length=255)
@@ -232,6 +233,7 @@ class DealResponse(BaseModel):
     company_id: UUID
     title: str
     amount: float | None
+    discount_percent: float | None = None
     status: str
     lead_id: UUID | None
     stage_id: UUID

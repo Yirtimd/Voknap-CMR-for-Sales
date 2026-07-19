@@ -9,6 +9,7 @@ from app.core.dependencies import CurrentTenant
 from app.core.rbac import Permission, deny_access, has_permission, require_permission
 from app.modules.activity.models import Activity
 from app.modules.activity.service import ActivityService
+from app.modules.automation.service import AutomationEngine
 from app.modules.communication.models import CommunicationEvent
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeDocument, KnowledgeQuery
 from app.modules.sales.authorization import require_company_write_access
@@ -517,7 +518,32 @@ def _update_entity(
     require_version(entity, payload.version)
     update_data = payload.model_dump(exclude={"version"}, exclude_unset=True)
     _validate_relations(db, tenant, entity_type, entity, update_data)
-    apply_update(db, tenant, entity_type, entity, update_data)
+    old_stage_id = entity.stage_id if entity_type == "deals" else None
+    changed_fields = apply_update(db, tenant, entity_type, entity, update_data)
+    if entity_type == "deals" and changed_fields:
+        automation = AutomationEngine(db)
+        context = automation.deal_context(entity)
+        context["changed_fields"] = changed_fields
+        automation.emit(
+            tenant_id=tenant.id,
+            trigger_type="deal.updated",
+            entity_type="deal",
+            entity_id=entity.id,
+            event_key=f"deal.updated:{entity.id}:{entity.version + 1}",
+            context=context,
+            actor_id=tenant.user_id,
+        )
+        if "stage_id" in changed_fields:
+            context["old_stage_id"] = str(old_stage_id)
+            automation.emit(
+                tenant_id=tenant.id,
+                trigger_type="deal.stage_changed",
+                entity_type="deal",
+                entity_id=entity.id,
+                event_key=f"deal.stage_changed:{entity.id}:{entity.version + 1}",
+                context=context,
+                actor_id=tenant.user_id,
+            )
     commit_versioned(db, entity)
     return entity
 
