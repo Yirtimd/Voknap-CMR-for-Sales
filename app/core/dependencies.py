@@ -46,7 +46,11 @@ def get_current_tenant(
 ) -> CurrentTenant:
     membership = (
         db.query(Membership)
-        .filter(Membership.tenant_id == x_tenant_id, Membership.user_id == user.id)
+        .filter(
+            Membership.tenant_id == x_tenant_id,
+            Membership.user_id == user.id,
+            Membership.is_active.is_(True),
+        )
         .one_or_none()
     )
     if membership is None:

@@ -11,6 +11,7 @@ from app.modules.sales import models as sales_models  # noqa: F401
 from app.modules.templates import models as templates_models  # noqa: F401
 from app.modules.activity.router import router as activity_router
 from app.modules.accounts.router import router as accounts_router
+from app.modules.accounts.team_router import router as team_router
 from app.modules.ai_agent.router import router as ai_agent_router
 from app.modules.analytics.router import router as analytics_router
 from app.modules.auth.router import router as auth_router
@@ -49,6 +50,7 @@ def root() -> dict[str, str]:
 app.include_router(health_router, tags=["health"])
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(accounts_router, prefix="/accounts", tags=["accounts"])
+app.include_router(team_router, prefix="/accounts", tags=["team-management"])
 app.include_router(me_router, tags=["me"])
 app.include_router(activity_router, prefix="/activities", tags=["activities"])
 app.include_router(sales_router, prefix="/sales", tags=["sales"])

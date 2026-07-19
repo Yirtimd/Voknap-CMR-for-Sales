@@ -18,6 +18,7 @@ from app.core.rbac import (
 )
 from app.modules.activity.service import ActivityService
 from app.modules.accounts.models import User
+from app.modules.accounts.assignment import assign_company, assign_lead
 from app.modules.knowledge.models import KnowledgeDocument
 from app.modules.sales.lifecycle import add_history, commit_versioned, ensure_member, require_version
 from app.modules.sales.models import (
@@ -73,12 +74,20 @@ def create_company(
     payload: CompanyCreate,
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(require_permission(Permission.CRM_WRITE)),
-) -> Company:
+) -> CompanyResponse:
     restricted_fields = {"owner_id", "health_score", "client_since"}
     require_allowed_fields(tenant.role, payload.model_fields_set, restricted_fields)
     company_data = payload.model_dump()
+    if company_data["country_code"] is not None:
+        company_data["country_code"] = company_data["country_code"].upper()
     if tenant.role.value == "sales_rep":
         company_data["owner_id"] = tenant.user_id
+    elif company_data["owner_id"] is not None:
+        ensure_member(db, tenant.id, company_data["owner_id"])
+    else:
+        assignment = assign_company(db, tenant.id, company_data)
+        company_data["owner_id"] = assignment.owner_id
+        company_data["territory_id"] = assignment.territory_id
     company = Company(tenant_id=tenant.id, **company_data)
     db.add(company)
     db.flush()
@@ -94,7 +103,8 @@ def create_company(
     )
     db.commit()
     db.refresh(company)
-    return company
+    owner = db.query(User).filter(User.id == company.owner_id).one_or_none() if company.owner_id else None
+    return _company_response(company, owner, _company_source(company, db, tenant.id))
 
 
 @router.get("/companies", response_model=list[CompanyResponse])
@@ -433,6 +443,10 @@ def create_lead(
         lead_data["owner_id"] = tenant.user_id
     elif lead_data["owner_id"] is not None:
         ensure_member(db, tenant.id, lead_data["owner_id"])
+    else:
+        assignment = assign_lead(db, tenant.id, lead_data, company)
+        lead_data["owner_id"] = assignment.owner_id
+        lead_data["queue_id"] = assignment.queue_id
     lead = Lead(tenant_id=tenant.id, **lead_data)
     db.add(lead)
     db.flush()
@@ -988,6 +1002,8 @@ def _company_response(company: Company, owner: User | None, source: str | None) 
         name=company.name,
         website=company.website,
         industry=company.industry,
+        country_code=company.country_code,
+        region=company.region,
         description=company.description,
         status=company.status,
         status_label=_status_label(company.status),
@@ -996,6 +1012,7 @@ def _company_response(company: Company, owner: User | None, source: str | None) 
         client_since=company.client_since or company.created_at,
         source=source,
         owner=_owner_response(owner),
+        territory_id=company.territory_id,
         next_action_id=company.next_action_id,
         created_at=company.created_at,
     )

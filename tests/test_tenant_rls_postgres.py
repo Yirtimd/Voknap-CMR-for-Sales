@@ -95,3 +95,55 @@ def test_composite_fk_rejects_cross_tenant_reference(postgres_connection):
                 "company_id": company_b,
             },
         )
+
+
+def test_team_management_tables_are_default_deny(postgres_connection):
+    connection, tenant_a, tenant_b, _company_a, _company_b = postgres_connection
+    connection.execute(
+        text(
+            "INSERT INTO sales_teams "
+            "(id, tenant_id, name, is_active, created_at) VALUES "
+            "(:team_a, :tenant_a, 'Team A', true, now()), "
+            "(:team_b, :tenant_b, 'Team B', true, now())"
+        ),
+        {
+            "team_a": uuid4(),
+            "team_b": uuid4(),
+            "tenant_a": tenant_a,
+            "tenant_b": tenant_b,
+        },
+    )
+    connection.exec_driver_sql(f'SET LOCAL ROLE "{settings.database_runtime_role}"')
+    assert connection.execute(text("SELECT count(*) FROM sales_teams")).scalar_one() == 0
+    connection.execute(
+        text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_a)},
+    )
+    assert connection.execute(text("SELECT name FROM sales_teams")).scalar_one() == "Team A"
+
+
+def test_queue_rejects_cross_tenant_team(postgres_connection):
+    connection, tenant_a, tenant_b, _company_a, _company_b = postgres_connection
+    team_b = uuid4()
+    connection.execute(
+        text(
+            "INSERT INTO sales_teams (id, tenant_id, name, is_active, created_at) "
+            "VALUES (:id, :tenant_id, 'Foreign team', true, now())"
+        ),
+        {"id": team_b, "tenant_id": tenant_b},
+    )
+    connection.exec_driver_sql(f'SET LOCAL ROLE "{settings.database_runtime_role}"')
+    connection.execute(
+        text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_a)},
+    )
+    with pytest.raises(IntegrityError):
+        connection.execute(
+            text(
+                "INSERT INTO lead_queues "
+                "(id, tenant_id, name, team_id, strategy, routing_cursor, is_active, created_at) "
+                "VALUES (:id, :tenant_id, 'Cross tenant', :team_id, "
+                "'manual', 0, true, now())"
+            ),
+            {"id": uuid4(), "tenant_id": tenant_a, "team_id": team_b},
+        )

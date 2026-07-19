@@ -37,6 +37,8 @@ class CompanyCreate(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     website: str | None = Field(default=None, max_length=255)
     industry: str | None = Field(default=None, max_length=120)
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    region: str | None = Field(default=None, max_length=120)
     description: str | None = None
     status: str = Field(default="active", max_length=40)
     company_type: str | None = Field(default=None, max_length=40)
@@ -50,6 +52,8 @@ class CompanyUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=255)
     website: str | None = Field(default=None, max_length=255)
     industry: str | None = Field(default=None, max_length=120)
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    region: str | None = Field(default=None, max_length=120)
     description: str | None = None
     status: str | None = Field(default=None, max_length=40)
     company_type: str | None = Field(default=None, max_length=40)
@@ -71,6 +75,8 @@ class CompanyResponse(BaseModel):
     name: str
     website: str | None
     industry: str | None
+    country_code: str | None = None
+    region: str | None = None
     description: str | None
     status: str
     status_label: str | None = None
@@ -79,6 +85,7 @@ class CompanyResponse(BaseModel):
     client_since: datetime | None
     source: str | None = None
     owner: OwnerResponse | None = None
+    territory_id: UUID | None = None
     next_action_id: UUID | None = None
     created_at: datetime
 
@@ -163,6 +170,7 @@ class LeadResponse(BaseModel):
     status: str
     contact_id: UUID | None
     owner_id: UUID | None = None
+    queue_id: UUID | None = None
     qualified_at: datetime | None = None
     converted_at: datetime | None = None
     converted_deal_id: UUID | None = None

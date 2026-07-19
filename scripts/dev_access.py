@@ -119,9 +119,12 @@ def ensure_dev_access(db: Session) -> None:
         .one_or_none()
     )
     if membership is None:
-        db.add(Membership(tenant_id=tenant.id, user_id=user.id, role="owner"))
+        db.add(Membership(tenant_id=tenant.id, user_id=user.id, role="owner", is_active=True))
     else:
         membership.role = "owner"
+        membership.is_active = True
+        membership.deactivated_at = None
+        membership.deactivated_by_id = None
 
     db.commit()
 

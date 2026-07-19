@@ -91,6 +91,15 @@ knowledge writes, AI actions, and CRM mutations. Sales representatives can
 change only their assigned objects and cannot write manager-controlled fields.
 The `/me` response exposes effective permissions for frontend capability checks.
 
+## Team management and routing
+
+Tenant administrators can invite users with expiring one-time tokens, change
+roles, deactivate or reactivate memberships, and safely reassign owned CRM
+records. Sales structure supports teams and cycle-safe manager hierarchies.
+Managers can configure lead queues, round-robin routing, assignment rules, and
+account territories. All routing targets use tenant-aware constraints, and the
+new tenant tables are protected by forced RLS.
+
 ## CRM and AI safety model
 
 - knowledge retrieval is filtered by tenant and explicit global, company, or
@@ -206,7 +215,7 @@ The complete development template is available in `.env.example`.
 ## Implemented
 
 - modular CRM backend and Vue workspace;
-- PostgreSQL migrations through `0014_crm_lifecycle`;
+- PostgreSQL migrations through `0015_team_management`;
 - native pgvector storage and scoped retrieval;
 - company workspace and activity timeline;
 - analytics and AI-assisted recommendations;
@@ -214,13 +223,14 @@ The complete development template is available in `.env.example`.
 - MinIO/S3 file storage and OCR;
 - forced tenant RLS and tenant-aware constraints;
 - centralized RBAC with object- and field-level write protection;
+- secure invitations, membership deactivation, teams, manager hierarchies,
+  lead queues, assignment rules, and account territories;
 - searchable and paginated CRM CRUD with field-change history;
 - negative tenant-isolation and authorization tests;
 - local and GitHub Actions quality gates.
 
 ## Hardening in progress
 
-- complete CRUD, pagination, filtering, and server-side search;
 - background processing for integrations and document ingestion;
 - structured audit events, monitoring, tracing, and alerting;
 - AI/RAG evaluation and production guardrails.
@@ -228,7 +238,6 @@ The complete development template is available in `.env.example`.
 ## Planned product capabilities
 
 - configurable workflow automation and approvals;
-- team management, assignment rules, and territories;
 - custom fields and customer-specific process configuration;
 - sales sequences and calendar synchronization;
 - products, price books, quotes, and contract workflows;

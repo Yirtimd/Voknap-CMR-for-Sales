@@ -53,6 +53,7 @@ class Company(Base):
     __table_args__ = tenant_table_args(
         "companies",
         deferred_relations=(("next_action_id", "next_actions"),),
+        relations=(("territory_id", "territories"),),
         membership_columns=("owner_id",),
     )
 
@@ -61,12 +62,15 @@ class Company(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     website: Mapped[str | None] = mapped_column(String(255))
     industry: Mapped[str | None] = mapped_column(String(120))
+    country_code: Mapped[str | None] = mapped_column(String(2))
+    region: Mapped[str | None] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(40), default="active")
     company_type: Mapped[str | None] = mapped_column(String(40))
     health_score: Mapped[int | None] = mapped_column(Integer)
     client_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     owner_id: Mapped[UUID | None] = mapped_column()
+    territory_id: Mapped[UUID | None] = mapped_column(index=True)
     next_action_id: Mapped[UUID | None] = mapped_column(
         ForeignKey(
             "next_actions.id",
@@ -118,7 +122,11 @@ class Lead(Base):
     __tablename__ = "leads"
     __table_args__ = tenant_table_args(
         "leads",
-        relations=(("company_id", "companies"), ("contact_id", "contacts")),
+        relations=(
+            ("company_id", "companies"),
+            ("contact_id", "contacts"),
+            ("queue_id", "lead_queues"),
+        ),
         deferred_relations=(("converted_deal_id", "deals"),),
         membership_columns=("owner_id", "qualified_by_id", "converted_by_id", "deleted_by_id"),
     )
@@ -131,6 +139,7 @@ class Lead(Base):
     source: Mapped[str | None] = mapped_column(String(80))
     status: Mapped[str] = mapped_column(String(80), default="new")
     owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
+    queue_id: Mapped[UUID | None] = mapped_column(index=True)
     qualified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     qualified_by_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
     converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
