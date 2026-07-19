@@ -6,18 +6,21 @@ import DealsPage from "../pages/DealsPage.vue";
 import HomePage from "../pages/HomePage.vue";
 import InboxPage from "../pages/InboxPage.vue";
 import LoginPage from "../pages/LoginPage.vue";
+import InvitationAcceptPage from "../pages/InvitationAcceptPage.vue";
 import KnowledgePage from "../pages/KnowledgePage.vue";
 import LeadsPage from "../pages/LeadsPage.vue";
 import LifecyclePage from "../pages/LifecyclePage.vue";
 import AnalyticsPage from "../pages/AnalyticsPage.vue";
 import SettingsPage from "../pages/SettingsPage.vue";
 import TasksPage from "../pages/TasksPage.vue";
+import TeamManagementPage from "../pages/TeamManagementPage.vue";
 import { crmStore } from "../stores/crm";
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/login", name: "login", component: LoginPage },
+    { path: "/accept-invitation", name: "accept-invitation", component: InvitationAcceptPage },
     {
       path: "/",
       component: AppLayout,
@@ -36,6 +39,7 @@ export const router = createRouter({
         },
         { path: "deals", name: "deals", component: DealsPage, meta: { title: "Сделки", eyebrow: "Воронка продаж" } },
         { path: "tasks", name: "tasks", component: TasksPage, meta: { title: "Задачи", eyebrow: "Рабочий процесс" } },
+        { path: "team", name: "team", component: TeamManagementPage, meta: { title: "Управление командой", eyebrow: "Люди и назначения" } },
         { path: "inbox", name: "inbox", component: InboxPage, meta: { title: "Входящие", eyebrow: "Коммуникации" } },
         { path: "knowledge", name: "knowledge", component: KnowledgePage, meta: { title: "База знаний", eyebrow: "Знания компании" } },
         { path: "analytics", name: "analytics", component: AnalyticsPage, meta: { title: "Аналитика", eyebrow: "Результаты продаж" } },

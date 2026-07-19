@@ -94,6 +94,85 @@ export type Me = {
   permissions: Permission[];
 };
 
+export type Membership = {
+  id: string;
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: MembershipRole;
+  is_active: boolean;
+  team_id: string | null;
+  manager_membership_id: string | null;
+  deactivated_at: string | null;
+  created_at: string;
+};
+
+export type TeamInvitation = {
+  id: string;
+  email: string;
+  role: MembershipRole;
+  team_id: string | null;
+  manager_membership_id: string | null;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  token: string | null;
+};
+
+export type SalesTeam = {
+  id: string;
+  name: string;
+  manager_membership_id: string | null;
+  is_active: boolean;
+  member_count: number;
+  created_at: string;
+};
+
+export type LeadQueue = {
+  id: string;
+  name: string;
+  team_id: string | null;
+  strategy: "manual" | "round_robin";
+  membership_ids: string[];
+  is_active: boolean;
+  created_at: string;
+};
+
+export type Territory = {
+  id: string;
+  name: string;
+  country_code: string | null;
+  region: string | null;
+  industry: string | null;
+  owner_membership_id: string | null;
+  team_id: string | null;
+  priority: number;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type AssignmentTargetType = "member" | "team" | "queue" | "territory";
+
+export type AssignmentRule = {
+  id: string;
+  name: string;
+  entity_type: "lead" | "company";
+  criteria: Record<string, string>;
+  target_type: AssignmentTargetType;
+  target_id: string;
+  priority: number;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type InvitationAcceptResponse = {
+  access_token: string;
+  token_type: string;
+  user_id: string;
+  tenant_id: string;
+};
+
 export type AuthResponse = {
   access_token: string;
   token_type: string;
