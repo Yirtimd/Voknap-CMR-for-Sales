@@ -169,7 +169,8 @@ python scripts/dev_access.py
 ```
 
 The script creates or refreshes the local `owner@example.com` test account and
-the `developer-test` tenant. These credentials are for local development only.
+the `developer-test` tenant. Set `DEV_USER_PASSWORD` in the local `.env` first.
+These credentials are for local development only.
 
 ### Demo dataset
 

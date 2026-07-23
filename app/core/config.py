@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_runtime_role: str = "cmr_app"
     secret_key: str = "change-me-in-production"
     access_token_expire_minutes: int = 1440
+    dev_user_password: str | None = None
     openai_api_key: str | None = None
     llm_api_key: str | None = None
     llm_base_url: str | None = None

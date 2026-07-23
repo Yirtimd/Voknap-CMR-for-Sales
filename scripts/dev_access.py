@@ -11,6 +11,7 @@ from sqlalchemy import Boolean, DateTime, Integer, String, inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.database import Base, SessionLocal, engine
+from app.core.config import settings
 from app.core.security import hash_password
 from app.modules.accounts.models import Membership, Tenant, User
 from app.modules.sales import models as sales_models
@@ -20,7 +21,6 @@ DEV_TENANT_NAME = "Developer Test Company"
 DEV_TENANT_SLUG = "developer-test"
 DEV_USER_EMAIL = "owner@example.com"
 DEV_USER_NAME = "Developer Owner"
-DEV_USER_PASSWORD = "password123"
 
 
 def run_migrations() -> None:
@@ -86,6 +86,11 @@ def repair_development_schema() -> None:
 
 
 def ensure_dev_access(db: Session) -> None:
+    if not settings.dev_user_password or len(settings.dev_user_password.encode("utf-8")) < 8:
+        raise RuntimeError("DEV_USER_PASSWORD must contain at least 8 bytes")
+    if len(settings.dev_user_password.encode("utf-8")) > 72:
+        raise RuntimeError("DEV_USER_PASSWORD must contain at most 72 bytes")
+
     tenant = db.query(Tenant).filter(Tenant.slug == DEV_TENANT_SLUG).one_or_none()
     if tenant is None:
         tenant = Tenant(name=DEV_TENANT_NAME, slug=DEV_TENANT_SLUG, is_active=True)
@@ -96,7 +101,7 @@ def ensure_dev_access(db: Session) -> None:
         tenant.is_active = True
 
     user = db.query(User).filter(User.email == DEV_USER_EMAIL).one_or_none()
-    password_hash = hash_password(DEV_USER_PASSWORD)
+    password_hash = hash_password(settings.dev_user_password)
     if user is None:
         user = User(
             email=DEV_USER_EMAIL,
@@ -141,7 +146,7 @@ def main() -> None:
     print("Developer access ready")
     print(f"Tenant slug: {DEV_TENANT_SLUG}")
     print(f"Login: {DEV_USER_EMAIL}")
-    print(f"Password: {DEV_USER_PASSWORD}")
+    print("Password: configured via DEV_USER_PASSWORD")
 
 
 if __name__ == "__main__":

@@ -215,7 +215,7 @@ def main() -> None:
     print("Developer workspace seeded")
     print("Companies: 10")
     print(f"Login: {DEV_USER_EMAIL}")
-    print("Password: password123")
+    print("Password: configured via DEV_USER_PASSWORD")
 
 
 if __name__ == "__main__":
