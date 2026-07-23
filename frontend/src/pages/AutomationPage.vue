@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 
+import UiIcon from "../components/ui/UiIcon.vue";
+import { statusLabel } from "../design-system/statusDictionary";
 import { automationStore } from "../stores/automation";
 import { crmStore } from "../stores/crm";
 import type {
@@ -13,7 +15,18 @@ import type {
 
 type Tab = "workflows" | "templates" | "runs" | "approvals" | "outbox";
 type ConditionDraft = { field: string; operator: AutomationConditionOperator; value: string };
-type ActionDraft = { type: AutomationActionType; config: string };
+type ActionConfigDraft = {
+  assignee: "owner" | "owner_manager" | "actor";
+  user_id: string;
+  title: string;
+  description: string;
+  due_in_days: number;
+  priority: "low" | "normal" | "high";
+  template_id: string;
+  recipient: string;
+  reason: string;
+};
+type ActionDraft = { type: AutomationActionType; config: ActionConfigDraft };
 
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: "workflows", label: "Сценарии" },
@@ -31,12 +44,12 @@ const triggers: Array<{ value: AutomationTriggerType; label: string }> = [
   { value: "schedule.deal_inactive", label: "Сделка без активности" }
 ];
 const operators: AutomationConditionOperator[] = ["eq", "neq", "gt", "gte", "lt", "lte", "in", "contains", "is_empty"];
-const actionTypes: Array<{ value: AutomationActionType; label: string; example: string }> = [
-  { value: "assign_owner", label: "Назначить владельца", example: '{"assignee":"owner_manager"}' },
-  { value: "create_task", label: "Создать задачу", example: '{"title":"Связаться по {{title}}","assignee":"owner","due_in_days":1}' },
-  { value: "send_template", label: "Отправить шаблон", example: '{"template_id":"UUID"}' },
-  { value: "request_approval", label: "Запросить согласование", example: '{"title":"Согласовать скидку","assignee":"owner_manager"}' },
-  { value: "update_next_action", label: "Обновить next action", example: '{"title":"Позвонить клиенту","assignee":"owner","due_in_days":1}' }
+const actionTypes: Array<{ value: AutomationActionType; label: string; description: string }> = [
+  { value: "assign_owner", label: "Назначить владельца", description: "Передать запись ответственному." },
+  { value: "create_task", label: "Создать задачу", description: "Поставить задачу со сроком и приоритетом." },
+  { value: "send_template", label: "Отправить шаблон", description: "Подготовить сообщение по активному шаблону." },
+  { value: "request_approval", label: "Запросить согласование", description: "Остановить сценарий до решения." },
+  { value: "update_next_action", label: "Обновить следующий шаг", description: "Создать новый next action." }
 ];
 
 const activeTab = ref<Tab>("workflows");
@@ -79,7 +92,20 @@ onMounted(async () => {
 });
 
 function newAction(type: AutomationActionType): ActionDraft {
-  return { type, config: actionTypes.find((item) => item.value === type)?.example ?? "{}" };
+  return {
+    type,
+    config: {
+      assignee: type === "request_approval" ? "owner_manager" : "owner",
+      user_id: "",
+      title: type === "request_approval" ? "Согласовать {{title}}" : type === "create_task" ? "Связаться по {{title}}" : "Позвонить клиенту",
+      description: "",
+      due_in_days: 1,
+      priority: "normal",
+      template_id: "",
+      recipient: "",
+      reason: ""
+    }
+  };
 }
 
 function addCondition() {
@@ -91,7 +117,7 @@ function addAction() {
 }
 
 function changeActionType(action: ActionDraft) {
-  action.config = actionTypes.find((item) => item.value === action.type)?.example ?? "{}";
+  action.config = newAction(action.type).config;
 }
 
 function parseConditionValue(condition: ConditionDraft) {
@@ -119,9 +145,23 @@ function workflowPayload() {
       value: parseConditionValue(item)
     })),
     actions: workflowForm.actions.map((item) => {
-      const config = JSON.parse(item.config) as unknown;
-      if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("Настройки действия должны быть JSON-объектом.");
-      return { type: item.type, config: config as Record<string, unknown> };
+      const config: Record<string, unknown> = {};
+      if (item.type !== "send_template") {
+        config.assignee = item.config.assignee;
+        if (item.config.user_id.trim()) config.user_id = item.config.user_id.trim();
+      }
+      if (["create_task", "request_approval", "update_next_action"].includes(item.type)) config.title = item.config.title.trim();
+      if (["create_task", "update_next_action"].includes(item.type)) {
+        if (item.config.description.trim()) config.description = item.config.description.trim();
+        config.due_in_days = Number(item.config.due_in_days);
+        config.priority = item.config.priority;
+      }
+      if (item.type === "request_approval" && item.config.reason.trim()) config.reason = item.config.reason.trim();
+      if (item.type === "send_template") {
+        config.template_id = item.config.template_id;
+        if (item.config.recipient.trim()) config.recipient = item.config.recipient.trim();
+      }
+      return { type: item.type, config };
     })
   };
 }
@@ -151,7 +191,19 @@ function editWorkflow(workflow: AutomationWorkflow) {
     operator: item.operator,
     value: item.value === undefined ? "" : typeof item.value === "string" ? item.value : JSON.stringify(item.value)
   }));
-  workflowForm.actions = workflow.actions.map((item) => ({ type: item.type, config: JSON.stringify(item.config, null, 2) }));
+  workflowForm.actions = workflow.actions.map((item) => {
+    const draft = newAction(item.type);
+    draft.config.assignee = (item.config.assignee as ActionConfigDraft["assignee"]) ?? draft.config.assignee;
+    draft.config.user_id = String(item.config.user_id ?? "");
+    draft.config.title = String(item.config.title ?? "");
+    draft.config.description = String(item.config.description ?? "");
+    draft.config.due_in_days = Number(item.config.due_in_days ?? 1);
+    draft.config.priority = (item.config.priority as ActionConfigDraft["priority"]) ?? "normal";
+    draft.config.template_id = String(item.config.template_id ?? "");
+    draft.config.recipient = String(item.config.recipient ?? "");
+    draft.config.reason = String(item.config.reason ?? "");
+    return draft;
+  });
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -241,20 +293,6 @@ function dateTime(value: string | null) {
   return value ? new Date(value).toLocaleString("ru-RU") : "—";
 }
 
-function statusLabel(status: string) {
-  const labels: Record<string, string> = {
-    pending: "Ожидает",
-    running: "Выполняется",
-    succeeded: "Успешно",
-    failed: "Ошибка",
-    approved: "Согласовано",
-    rejected: "Отклонено",
-    sent: "Отправлено",
-    sending: "Отправляется",
-    cancelled: "Отменено"
-  };
-  return labels[status] ?? status;
-}
 </script>
 
 <template>
@@ -285,8 +323,27 @@ function statusLabel(status: string) {
             <label>Название<input v-model="workflowForm.name" required minlength="2" /></label>
             <label>Описание<textarea v-model="workflowForm.description" rows="2"></textarea></label>
             <div class="form-pair"><label>Триггер<select v-model="workflowForm.trigger_type"><option v-for="item in triggers" :key="item.value" :value="item.value">{{ item.label }}</option></select></label><label>Приоритет<input v-model.number="workflowForm.priority" type="number" min="0" max="10000" /></label></div>
-            <fieldset><legend>Conditions <button class="secondary mini" type="button" @click="addCondition">+ Условие</button></legend><label>Логика<select v-model="workflowForm.condition_logic"><option value="all">Все условия</option><option value="any">Любое условие</option></select></label><div v-for="(condition, index) in workflowForm.conditions" :key="index" class="builder-row condition-row"><input v-model="condition.field" required placeholder="discount_percent" pattern="[a-z][a-z0-9_.]*" /><select v-model="condition.operator"><option v-for="operator in operators" :key="operator" :value="operator">{{ operator }}</option></select><input v-model="condition.value" :disabled="condition.operator === 'is_empty'" placeholder="Значение" /><button class="remove-button" type="button" @click="workflowForm.conditions.splice(index, 1)">×</button></div><p v-if="!workflowForm.conditions.length" class="empty">Без условий — сценарий сработает для каждого события.</p></fieldset>
-            <fieldset><legend>Actions <button class="secondary mini" type="button" @click="addAction">+ Действие</button></legend><div v-for="(action, index) in workflowForm.actions" :key="index" class="action-builder"><div class="builder-row"><select v-model="action.type" @change="changeActionType(action)"><option v-for="item in actionTypes" :key="item.value" :value="item.value">{{ item.label }}</option></select><button class="remove-button" type="button" :disabled="workflowForm.actions.length === 1" @click="workflowForm.actions.splice(index, 1)">×</button></div><textarea v-model="action.config" rows="4" required spellcheck="false"></textarea></div></fieldset>
+            <fieldset><legend>Conditions <button class="secondary mini" type="button" @click="addCondition"><UiIcon name="plus" :size="14" /> Условие</button></legend><label>Логика<select v-model="workflowForm.condition_logic"><option value="all">Все условия</option><option value="any">Любое условие</option></select></label><div v-for="(condition, index) in workflowForm.conditions" :key="index" class="builder-row condition-row"><input v-model="condition.field" required placeholder="discount_percent" pattern="[a-z][a-z0-9_.]*" /><select v-model="condition.operator"><option v-for="operator in operators" :key="operator" :value="operator">{{ operator }}</option></select><input v-model="condition.value" :disabled="condition.operator === 'is_empty'" placeholder="Значение" /><button class="remove-button" type="button" aria-label="Удалить условие" @click="workflowForm.conditions.splice(index, 1)"><UiIcon name="close" :size="15" /></button></div><p v-if="!workflowForm.conditions.length" class="empty">Без условий — сценарий сработает для каждого события.</p></fieldset>
+            <fieldset>
+              <legend>Действия <button class="secondary mini" type="button" @click="addAction"><UiIcon name="plus" :size="14" /> Действие</button></legend>
+              <div v-for="(action, index) in workflowForm.actions" :key="index" class="action-builder">
+                <header><div><b>Шаг {{ index + 1 }}</b><small>{{ actionTypes.find((item) => item.value === action.type)?.description }}</small></div><button class="remove-button" type="button" :disabled="workflowForm.actions.length === 1" aria-label="Удалить действие" @click="workflowForm.actions.splice(index, 1)"><UiIcon name="close" :size="15" /></button></header>
+                <label>Тип действия<select v-model="action.type" @change="changeActionType(action)"><option v-for="item in actionTypes" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
+                <template v-if="action.type === 'send_template'">
+                  <label>Шаблон<select v-model="action.config.template_id" required><option value="" disabled>Выберите шаблон</option><option v-for="template in automationStore.templates.value.filter((item) => item.is_active)" :key="template.id" :value="template.id">{{ template.name }} · {{ template.channel }}</option></select></label>
+                  <label>Получатель<input v-model="action.config.recipient" placeholder="Автоматически из контакта" /><small>Можно указать email или переменную sender.</small></label>
+                </template>
+                <template v-else>
+                  <div class="form-pair"><label>Ответственный<select v-model="action.config.assignee"><option value="owner">Владелец записи</option><option value="owner_manager">Руководитель владельца</option><option value="actor">Автор события</option></select></label><label>User ID<input v-model="action.config.user_id" placeholder="Необязательно" /></label></div>
+                  <label v-if="action.type !== 'assign_owner'">Название<input v-model="action.config.title" required placeholder="Связаться по {{title}}" /></label>
+                  <label v-if="action.type === 'request_approval'">Причина<textarea v-model="action.config.reason" rows="2" placeholder="Что нужно согласовать"></textarea></label>
+                  <template v-if="action.type === 'create_task' || action.type === 'update_next_action'">
+                    <label>Описание<textarea v-model="action.config.description" rows="2" placeholder="Необязательно"></textarea></label>
+                    <div class="action-fields"><label>Срок, дней<input v-model.number="action.config.due_in_days" type="number" min="0" max="365" required /></label><label>Приоритет<select v-model="action.config.priority"><option value="low">Низкий</option><option value="normal">Обычный</option><option value="high">Высокий</option></select></label></div>
+                  </template>
+                </template>
+              </div>
+            </fieldset>
             <label class="check-row"><input v-model="workflowForm.is_active" type="checkbox" />Активировать сразу</label>
             <button type="submit" :disabled="automationStore.loading.value">{{ editingWorkflowId ? "Сохранить изменения" : "Создать сценарий" }}</button>
           </form>
@@ -304,22 +361,23 @@ function statusLabel(status: string) {
 
       <section v-else-if="activeTab === 'runs'" class="panel automation-list">
         <p v-if="!automationStore.canManageAutomations.value" class="automation-denied">Нет права <code>automations:manage</code>.</p>
-        <template v-else><header class="list-head"><div><h2>Журнал запусков</h2><p>Idempotency контролируется backend через event key.</p></div><select v-model="runFilter" @change="automationStore.refreshRuns(runFilter)"><option value="">Все статусы</option><option value="succeeded">Успешно</option><option value="failed">Ошибки</option><option value="running">Выполняется</option></select></header><article v-for="run in automationStore.runs.value" :key="run.id" class="automation-card run-card"><div><strong>{{ workflowName(run.workflow_id) }}</strong><small>{{ run.trigger_type }} · {{ run.entity_type }} · {{ run.entity_id }}</small><small>{{ dateTime(run.started_at) }} · event: {{ run.event_key }}</small><p v-if="run.error" class="run-error">{{ run.error }}</p><details v-if="run.result.length"><summary>Результат действий</summary><pre>{{ JSON.stringify(run.result, null, 2) }}</pre></details></div><span class="status-pill" :class="`status-${run.status}`">{{ statusLabel(run.status) }}</span></article><p v-if="!automationStore.runs.value.length" class="empty">Запусков нет.</p></template>
+        <template v-else><header class="list-head"><div><h2>Журнал запусков</h2><p>Idempotency контролируется backend через event key.</p></div><select v-model="runFilter" @change="automationStore.refreshRuns(runFilter)"><option value="">Все статусы</option><option value="succeeded">Успешно</option><option value="failed">Ошибки</option><option value="running">Выполняется</option></select></header><article v-for="run in automationStore.runs.value" :key="run.id" class="automation-card run-card"><div><strong>{{ workflowName(run.workflow_id) }}</strong><small>{{ run.trigger_type }} · {{ run.entity_type }} · {{ run.entity_id }}</small><small>{{ dateTime(run.started_at) }} · event: {{ run.event_key }}</small><p v-if="run.error" class="run-error">{{ run.error }}</p><details v-if="run.result.length"><summary>Результат действий</summary><pre>{{ JSON.stringify(run.result, null, 2) }}</pre></details></div><span class="status-pill" :class="`status-${run.status}`">{{ statusLabel(run.status, "automation") }}</span></article><p v-if="!automationStore.runs.value.length" class="empty">Запусков нет.</p></template>
       </section>
 
       <section v-else-if="activeTab === 'approvals'" class="panel automation-list">
         <p v-if="!automationStore.canManageApprovals.value" class="automation-denied">Нет права <code>approvals:manage</code>.</p>
-        <template v-else><header class="list-head"><div><h2>Согласования</h2><p>Решения продолжают workflow только после approve.</p></div><select v-model="approvalFilter" @change="automationStore.refreshApprovals(approvalFilter)"><option value="">Все статусы</option><option value="pending">Ожидают</option><option value="approved">Согласованы</option><option value="rejected">Отклонены</option></select></header><article v-for="item in automationStore.approvals.value" :key="item.id" class="automation-card approval-card"><div><strong>{{ item.title }}</strong><small>{{ item.entity_type }} · {{ item.entity_id }} · {{ dateTime(item.created_at) }}</small><p v-if="item.reason">{{ item.reason }}</p><p v-if="item.decision_comment">Комментарий: {{ item.decision_comment }}</p><textarea v-if="item.status === 'pending'" v-model="approvalComments[item.id]" rows="2" placeholder="Комментарий к решению"></textarea></div><span class="status-pill" :class="`status-${item.status}`">{{ statusLabel(item.status) }}</span><div v-if="item.status === 'pending'" class="card-actions"><button type="button" @click="decide(item.id, 'approved')">Approve</button><button class="danger-quiet" type="button" @click="decide(item.id, 'rejected')">Reject</button></div></article><p v-if="!automationStore.approvals.value.length" class="empty">Согласований нет.</p></template>
+        <template v-else><header class="list-head"><div><h2>Согласования</h2><p>Решения продолжают workflow только после approve.</p></div><select v-model="approvalFilter" @change="automationStore.refreshApprovals(approvalFilter)"><option value="">Все статусы</option><option value="pending">Ожидают</option><option value="approved">Согласованы</option><option value="rejected">Отклонены</option></select></header><article v-for="item in automationStore.approvals.value" :key="item.id" class="automation-card approval-card"><div><strong>{{ item.title }}</strong><small>{{ item.entity_type }} · {{ item.entity_id }} · {{ dateTime(item.created_at) }}</small><p v-if="item.reason">{{ item.reason }}</p><p v-if="item.decision_comment">Комментарий: {{ item.decision_comment }}</p><textarea v-if="item.status === 'pending'" v-model="approvalComments[item.id]" rows="2" placeholder="Комментарий к решению"></textarea></div><span class="status-pill" :class="`status-${item.status}`">{{ statusLabel(item.status, "approval") }}</span><div v-if="item.status === 'pending'" class="card-actions"><button type="button" @click="decide(item.id, 'approved')">Approve</button><button class="danger-quiet" type="button" @click="decide(item.id, 'rejected')">Reject</button></div></article><p v-if="!automationStore.approvals.value.length" class="empty">Согласований нет.</p></template>
       </section>
 
       <section v-else class="panel automation-list">
         <p v-if="!automationStore.canManageAutomations.value" class="automation-denied">Нет права <code>automations:manage</code>.</p>
-        <template v-else><header class="list-head"><div><h2>Transactional Outbox</h2><p>Подготовленные сообщения и ошибки доставки.</p></div><select v-model="outboxFilter" @change="automationStore.refreshOutbox(outboxFilter)"><option value="">Все статусы</option><option value="pending">Ожидают</option><option value="failed">Ошибки</option><option value="sent">Отправлены</option><option value="cancelled">Отменены</option></select></header><article v-for="item in automationStore.outbox.value" :key="item.id" class="automation-card outbox-card"><div><strong>{{ item.subject }}</strong><small>{{ item.channel }} → {{ item.recipient }} · попыток {{ item.attempts }}</small><p>{{ item.body }}</p><p v-if="item.last_error" class="run-error">{{ item.last_error }}</p><input v-if="['pending','sending','failed'].includes(item.status)" v-model="outboxErrors[item.id]" placeholder="Ошибка для статуса failed" /></div><span class="status-pill" :class="`status-${item.status}`">{{ statusLabel(item.status) }}</span><div v-if="['pending','sending','failed'].includes(item.status)" class="card-actions"><button type="button" @click="markOutbox(item.id, 'sent')">Sent</button><button class="secondary" type="button" @click="markOutbox(item.id, 'failed')">Failed</button><button class="danger-quiet" type="button" @click="markOutbox(item.id, 'cancelled')">Cancel</button></div></article><p v-if="!automationStore.outbox.value.length" class="empty">Outbox пуст.</p></template>
+        <template v-else><header class="list-head"><div><h2>Transactional Outbox</h2><p>Подготовленные сообщения и ошибки доставки.</p></div><select v-model="outboxFilter" @change="automationStore.refreshOutbox(outboxFilter)"><option value="">Все статусы</option><option value="pending">Ожидают</option><option value="failed">Ошибки</option><option value="sent">Отправлены</option><option value="cancelled">Отменены</option></select></header><article v-for="item in automationStore.outbox.value" :key="item.id" class="automation-card outbox-card"><div><strong>{{ item.subject }}</strong><small>{{ item.channel }} → {{ item.recipient }} · попыток {{ item.attempts }}</small><p>{{ item.body }}</p><p v-if="item.last_error" class="run-error">{{ item.last_error }}</p><input v-if="['pending','sending','failed'].includes(item.status)" v-model="outboxErrors[item.id]" placeholder="Ошибка для статуса failed" /></div><span class="status-pill" :class="`status-${item.status}`">{{ statusLabel(item.status, "outbox") }}</span><div v-if="['pending','sending','failed'].includes(item.status)" class="card-actions"><button type="button" @click="markOutbox(item.id, 'sent')">Sent</button><button class="secondary" type="button" @click="markOutbox(item.id, 'failed')">Failed</button><button class="danger-quiet" type="button" @click="markOutbox(item.id, 'cancelled')">Cancel</button></div></article><p v-if="!automationStore.outbox.value.length" class="empty">Outbox пуст.</p></template>
       </section>
     </template>
   </section>
 </template>
 
 <style scoped>
-.automation-page{padding-bottom:38px}.automation-hero,.automation-form>header,.list-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.automation-hero h2,.automation-form h2,.automation-list h2{margin:3px 0 6px}.automation-hero p:last-child,.list-head p{margin:0;color:var(--muted)}.hero-actions,.card-actions{display:flex;flex-wrap:wrap;gap:8px}.automation-tabs{display:flex;gap:4px;overflow-x:auto;border:1px solid var(--line);border-radius:10px;padding:4px;background:var(--surface)}.automation-tabs button{min-height:36px;color:var(--muted);background:transparent;white-space:nowrap}.automation-tabs button.active{color:var(--text);background:#fff;box-shadow:0 1px 5px rgb(0 0 0/10%)}.automation-denied{border:1px solid #efc2c2;border-radius:10px;padding:17px;color:#8f2525;background:#fff6f6}.alert.info{color:#24547b;border-color:#bddcf4;background:#eff8ff}.automation-grid{display:grid;grid-template-columns:minmax(330px,430px) minmax(0,1fr);gap:16px;align-items:start}.automation-form{display:grid;gap:13px}.automation-form label{margin:0}.automation-form fieldset{display:grid;gap:9px;border:1px solid var(--line);border-radius:9px;padding:12px}.automation-form legend{padding:0 5px;font-weight:700}.mini{min-height:28px;padding:4px 8px}.form-pair{display:grid;grid-template-columns:1fr 120px;gap:9px}.builder-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,.6fr) auto;gap:7px}.condition-row{grid-template-columns:minmax(110px,1fr) 100px minmax(100px,1fr) auto}.action-builder{display:grid;gap:6px;border-top:1px solid var(--line-soft);padding-top:9px}.remove-button{width:34px;padding:0;color:#9b2929;background:#fff4f4}.check-row{display:flex;align-items:center;gap:8px}.automation-list{display:grid;gap:10px}.automation-card{display:grid;grid-template-columns:minmax(180px,1fr) auto auto;gap:12px;align-items:start;border:1px solid var(--line);border-radius:10px;padding:14px}.automation-card>div:first-child{display:grid;gap:5px}.automation-card small{color:var(--muted)}.automation-card p{margin:2px 0;white-space:pre-wrap}.status-pill{display:inline-flex;border-radius:99px;padding:5px 8px;color:#17663a;background:#e9f8ef;font-size:11px;font-weight:700;white-space:nowrap}.status-pill.inactive,.status-cancelled,.status-rejected{color:#76515b;background:#f3edef}.status-failed{color:#992a2a;background:#fff0f0}.status-pending,.status-running,.status-sending{color:#76500c;background:#fff5d9}.run-error{color:#992a2a!important}.automation-card details{margin-top:5px}.automation-card pre{max-width:100%;overflow:auto;border-radius:8px;padding:9px;background:#f6f8fa;font-size:11px}.danger-quiet{color:#a02929;border-color:#efc2c2;background:#fff6f6}@media(max-width:980px){.automation-grid{grid-template-columns:1fr}.automation-card{grid-template-columns:minmax(0,1fr) auto}.automation-card .card-actions{grid-column:1/-1}}@media(max-width:650px){.automation-hero,.list-head{flex-direction:column}.hero-actions{width:100%}.hero-actions button{flex:1}.form-pair,.builder-row,.condition-row,.automation-card{grid-template-columns:1fr}.automation-card>*{grid-column:1!important}}
+.automation-page{padding-bottom:38px}.automation-hero,.automation-form>header,.list-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.automation-hero h2,.automation-form h2,.automation-list h2{margin:3px 0 6px}.automation-hero p:last-child,.list-head p{margin:0;color:var(--muted)}.hero-actions,.card-actions{display:flex;flex-wrap:wrap;gap:8px}.automation-tabs{display:flex;gap:4px;overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-card);padding:4px;background:var(--surface)}.automation-tabs button{min-height:36px;color:var(--muted);background:transparent;white-space:nowrap}.automation-tabs button.active{color:var(--text);background:#fff;box-shadow:0 1px 5px rgb(0 0 0/10%)}.automation-denied{border:1px solid #efc2c2;border-radius:var(--radius-card);padding:17px;color:#8f2525;background:#fff6f6}.alert.info{color:#24547b;border-color:#bddcf4;background:#eff8ff}.automation-grid{display:grid;grid-template-columns:minmax(330px,430px) minmax(0,1fr);gap:16px;align-items:start}.automation-form{display:grid;gap:13px}.automation-form label{margin:0}.automation-form fieldset{display:grid;gap:9px;border:1px solid var(--line);border-radius:9px;padding:12px}.automation-form legend{padding:0 5px;font-weight:700}.mini{min-height:28px;padding:4px 8px}.form-pair{display:grid;grid-template-columns:1fr 120px;gap:9px}.builder-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,.6fr) auto;gap:7px}.condition-row{grid-template-columns:minmax(110px,1fr) 100px minmax(100px,1fr) auto}.action-builder{display:grid;gap:6px;border-top:1px solid var(--line-soft);padding-top:9px}.remove-button{width:34px;padding:0;color:#9b2929;background:#fff4f4}.check-row{display:flex;align-items:center;gap:8px}.automation-list{display:grid;gap:10px}.automation-card{display:grid;grid-template-columns:minmax(180px,1fr) auto auto;gap:12px;align-items:start;border:1px solid var(--line);border-radius:var(--radius-card);padding:14px}.automation-card>div:first-child{display:grid;gap:5px}.automation-card small{color:var(--muted)}.automation-card p{margin:2px 0;white-space:pre-wrap}.status-pill{display:inline-flex;border-radius:var(--radius-pill);padding:5px 8px;color:#17663a;background:#e9f8ef;font-size:11px;font-weight:700;white-space:nowrap}.status-pill.inactive,.status-cancelled,.status-rejected{color:#76515b;background:#f3edef}.status-failed{color:#992a2a;background:#fff0f0}.status-pending,.status-running,.status-sending{color:#76500c;background:#fff5d9}.run-error{color:#992a2a!important}.automation-card details{margin-top:5px}.automation-card pre{max-width:100%;overflow:auto;border-radius:var(--radius-control);padding:9px;background:#f6f8fa;font-size:11px}.danger-quiet{color:#a02929;border-color:#efc2c2;background:#fff6f6}@media(max-width:980px){.automation-grid{grid-template-columns:1fr}.automation-card{grid-template-columns:minmax(0,1fr) auto}.automation-card .card-actions{grid-column:1/-1}}@media(max-width:650px){.automation-hero,.list-head{flex-direction:column}.hero-actions{width:100%}.hero-actions button{flex:1}.form-pair,.builder-row,.condition-row,.automation-card{grid-template-columns:1fr}.automation-card>*{grid-column:1!important}}
+.action-builder{display:grid;gap:10px;border:1px solid var(--color-border);border-radius:var(--radius-control);padding:12px;background:var(--color-surface-subtle)}.action-builder>header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.action-builder>header div{display:grid;gap:2px}.action-builder>header small,.action-builder label small{color:var(--color-text-muted);font-size:var(--font-size-meta);font-weight:400}.action-fields{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 </style>

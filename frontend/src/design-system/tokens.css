@@ -1,0 +1,98 @@
+:root {
+  color: #111827;
+  background: #f6f8fb;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "SF Pro Display",
+    "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+
+  --font-family-sans:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "SF Pro Display",
+    "Segoe UI",
+    sans-serif;
+  --font-size-caption: 11px;
+  --font-size-meta: 12px;
+  --font-size-compact: 13px;
+  --font-size-body: 14px;
+  --font-size-body-strong: 15px;
+  --line-height-caption: 16px;
+  --line-height-meta: 17px;
+  --line-height-compact: 18px;
+  --line-height-body: 20px;
+
+  --color-bg-canvas: #f6f8fb;
+  --color-bg-sidebar: #eff1f4;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #fafbfc;
+  --color-surface-muted: #f2f4f7;
+  --color-border: #e2e7ee;
+  --color-border-subtle: #edf0f4;
+  --color-border-strong: #d8dee7;
+  --color-text-primary: #111827;
+  --color-text-secondary: #374151;
+  --color-text-muted: #6b7280;
+  --color-text-disabled: #98a2b3;
+  --color-primary: #0b72e7;
+  --color-primary-hover: #0865ce;
+  --color-primary-active: #075ab8;
+  --color-primary-soft: #edf5ff;
+  --color-success: #16a36a;
+  --color-success-text: #08794a;
+  --color-success-soft: #e8f8f0;
+  --color-warning: #e99a14;
+  --color-warning-text: #ad6500;
+  --color-warning-soft: #fff6df;
+  --color-danger: #dc3f45;
+  --color-danger-text: #c82e36;
+  --color-danger-soft: #ffeded;
+  --color-ai: #7656e8;
+  --color-ai-hover: #6d42d8;
+  --color-ai-soft: #f3efff;
+  --color-overlay: rgb(17 24 39 / 40%);
+  --color-surface-overlay: rgb(255 255 255 / 78%);
+  --color-focus: rgb(11 114 231 / 18%);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-control: 8px;
+  --radius-card: 10px;
+  --radius-panel: 12px;
+  --radius-modal: 14px;
+  --radius-pill: 999px;
+
+  --control-height-compact: 32px;
+  --control-height: 38px;
+  --control-height-prominent: 44px;
+
+  --shadow-card: 0 1px 3px rgb(15 23 42 / 4%);
+  --shadow-card-hover: 0 8px 24px rgb(15 23 42 / 8%);
+  --shadow-popover: 0 16px 40px rgb(15 23 42 / 14%);
+  --shadow-drawer: -18px 0 48px rgb(15 23 42 / 16%);
+  --shadow-modal:
+    0 32px 90px rgb(15 23 42 / 22%),
+    0 8px 24px rgb(15 23 42 / 8%);
+
+  --duration-fast: 120ms;
+  --duration-standard: 150ms;
+  --duration-layout: 180ms;
+}

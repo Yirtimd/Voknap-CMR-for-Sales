@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
+import UiIcon from "../components/ui/UiIcon.vue";
 import { crmStore } from "../stores/crm";
 import { formatStageName, isTerminalStage } from "../utils/stages";
 
@@ -274,7 +275,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
       <div class="analytics-actions">
         <button type="button" class="secondary" :disabled="loading || !data" @click="openPanel('summary')">Сводка AI</button>
         <button type="button" aria-label="Обновить аналитику" :disabled="loading" @click="loadAnalytics">
-          {{ loading ? "…" : "↻" }}
+          <span v-if="loading">…</span><UiIcon v-else name="refresh" :size="17" />
         </button>
       </div>
     </header>
@@ -372,7 +373,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
         <RouterLink v-for="deal in topRiskDeals" :key="deal.deal_id" to="/deals" class="risk-row" @click.stop>
           <i :class="deal.level"></i>
           <span>{{ deal.company_name }}</span>
-          <small>Риск {{ deal.score }}%</small>
+          <small>Индекс риска {{ deal.score }}/100</small>
           <strong>{{ crmStore.money(deal.amount) }}</strong>
         </RouterLink>
         <RouterLink v-for="deal in stuckDeals" v-if="!topRiskDeals.length" :key="deal.deal_id" to="/deals" class="risk-row" @click.stop>
@@ -450,7 +451,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
             <p class="eyebrow">{{ detail.eyebrow }}</p>
             <h3>{{ detail.title }}</h3>
           </div>
-          <button type="button" class="analytics-modal-close" aria-label="Закрыть детали аналитики" @click="closePanel">×</button>
+          <button type="button" class="analytics-modal-close" aria-label="Закрыть детали аналитики" @click="closePanel"><UiIcon name="close" :size="19" /></button>
         </header>
         <p class="analytics-modal-summary">{{ detail.summary }}</p>
         <dl class="analytics-modal-metrics">
@@ -565,6 +566,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
 .interactive-card {
   cursor: pointer;
   transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.interactive-card::after {
+  content: "Открыть детали";
+  display: block;
+  margin-top: 12px;
+  color: var(--color-primary);
+  font-size: var(--font-size-meta);
+  line-height: var(--line-height-meta);
+  font-weight: 700;
 }
 
 .interactive-card:hover,

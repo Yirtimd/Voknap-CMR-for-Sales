@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import CompanyDrawer from "../components/crm/CompanyDrawer.vue";
+import UiIcon from "../components/ui/UiIcon.vue";
 import { crmStore } from "../stores/crm";
 import type { Company } from "../types";
 
@@ -148,24 +149,24 @@ const averageHealth = computed(() => {
 
     <section class="companies-controls">
       <label class="companies-search">
-        <span aria-hidden="true">⌕</span>
+        <UiIcon name="search" :size="16" />
         <input v-model="query" type="search" placeholder="Поиск компаний..." aria-label="Поиск компаний" />
       </label>
       <label class="companies-filter">
-        <span aria-hidden="true">⇅</span>
+        <UiIcon name="sort" :size="16" />
         <select v-model="sort" aria-label="Сортировка компаний">
           <option value="health">Сначала высокий рейтинг</option>
           <option value="pipeline">Сначала крупный портфель</option>
           <option value="name">По названию</option>
         </select>
       </label>
-      <button type="button" class="new-company-button" @click="openCreateCompany"><span aria-hidden="true">＋</span> Новая компания</button>
+      <button type="button" class="new-company-button" @click="openCreateCompany"><UiIcon name="plus" :size="16" /> Новая компания</button>
     </section>
 
     <section class="companies-metrics">
       <article class="company-metric-card">
         <div><span>Сделки</span><strong>{{ totalDeals }}</strong><small>Открытых сделок</small></div>
-        <span class="metric-orb blue" aria-hidden="true">◇</span>
+        <span class="metric-orb blue"><UiIcon name="deals" :size="20" /></span>
       </article>
       <article class="company-metric-card">
         <div><span>Портфель</span><strong>{{ crmStore.money(totalPipeline) }}</strong><small>Сумма активных сделок</small></div>
@@ -173,7 +174,7 @@ const averageHealth = computed(() => {
       </article>
       <article class="company-metric-card">
         <div><span>Средний рейтинг</span><strong>{{ averageHealth }}</strong><small>Состояние отношений</small></div>
-        <span class="metric-orb purple" aria-hidden="true">♥</span>
+        <span class="metric-orb purple"><UiIcon name="heart" :size="20" /></span>
       </article>
     </section>
 

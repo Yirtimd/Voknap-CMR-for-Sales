@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 
+import UiIcon from "../components/ui/UiIcon.vue";
+import type { IconName } from "../components/ui/icons";
 import { crmStore } from "../stores/crm";
 import type { Activity, Deal } from "../types";
 import { formatStageName } from "../utils/stages";
@@ -10,7 +12,7 @@ type Accent = "blue" | "green" | "orange" | "red" | "purple" | "slate";
 type TimelineItem = {
   id: string;
   time: string;
-  icon: string;
+  icon: IconName;
   accent: Accent;
   title: string;
   meta: string;
@@ -133,7 +135,7 @@ const todaysTimeline = computed<TimelineItem[]>(() => {
       {
         id: "empty-task",
         time: "10:00",
-        icon: "✓",
+        icon: "check",
         accent: "blue",
         title: "На выбранную дату событий нет",
         meta: todaysDate.value
@@ -148,7 +150,7 @@ const todaysTimeline = computed<TimelineItem[]>(() => {
     return {
       id: task.id,
       time: ["10:00", "12:30", "15:00", "16:30"][index] ?? "17:00",
-      icon: task.done_at ? "✓" : isMeeting ? "☷" : index === 0 ? "☎" : "▣",
+      icon: task.done_at ? "check" : isMeeting ? "calendar" : index === 0 ? "phone" : "tasks",
       accent: task.done_at ? "slate" : isMeeting ? "blue" : index === 2 ? "orange" : "green",
       title,
       meta: task.description || companyName(task.company_id),
@@ -161,7 +163,7 @@ const todaysTimeline = computed<TimelineItem[]>(() => {
 const activityItems = computed(() => {
   const fromActivity = crmStore.activities.value.slice(0, 3).map((activity: Activity, index) => ({
     id: activity.id,
-    icon: index === 0 ? "✓" : index === 1 ? "☷" : "➤",
+    icon: (index === 0 ? "check" : index === 1 ? "calendar" : "send") as IconName,
     accent: (index === 0 ? "green" : index === 1 ? "blue" : "orange") as Accent,
     title: activity.title,
     meta: `${companyName(activity.company_id)} · ${activity.description ?? activity.type}`,
@@ -172,7 +174,7 @@ const activityItems = computed(() => {
 
   return priorityDeals.value.slice(0, 3).map((deal, index) => ({
     id: deal.id,
-    icon: index === 0 ? "✓" : index === 1 ? "☷" : "➤",
+    icon: (index === 0 ? "check" : index === 1 ? "calendar" : "send") as IconName,
     accent: (index === 0 ? "green" : index === 1 ? "blue" : "orange") as Accent,
     title: index === 0 ? "Договор подписан" : index === 1 ? "Встреча завершена" : "КП отправлено",
     meta: `${dealCompany(deal)} · ${deal.title}`,
@@ -190,7 +192,7 @@ const focusDeals = computed(() =>
     amount: crmStore.money(deal.amount),
     stage: formatStageName(deal.stage_name),
     action: deal.next_action,
-    icon: /позвон|созвон|связаться/i.test(deal.next_action) ? "☎" : index === 1 ? "➤" : "▣",
+    icon: (/позвон|созвон|связаться/i.test(deal.next_action) ? "phone" : index === 1 ? "send" : "tasks") as IconName,
     accent: (deal.risk_level === "high" ? "red" : deal.risk_level === "medium" ? "orange" : "green") as Accent
   }))
 );
@@ -205,15 +207,15 @@ const focusDeals = computed(() =>
       </div>
       <div class="home-date-wrap">
         <button type="button" class="home-date secondary" @click="dateMenuOpen = !dateMenuOpen">
-          <span>▣</span>
+          <UiIcon name="calendar" :size="16" />
           {{ todaysDate }}
-          <span>⌄</span>
+          <UiIcon name="chevronDown" :size="16" />
         </button>
         <section v-if="dateMenuOpen" class="home-date-menu">
           <div class="date-nav">
-            <button type="button" class="secondary" aria-label="Предыдущий день" @click="shiftSelectedDate(-1)">‹</button>
+            <button type="button" class="secondary" aria-label="Предыдущий день" @click="shiftSelectedDate(-1)"><UiIcon name="chevronLeft" :size="16" /></button>
             <input v-model="selectedDate" type="date" aria-label="Рабочая дата" />
-            <button type="button" class="secondary" aria-label="Следующий день" @click="shiftSelectedDate(1)">›</button>
+            <button type="button" class="secondary" aria-label="Следующий день" @click="shiftSelectedDate(1)"><UiIcon name="chevronRight" :size="16" /></button>
           </div>
           <button type="button" class="today-button" @click="selectToday">Сегодня</button>
         </section>
@@ -222,7 +224,7 @@ const focusDeals = computed(() =>
 
     <section class="home-kpi-grid" aria-label="Сводка на сегодня">
       <article class="home-kpi">
-        <span class="home-icon blue">✓</span>
+        <span class="home-icon blue"><UiIcon name="check" /></span>
         <div>
           <strong>{{ todayTasks.length }}</strong>
           <p>задач на сегодня</p>
@@ -230,7 +232,7 @@ const focusDeals = computed(() =>
         </div>
       </article>
       <article class="home-kpi">
-        <span class="home-icon blue">▣</span>
+        <span class="home-icon blue"><UiIcon name="calendar" /></span>
         <div>
           <strong>{{ meetingsToday }}</strong>
           <p>встречи</p>
@@ -238,7 +240,7 @@ const focusDeals = computed(() =>
         </div>
       </article>
       <article class="home-kpi">
-        <span class="home-icon red">△</span>
+        <span class="home-icon red"><UiIcon name="alert" /></span>
         <div>
           <strong>{{ riskDeals.length }}</strong>
           <p>сделки под риском</p>
@@ -246,7 +248,7 @@ const focusDeals = computed(() =>
         </div>
       </article>
       <article class="home-kpi">
-        <span class="home-icon purple">▤</span>
+        <span class="home-icon purple"><UiIcon name="file" /></span>
         <div>
           <strong>{{ signatureDeals.length || signedDeals.length || 1 }}</strong>
           <p>договор ожидает подписи</p>
@@ -257,7 +259,7 @@ const focusDeals = computed(() =>
 
     <section class="home-ai">
       <div class="home-ai-copy">
-        <p class="home-ai-label"><span>✦</span> Рекомендация <b>AI-ассистента</b></p>
+        <p class="home-ai-label"><UiIcon name="sparkles" :size="16" /> Рекомендация <b>AI-ассистента</b></p>
         <h2>{{ homeCopilot?.title ?? "Анализирую рабочую очередь…" }}</h2>
         <p>{{ homeCopilot?.rationale ?? "Готовим рекомендацию на основе текущих данных." }}</p>
         <small>
@@ -267,7 +269,7 @@ const focusDeals = computed(() =>
       </div>
       <div class="home-ai-actions">
         <RouterLink class="home-call-button" :to="homeCopilot?.primary_url ?? '/companies'">
-          <span>☎</span> {{ homeCopilot?.action_label ?? "Открыть компании" }}
+          <UiIcon name="phone" :size="18" /> {{ homeCopilot?.action_label ?? "Открыть компании" }}
         </RouterLink>
         <RouterLink class="button-link secondary-link" :to="homeCopilot?.details_url ?? '/deals'">Подробнее</RouterLink>
       </div>
@@ -276,13 +278,13 @@ const focusDeals = computed(() =>
     <section class="home-main-grid">
       <article class="home-card home-today">
         <header>
-          <h2><span>▣</span> Сегодня</h2>
+          <h2><UiIcon name="calendar" :size="18" /> Сегодня</h2>
           <RouterLink to="/tasks">Открыть календарь</RouterLink>
         </header>
         <div class="home-timeline">
           <div v-for="item in todaysTimeline" :key="item.id" class="home-time-row" :class="{ done: item.done }">
             <time>{{ item.time }}</time>
-            <span class="home-icon small" :class="item.accent">{{ item.icon }}</span>
+            <span class="home-icon small" :class="item.accent"><UiIcon :name="item.icon" :size="16" /></span>
             <div>
               <strong>{{ item.title }}</strong>
               <p>{{ item.meta }}</p>
@@ -317,7 +319,7 @@ const focusDeals = computed(() =>
 
       <article class="home-card home-next-action">
         <header>
-          <h2><span>◎</span> Следующее лучшее действие</h2>
+          <h2><UiIcon name="target" :size="18" /> Следующее лучшее действие</h2>
         </header>
         <h3>{{ homeCopilot?.title ?? "Проверить рабочую очередь" }}</h3>
         <p>{{ homeCopilot?.rationale ?? "AI-ассистент формирует следующий лучший шаг." }}</p>
@@ -326,17 +328,17 @@ const focusDeals = computed(() =>
             {{ homeCopilot?.action_label ?? "Открыть" }}
           </RouterLink>
         </div>
-        <RouterLink class="home-why-link" :to="homeCopilot?.details_url ?? '/deals'">Почему это важно? ⌄</RouterLink>
+        <RouterLink class="home-why-link" :to="homeCopilot?.details_url ?? '/deals'">Почему это важно? <UiIcon name="chevronDown" :size="15" /></RouterLink>
       </article>
 
       <article class="home-card">
         <header>
-          <h2><span>◴</span> Последняя активность</h2>
+          <h2><UiIcon name="clock" :size="18" /> Последняя активность</h2>
           <RouterLink to="/inbox">Вся активность</RouterLink>
         </header>
         <div class="home-activity-list">
           <div v-for="item in activityItems" :key="item.id" class="home-activity-row">
-            <span class="home-icon small" :class="item.accent">{{ item.icon }}</span>
+            <span class="home-icon small" :class="item.accent"><UiIcon :name="item.icon" :size="16" /></span>
             <div>
               <strong>{{ item.title }}</strong>
               <p>{{ item.meta }}</p>

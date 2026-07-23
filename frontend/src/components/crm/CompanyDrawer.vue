@@ -2,6 +2,9 @@
 import { computed, ref, watch } from "vue";
 
 import { api, emptyToNull, post } from "../../api";
+import UiIcon from "../ui/UiIcon.vue";
+import type { IconName } from "../ui/icons";
+import { statusLabel } from "../../design-system/statusDictionary";
 import EntityCrudDrawer from "./EntityCrudDrawer.vue";
 import type { Activity, CommunicationEvent, Company, Contact, NextAction, Note, Task } from "../../types";
 import { crmStore } from "../../stores/crm";
@@ -182,7 +185,7 @@ const compactDealRows = computed(() =>
   })
 );
 const health = computed(() => workspace.value?.health.score ?? Math.min(98, 70 + contacts.value.length * 4 + deals.value.length * 6));
-const healthTrend = computed(() => (workspace.value?.health.trend === "down" ? "↘" : workspace.value?.health.trend === "flat" ? "→" : "↗"));
+const healthTrendIcon = computed<IconName>(() => (workspace.value?.health.trend === "down" ? "trendDown" : workspace.value?.health.trend === "flat" ? "minus" : "trendUp"));
 const healthLabel = computed(() => workspace.value?.health.label ?? "Хороший");
 const pipeline = computed(() => deals.value.reduce((sum, deal) => sum + Number(deal.amount ?? 0), 0));
 const pipelineBreakdown = computed(() => {
@@ -295,10 +298,7 @@ function isTaskOverdue(task: Task) {
 }
 
 function taskPriorityLabel(priority: string) {
-  if (priority === "urgent") return "Срочный";
-  if (priority === "high") return "Высокий";
-  if (priority === "low") return "Низкий";
-  return "Средний";
+  return statusLabel(priority, "priority");
 }
 
 function taskPriorityTone(priority: string) {
@@ -657,7 +657,7 @@ function saveNextAction() {
           <div class="company-modal__title-row">
             <h2 id="company-workspace-title" class="company-modal__title">{{ workspace.company.name }}</h2>
             <span class="cm-badge cm-badge--neutral">{{ companyType }}</span>
-            <span class="cm-badge cm-badge--success">{{ workspace.company.status_label ?? workspace.company.status }}</span>
+            <span class="cm-badge cm-badge--success">{{ workspace.company.status_label ?? statusLabel(workspace.company.status, "company") }}</span>
           </div>
           <div class="company-modal__meta">
             <span>{{ displayIndustry }}</span>
@@ -671,8 +671,8 @@ function saveNextAction() {
         <div class="company-modal__header-actions">
           <button type="button" aria-label="Дополнительные действия" :disabled="isSaving" @click="logNote">...</button>
           <button type="button" @click="openDrawerAction('task')">Изменить</button>
-          <button type="button" class="is-primary" @click="activeTab = 'deals'">＋ Сделка</button>
-          <button type="button" :aria-label="embedded ? undefined : 'Закрыть'" @click="close">{{ embedded ? "← Компании" : "×" }}</button>
+          <button type="button" class="is-primary" @click="activeTab = 'deals'"><UiIcon name="plus" :size="16" /> Сделка</button>
+          <button type="button" :aria-label="embedded ? undefined : 'Закрыть'" @click="close"><UiIcon :name="embedded ? 'chevronLeft' : 'close'" :size="17" /><span v-if="embedded">Компании</span></button>
         </div>
       </header>
 
@@ -682,10 +682,10 @@ function saveNextAction() {
             <article class="cm-card company-kpi">
               <div class="company-kpi__top">
                 <div>
-                  <div class="cm-label">Рейтинг AI</div>
+                  <div class="cm-label" title="Сводная оценка качества взаимодействия с компанией">Рейтинг отношений</div>
                   <div class="company-kpi__number">{{ health }}</div>
                 </div>
-                <span class="cm-badge cm-badge--success">{{ healthTrend }} {{ workspace.health.success_chance_delta ?? 12 }}</span>
+                <span class="cm-badge cm-badge--success"><UiIcon :name="healthTrendIcon" :size="13" /> {{ workspace.health.success_chance_delta ?? 12 }}</span>
               </div>
               <div class="company-health-bar"><span :style="{ width: `${health}%` }"></span></div>
               <div class="company-kpi__description">{{ healthLabel }} · Основано на активности и сделках</div>
@@ -722,7 +722,7 @@ function saveNextAction() {
               </div>
               <div class="company-task-preview" aria-hidden="true">
                 <span v-for="task in tasks.slice(0, 3)" :key="task.id" :class="{ done: Boolean(task.done_at) }">
-                  <i>{{ task.done_at ? "✓" : "" }}</i>
+                  <i><UiIcon v-if="task.done_at" name="check" :size="11" /></i>
                   <b></b>
                 </span>
                 <span v-if="!tasks.length"><i></i><b></b></span>
@@ -804,7 +804,7 @@ function saveNextAction() {
           </div>
           <div class="company-ai__list">
             <article v-for="item in copilotRecommendations.slice(0, 3)" :key="`${item.title}-${item.description}`" class="company-ai__item">
-              <div class="company-ai__icon">{{ item.type === "warning" ? "!" : item.type === "success" ? "✓" : "i" }}</div>
+              <div class="company-ai__icon"><UiIcon :name="item.type === 'warning' ? 'alert' : item.type === 'success' ? 'check' : 'info'" :size="15" /></div>
               <div>
                 <div class="company-ai__title cm-truncate">{{ item.title }}</div>
                 <div class="company-ai__text cm-line-clamp-2">{{ item.description }}</div>
@@ -843,7 +843,7 @@ function saveNextAction() {
               <h2>Контакты</h2>
               <p class="hint">Контактов: {{ contacts.length }}</p>
             </div>
-            <button type="button" class="secondary" @click="openContactCrud()">＋ Добавить контакт</button>
+            <button type="button" class="secondary" @click="openContactCrud()"><UiIcon name="plus" :size="16" /> Добавить контакт</button>
           </div>
           <section class="contact-tab-grid">
             <article v-for="contact in contacts" :key="contact.id" class="contact-tab-card">
@@ -886,7 +886,7 @@ function saveNextAction() {
             <header>
               <div>
                 <strong>{{ row.deal.title }}</strong>
-                <small>{{ formatStageName(row.stages[row.activeIndex]?.name) }} · {{ row.deal.status }}</small>
+                <small>{{ formatStageName(row.stages[row.activeIndex]?.name) }} · {{ statusLabel(row.deal.status, "deal") }}</small>
               </div>
               <b>{{ crmStore.money(row.deal.amount) }}</b>
             </header>
@@ -897,7 +897,7 @@ function saveNextAction() {
                 class="deal-tab-stage-step"
                 :class="{ done: index < row.activeIndex, active: index === row.activeIndex }"
               >
-                <span>{{ index < row.activeIndex ? "✓" : index + 1 }}</span>
+                <span><UiIcon v-if="index < row.activeIndex" name="check" :size="12" /><template v-else>{{ index + 1 }}</template></span>
                 <strong>{{ formatStageName(stage.name) }}</strong>
               </div>
             </div>
@@ -943,7 +943,7 @@ function saveNextAction() {
                 <option value="normal">Средний</option>
                 <option value="low">Низкий</option>
               </select>
-              <button type="button" class="company-task-view-button" aria-label="Дополнительные фильтры">☷</button>
+              <button type="button" class="company-task-view-button" aria-label="Дополнительные фильтры"><UiIcon name="filter" :size="17" /></button>
             </div>
 
             <div class="company-task-groups">
@@ -959,11 +959,11 @@ function saveNextAction() {
                   <div class="company-task-content">
                     <div class="company-task-name">{{ task.title }}</div>
                     <div class="company-task-meta">
-                      <span class="company-task-priority" :class="`company-task-priority--${taskPriorityTone(task.priority)}`">↑ {{ taskPriorityLabel(task.priority) }}</span>
+                      <span class="company-task-priority" :class="`company-task-priority--${taskPriorityTone(task.priority)}`"><UiIcon name="arrowUp" :size="13" /> {{ taskPriorityLabel(task.priority) }}</span>
                       <span v-if="task.due_at" class="company-task-meta-separator">•</span>
                       <span v-if="task.due_at" class="company-task-due">{{ formatTaskDue(task.due_at) }}</span>
                       <span class="company-task-meta-separator">•</span>
-                      <span class="company-task-deal">↗ {{ taskDealTitle(task) }}</span>
+                      <span class="company-task-deal"><UiIcon name="externalLink" :size="13" /> {{ taskDealTitle(task) }}</span>
                     </div>
                   </div>
                   <div class="company-task-owner">
@@ -1006,7 +1006,7 @@ function saveNextAction() {
                   <strong>{{ source.title }}</strong>
                   <small>{{ source.meta }}</small>
                 </div>
-                <button type="button" :disabled="!source.downloadable" aria-label="Скачать источник" @click="openKnowledgeSource(source.id)">›</button>
+                <button type="button" :disabled="!source.downloadable" aria-label="Скачать источник" @click="openKnowledgeSource(source.id)"><UiIcon name="chevronRight" :size="17" /></button>
               </article>
               <p v-if="!knowledgeSources.length" class="empty">Источники пока не добавлены</p>
             </section>
@@ -1033,8 +1033,8 @@ function saveNextAction() {
                   placeholder="Как квалифицировать B2B сделку?"
                   @keydown.enter.exact.prevent="askCompanyKnowledge"
                 ></textarea>
-                <button type="button" class="knowledge-voice" aria-label="Голосовой ввод">♩</button>
-                <button type="submit" class="knowledge-submit" :disabled="knowledgeIsLoading" aria-label="Отправить вопрос">{{ knowledgeIsLoading ? "…" : "▷" }}</button>
+                <button type="button" class="knowledge-voice" aria-label="Голосовой ввод"><UiIcon name="microphone" :size="17" /></button>
+                <button type="submit" class="knowledge-submit" :disabled="knowledgeIsLoading" aria-label="Отправить вопрос"><span v-if="knowledgeIsLoading">…</span><UiIcon v-else name="send" :size="17" /></button>
               </div>
             </form>
             <section class="knowledge-controls">
@@ -1042,7 +1042,7 @@ function saveNextAction() {
                 <option>{{ currentDeal ? "Режим: сделка и компания" : "Режим: только компания" }}</option>
               </select>
               <label class="knowledge-toggle"><input v-model="includeGlobalKnowledge" type="checkbox" /><span></span>Включать общие знания</label>
-              <button type="button">↺ История запросов</button>
+              <button type="button"><UiIcon name="refresh" :size="15" /> История запросов</button>
             </section>
             <section class="knowledge-answer-head">
               <div><strong>Ответ</strong><span v-if="knowledgeCitations.length">На основе {{ knowledgeCitations.length }} источников</span></div>
@@ -1054,7 +1054,7 @@ function saveNextAction() {
             <p v-else-if="knowledgeError" class="knowledge-alert" role="alert">{{ knowledgeError }}</p>
             <section v-else-if="companyKnowledgeAnswer" class="knowledge-answer-card" aria-live="polite">
               <article class="knowledge-answer-summary">
-                <header><span>✦</span><strong>Краткий ответ</strong><div><button type="button">▢</button><button type="button">♡</button><button type="button">♢</button></div></header>
+                <header><UiIcon name="sparkles" :size="17" /><strong>Краткий ответ</strong><div><button type="button" aria-label="Копировать"><UiIcon name="copy" :size="15" /></button><button type="button" aria-label="Полезный ответ"><UiIcon name="heart" :size="15" /></button><button type="button" aria-label="Действия AI"><UiIcon name="sparkles" :size="15" /></button></div></header>
                 <p class="knowledge-answer-text">{{ companyKnowledgeAnswer.answer }}</p>
               </article>
               <article class="knowledge-evidence">
@@ -1073,11 +1073,11 @@ function saveNextAction() {
             </section>
             <section class="knowledge-suggestions">
               <h3>Похожие вопросы</h3>
-              <button type="button" class="knowledge-suggestion" @click="crmStore.knowledgeAskForm.value.question = 'Какие следующие шаги по сделке?'">⌕ Какие следующие шаги по сделке?</button>
-              <button type="button" class="knowledge-suggestion" @click="crmStore.knowledgeAskForm.value.question = 'Какой уровень риска у сделки?'">⌕ Какой уровень риска у сделки?</button>
-              <button type="button" class="knowledge-suggestion" @click="crmStore.knowledgeAskForm.value.question = 'Какая сумма в коммерческом предложении?'">⌕ Какая сумма в коммерческом предложении?</button>
+              <button type="button" class="knowledge-suggestion" @click="crmStore.knowledgeAskForm.value.question = 'Какие следующие шаги по сделке?'"><UiIcon name="search" :size="15" /> Какие следующие шаги по сделке?</button>
+              <button type="button" class="knowledge-suggestion" @click="crmStore.knowledgeAskForm.value.question = 'Какой уровень риска у сделки?'"><UiIcon name="search" :size="15" /> Какой уровень риска у сделки?</button>
+              <button type="button" class="knowledge-suggestion" @click="crmStore.knowledgeAskForm.value.question = 'Какая сумма в коммерческом предложении?'"><UiIcon name="search" :size="15" /> Какая сумма в коммерческом предложении?</button>
             </section>
-            <p class="knowledge-footnote">ⓘ Ответ сформирован на основе данных компании и конкретной сделки.</p>
+            <p class="knowledge-footnote"><UiIcon name="info" :size="15" /> Ответ сформирован на основе данных компании и конкретной сделки.</p>
           </section>
         </section>
 
@@ -1124,7 +1124,7 @@ function saveNextAction() {
             <label v-for="task in openTasks.slice(0, 5)" :key="task.id" class="company-task">
               <input class="company-task__checkbox" type="checkbox" :checked="Boolean(task.done_at)" @change="toggleDrawerTask(task)" />
               <span><span class="company-task__title">{{ task.title }}</span><span class="company-task__date">{{ task.due_at ? formatDate(task.due_at) : "Сегодня" }}</span></span>
-              <span class="cm-badge" :class="task.priority === 'high' || task.priority === 'urgent' ? 'cm-badge--danger' : 'cm-badge--neutral'">{{ task.priority }}</span>
+              <span class="cm-badge" :class="task.priority === 'high' || task.priority === 'urgent' ? 'cm-badge--danger' : 'cm-badge--neutral'">{{ statusLabel(task.priority, "priority") }}</span>
             </label>
             <article v-if="!openTasks.length" class="company-task">
               <span class="task-circle"></span>
@@ -1145,7 +1145,7 @@ function saveNextAction() {
       >
         <header class="notes-drawer__header">
           <h2 id="company-notes-title" class="notes-drawer__title">Заметки по компании</h2>
-          <button class="notes-drawer__close" type="button" aria-label="Закрыть заметки" @click="isNotesSpaceOpen = false">×</button>
+          <button class="notes-drawer__close" type="button" aria-label="Закрыть заметки" @click="isNotesSpaceOpen = false"><UiIcon name="close" :size="20" /></button>
         </header>
 
         <nav class="notes-drawer__tabs" aria-label="Фильтр заметок">
@@ -1167,7 +1167,7 @@ function saveNextAction() {
             <option value="all">Все авторы</option>
             <option value="me">Только мои</option>
           </select>
-          <button class="notes-drawer__filter-button" type="button" aria-label="Дополнительные фильтры">☷</button>
+          <button class="notes-drawer__filter-button" type="button" aria-label="Дополнительные фильтры"><UiIcon name="filter" :size="17" /></button>
         </section>
 
         <div class="notes-drawer__content">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 
+import { statusLabel } from "../design-system/statusDictionary";
 import { crmStore } from "../stores/crm";
 import { teamStore } from "../stores/team";
 import type { AssignmentTargetType, Membership, MembershipRole, TeamInvitation } from "../types";
@@ -81,14 +82,14 @@ function queueDraft(id: string, teamId: string | null, strategy: "manual" | "rou
 }
 
 function roleLabel(role: MembershipRole) {
-  return roles.find((item) => item.value === role)?.label ?? role;
+  return statusLabel(role, "role");
 }
 
 function invitationStatus(item: TeamInvitation) {
-  if (item.accepted_at) return "Принято";
-  if (item.revoked_at) return "Отозвано";
-  if (new Date(item.expires_at).getTime() <= Date.now()) return "Истекло";
-  return "Ожидает";
+  if (item.accepted_at) return statusLabel("accepted", "invitation");
+  if (item.revoked_at) return statusLabel("revoked", "invitation");
+  if (new Date(item.expires_at).getTime() <= Date.now()) return statusLabel("expired", "invitation");
+  return statusLabel("pending", "invitation");
 }
 
 async function saveMember(member: Membership) {

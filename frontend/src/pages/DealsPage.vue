@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import EntityCrudDrawer from "../components/crm/EntityCrudDrawer.vue";
+import UiIcon from "../components/ui/UiIcon.vue";
 import type { Deal, Note } from "../types";
 import { crmStore } from "../stores/crm";
 import { formatStageName } from "../utils/stages";
@@ -359,7 +360,7 @@ watch(
           <span>Поиск</span>
           <input v-model="search" type="search" placeholder="Название или компания..." />
         </label>
-        <button type="button" @click="showCreateDeal = true">＋ Новая сделка</button>
+        <button type="button" @click="showCreateDeal = true"><UiIcon name="plus" :size="16" /> Новая сделка</button>
         <button class="secondary" type="button" :disabled="!likelyDeal" @click="selectedDeal = likelyDeal">Обзор AI</button>
       </div>
     </header>
@@ -451,7 +452,7 @@ watch(
               <strong>{{ deal.title }}</strong>
               <small>{{ companyName(deal.company_id) }}</small>
             </div>
-            <span class="ai-score">{{ scoreTone(deal) === "risk" ? "⚠" : "🔥" }} {{ aiScore(deal) }}%</span>
+            <span class="ai-score"><UiIcon :name="scoreTone(deal) === 'risk' ? 'alert' : 'sparkles'" :size="14" /> {{ aiScore(deal) }}%</span>
           </div>
           <div class="deal-amount">{{ crmStore.money(deal.amount) }}</div>
           <div class="next-action-box">
@@ -464,7 +465,7 @@ watch(
           </dl>
           <div class="progress-line deal-health"><span :style="{ width: `${aiScore(deal)}%` }"></span></div>
         </article>
-        <button class="secondary stage-new" type="button" @click="showCreateDeal = true">＋ Добавить</button>
+        <button class="secondary stage-new" type="button" @click="showCreateDeal = true"><UiIcon name="plus" :size="15" /> Добавить</button>
       </section>
     </div>
 
@@ -516,13 +517,13 @@ watch(
           </div>
           <div class="deal-window-actions">
             <button class="secondary" type="button" @click="isDealCrudOpen = true">Редактировать</button>
-            <button class="secondary icon-button" type="button" title="Скопировать ссылку" aria-label="Скопировать ссылку" @click="copyDealLink">↗</button>
+            <button class="secondary icon-button" type="button" title="Скопировать ссылку" aria-label="Скопировать ссылку" @click="copyDealLink"><UiIcon name="externalLink" :size="17" /></button>
             <button class="secondary icon-button" type="button" title="Скопировать сводку" aria-label="Скопировать сводку" @click="copyDealSummary">⧉</button>
             <div class="deal-more-wrap">
               <button class="secondary icon-button" type="button" title="Ещё" aria-label="Дополнительные действия" @click="showMoreMenu = !showMoreMenu">•••</button>
               <section v-if="showMoreMenu" class="deal-more-menu"><button type="button" @click="isDealCrudOpen = true; showMoreMenu = false">Редактировать · история · lifecycle</button><button type="button" @click="openSelectedCompany">Открыть компанию</button><button type="button" @click="crmStore.createNote('deal', selectedDeal.id); showMoreMenu = false">Добавить заметку</button><button type="button" @click="completeSelectedNextAction(); showMoreMenu = false">Завершить следующий шаг</button></section>
             </div>
-            <button class="secondary icon-button" type="button" title="Закрыть" aria-label="Закрыть" @click="selectedDeal = null">×</button>
+            <button class="secondary icon-button" type="button" title="Закрыть" aria-label="Закрыть" @click="selectedDeal = null"><UiIcon name="close" :size="18" /></button>
           </div>
         </header>
 
@@ -582,7 +583,7 @@ watch(
             @click="completeSelectedNextAction"
           >Завершить</button>
           <div class="deal-more-wrap">
-            <button class="secondary icon-button" type="button" title="Ещё" aria-label="Действия со следующим шагом" @click="showNextActionMenu = !showNextActionMenu">⌄</button>
+            <button class="secondary icon-button" type="button" title="Ещё" aria-label="Действия со следующим шагом" @click="showNextActionMenu = !showNextActionMenu"><UiIcon name="chevronDown" :size="17" /></button>
             <section v-if="showNextActionMenu" class="deal-more-menu"><button type="button" @click="crmStore.createNote('deal', selectedDeal.id); showNextActionMenu = false">Добавить заметку</button><button type="button" @click="openSelectedCompany">Открыть компанию</button><button type="button" @click="completeSelectedNextAction(); showNextActionMenu = false">Завершить</button></section>
           </div>
         </section>
@@ -650,7 +651,7 @@ watch(
             </header>
             <div v-if="documentsForDeal(selectedDeal).length" class="file-list">
               <div v-for="document in (showAllFiles ? documentsForDeal(selectedDeal) : documentsForDeal(selectedDeal).slice(0, 2))" :key="document.id">
-                <span>▣</span>
+                <UiIcon name="file" :size="18" />
                 <div>
                   <strong>{{ document.title }}</strong>
                   <small>{{ document.source_type }} · {{ document.status }}</small>

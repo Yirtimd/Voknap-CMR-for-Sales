@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 
+import UiIcon from "../ui/UiIcon.vue";
 import { ENTITY_CONFIG, type LifecycleField } from "../../lifecycleConfig";
 import { crmStore } from "../../stores/crm";
 import { lifecycleStore, type LifecycleRecord } from "../../stores/lifecycle";
@@ -247,7 +248,7 @@ function recordOwner(record: LifecycleRecord) {
     <aside class="entity-crud-drawer" role="dialog" aria-modal="true" :aria-label="mode === 'create' ? `Создать: ${config.singular}` : current ? title(current) : config.label">
       <header class="entity-crud-head">
         <div><p class="eyebrow">{{ config.label }} · CRUD</p><h2>{{ mode === "create" ? `Новый ${config.singular}` : current ? title(current) : config.label }}</h2></div>
-        <button class="secondary crud-close" type="button" aria-label="Закрыть" @click="$emit('close')">×</button>
+        <button class="secondary crud-close" type="button" aria-label="Закрыть" @click="$emit('close')"><UiIcon name="close" :size="20" /></button>
       </header>
 
       <form v-if="(mode === 'create' || mode === 'edit') && lifecycleStore.canWrite.value" class="entity-crud-form" @submit.prevent="save">

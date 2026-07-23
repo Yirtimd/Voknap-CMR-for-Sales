@@ -4,46 +4,45 @@ import { useRoute, useRouter } from "vue-router";
 
 import voknapLogo from "../assets/voknap-logo.png";
 import GlobalAgentSidebar from "../components/crm/GlobalAgentSidebar.vue";
+import UiAlert from "../components/ui/UiAlert.vue";
+import UiIcon from "../components/ui/UiIcon.vue";
+import type { IconName } from "../components/ui/icons";
 import { crmStore } from "../stores/crm";
 
 const router = useRouter();
 const route = useRoute();
 
-const navItems = [
-  { to: "/home", label: "Главная", icon: "home" },
-  { to: "/companies", label: "Компании", icon: "companies" },
-  { to: "/leads", label: "Лиды", icon: "leads" },
-  { to: "/deals", label: "Сделки", icon: "deals" },
-  { to: "/tasks", label: "Задачи", icon: "tasks" },
-  { to: "/automation", label: "Автоматизация", icon: "automation" },
-  { to: "/crm/contacts", label: "Архив и корзина", icon: "records" },
-  { to: "/team", label: "Управление командой", icon: "team" },
-  { to: "/inbox", label: "Входящие", icon: "inbox" },
-  { to: "/knowledge", label: "База знаний", icon: "knowledge" },
-  { to: "/analytics", label: "Аналитика", icon: "analytics" },
-  { to: "/settings", label: "Настройки", icon: "settings" }
+const navGroups: Array<{ label: string; items: Array<{ to: string; label: string; icon: IconName }> }> = [
+  { label: "Работа", items: [
+    { to: "/home", label: "Главная", icon: "home" },
+    { to: "/inbox", label: "Входящие", icon: "inbox" },
+    { to: "/tasks", label: "Задачи", icon: "tasks" }
+  ] },
+  { label: "Продажи", items: [
+    { to: "/companies", label: "Компании", icon: "companies" },
+    { to: "/leads", label: "Лиды и контакты", icon: "leads" },
+    { to: "/deals", label: "Сделки", icon: "deals" }
+  ] },
+  { label: "Развитие", items: [
+    { to: "/analytics", label: "Аналитика", icon: "analytics" },
+    { to: "/automation", label: "Автоматизация", icon: "automation" },
+    { to: "/knowledge", label: "База знаний", icon: "knowledge" }
+  ] },
+  { label: "Управление", items: [
+    { to: "/team", label: "Команда", icon: "team" },
+    { to: "/settings", label: "Настройки", icon: "settings" },
+    { to: "/crm/contacts", label: "Архив", icon: "archive" }
+  ] }
 ];
-
-const navIconPaths: Record<string, string> = {
-  home: "m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V10Z",
-  companies: "M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M2 21h20M8 7h4M8 11h4M8 15h4M17 8h3M17 12h3M17 16h3",
-  leads: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
-  deals: "M3 7h18v12H3zM3 7l3-4h12l3 4M8 12h8",
-  tasks: "M9 11 11 13l4-4M9 17l2 2 4-4M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
-  automation: "M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z",
-  records: "M4 5.5C4 4.12 7.58 3 12 3s8 1.12 8 2.5S16.42 8 12 8 4 6.88 4 5.5Zm0 0v6C4 12.88 7.58 14 12 14s8-1.12 8-2.5v-6M4 11.5v7C4 19.88 7.58 21 12 21s8-1.12 8-2.5v-7",
-  team: "M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8.5 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 5.13a4 4 0 0 1 0 7.75",
-  inbox: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm-2 3 10 6L22 7",
-  knowledge: "M4 5.5A2.5 2.5 0 0 1 6.5 3H12v17H6.5A2.5 2.5 0 0 0 4 22.5v-17ZM20 5.5A2.5 2.5 0 0 0 17.5 3H12v17h5.5a2.5 2.5 0 0 1 2.5 2.5v-17Z",
-  analytics: "M4 20V10M10 20V4M16 20v-7M22 20H2",
-  settings: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06A1.7 1.7 0 0 0 15.74 18a1.7 1.7 0 0 0-1.04 1.56V20h-3v-.44A1.7 1.7 0 0 0 10.66 18a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 14.34a1.7 1.7 0 0 0-1.56-1.04H5v-3h.44A1.7 1.7 0 0 0 7 9.26a1.7 1.7 0 0 0-.34-1.88L6.6 7.32 8.72 5.2l.06.06A1.7 1.7 0 0 0 10.66 5a1.7 1.7 0 0 0 1.04-1.56V3h3v.44A1.7 1.7 0 0 0 15.74 5a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06A1.7 1.7 0 0 0 19.4 8.66a1.7 1.7 0 0 0 1.56 1.04h.44v3h-.44A1.7 1.7 0 0 0 19.4 15Z"
-};
+const navItems = navGroups.flatMap((group) => group.items);
+const mobilePrimary = navItems.filter((item) => ["/home", "/companies", "/deals", "/tasks"].includes(item.to));
 
 const pageTitle = computed(() => String(route.meta.title ?? "Рабочее пространство"));
 const pageEyebrow = computed(() => String(route.meta.eyebrow ?? "CRM"));
 const isHome = computed(() => route.path === "/home");
 const isTasks = computed(() => route.path === "/tasks");
 const isAgentOpen = ref(false);
+const isMobileMoreOpen = ref(false);
 const sidebarMode = ref<"full" | "compact" | "hidden">(
   (localStorage.getItem("cmr_sidebar_mode") as "full" | "compact" | "hidden" | null) ?? "full"
 );
@@ -112,6 +111,7 @@ function togglePanel(panel: Exclude<typeof activePanel.value, null>) {
 
 function navigate(to: string) {
   activePanel.value = null;
+  isMobileMoreOpen.value = false;
   searchQuery.value = "";
   void router.push(to);
 }
@@ -144,10 +144,13 @@ function openTaskCreate() {
       </div>
 
       <nav class="nav">
-        <RouterLink v-for="item in navItems" :key="item.to" :to="item.to" :data-label="item.label">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="navIconPaths[item.icon]" /></svg>
-          <b>{{ item.label }}</b>
-        </RouterLink>
+        <section v-for="group in navGroups" :key="group.label" class="nav-group">
+          <p class="nav-group__label">{{ group.label }}</p>
+          <RouterLink v-for="item in group.items" :key="item.to" :to="item.to" :data-label="item.label">
+            <UiIcon class="nav-icon" :name="item.icon" :size="20" />
+            <b>{{ item.label }}</b>
+          </RouterLink>
+        </section>
       </nav>
 
       <button class="secondary" type="button" @click="logout">Выйти</button>
@@ -158,7 +161,7 @@ function openTaskCreate() {
     <section class="content">
       <header v-if="isHome" class="topbar home-topbar">
         <label class="home-search" aria-label="Поиск по рабочему пространству">
-          <span>⌕</span>
+          <UiIcon name="search" :size="18" />
           <input v-model="searchQuery" type="search" placeholder="Поиск сделок, компаний и задач..." @focus="activePanel = 'search'" />
           <kbd>⌘K</kbd>
           <section v-if="activePanel === 'search'" class="top-popover search-popover">
@@ -171,7 +174,7 @@ function openTaskCreate() {
         </label>
         <div class="home-top-actions">
           <div class="top-action-wrap">
-            <button type="button" class="secondary home-new-button" @click="togglePanel('new')"><span>+</span> Создать <span>⌄</span></button>
+            <button type="button" class="secondary home-new-button" @click="togglePanel('new')"><UiIcon name="plus" :size="16" /> Создать <UiIcon name="chevronDown" :size="16" /></button>
             <section v-if="activePanel === 'new'" class="top-popover action-popover">
               <button type="button" @click="navigate('/companies?create=1')">Новую компанию</button>
               <button type="button" @click="navigate('/leads')">Новый лид</button>
@@ -181,7 +184,7 @@ function openTaskCreate() {
             </section>
           </div>
           <div class="top-action-wrap">
-            <button type="button" class="secondary home-bell" aria-label="Уведомления" @click="togglePanel('notifications')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg><b v-if="notifications.length">{{ notifications.length }}</b></button>
+            <button type="button" class="secondary home-bell" aria-label="Уведомления" @click="togglePanel('notifications')"><UiIcon name="bell" :size="20" /><b v-if="notifications.length">{{ notifications.length }}</b></button>
             <section v-if="activePanel === 'notifications'" class="top-popover notification-popover">
               <header><strong>Уведомления</strong><small>{{ notifications.length }}</small></header>
               <button v-for="item in notifications" :key="item.id" type="button" class="popover-row" @click="navigate(item.to)">
@@ -200,7 +203,7 @@ function openTaskCreate() {
             </section>
           </div>
           <div class="top-action-wrap">
-            <button type="button" class="secondary home-caret" aria-label="Меню" @click="togglePanel('menu')">⌄</button>
+            <button type="button" class="secondary home-caret" aria-label="Меню" @click="togglePanel('menu')"><UiIcon name="chevronDown" :size="18" /></button>
             <section v-if="activePanel === 'menu'" class="top-popover action-popover menu-popover">
               <button type="button" @click="navigate('/settings')">Настройки рабочего пространства</button>
               <button type="button" @click="isAgentOpen = true; activePanel = null">AI-ассистент</button>
@@ -216,16 +219,16 @@ function openTaskCreate() {
           <h1>{{ pageTitle }}</h1>
         </div>
         <div v-if="isTasks" class="tasks-top-actions">
-          <button type="button" class="secondary tasks-ai-inbox" @click="navigate('/inbox')"><span>✦</span> AI-входящие <b>{{ notifications.length }}</b></button>
-          <button type="button" class="tasks-new-button" @click="openTaskCreate"><span>＋</span> Новая задача</button>
-          <button type="button" class="secondary tasks-refresh" @click="crmStore.refreshAll"><span>⟳</span> Обновить</button>
-          <button type="button" class="secondary tasks-more" aria-label="Дополнительные действия">⋮</button>
+          <button type="button" class="secondary tasks-ai-inbox" @click="navigate('/inbox')"><UiIcon name="sparkles" :size="16" /> AI-входящие <b>{{ notifications.length }}</b></button>
+          <button type="button" class="tasks-new-button" @click="openTaskCreate"><UiIcon name="plus" :size="16" /> Новая задача</button>
+          <button type="button" class="secondary tasks-refresh" @click="crmStore.refreshAll"><UiIcon name="refresh" :size="16" /> Обновить</button>
+          <button type="button" class="secondary tasks-more" aria-label="Дополнительные действия"><UiIcon name="more" :size="18" /></button>
         </div>
         <button v-else type="button" class="secondary" @click="crmStore.refreshAll">Обновить</button>
       </header>
 
-      <div v-if="crmStore.error.value" class="alert error">{{ crmStore.error.value }}</div>
-      <div v-if="crmStore.ok.value" class="alert success">{{ crmStore.ok.value }}</div>
+      <UiAlert v-if="crmStore.error.value" tone="danger" title="Не удалось выполнить действие">{{ crmStore.error.value }}</UiAlert>
+      <UiAlert v-if="crmStore.ok.value" tone="success">{{ crmStore.ok.value }}</UiAlert>
 
       <RouterView />
     </section>
@@ -237,17 +240,37 @@ function openTaskCreate() {
       aria-label="Открыть AI агента"
       @click="isAgentOpen = true"
     >
-      <span>‹</span>
+      <UiIcon name="chevronLeft" :size="18" />
     </button>
 
     <div v-if="isAgentOpen" class="agent-backdrop" @click="isAgentOpen = false"></div>
     <GlobalAgentSidebar :open="isAgentOpen" @close="isAgentOpen = false" />
+
+    <nav class="mobile-nav" aria-label="Мобильная навигация">
+      <RouterLink v-for="item in mobilePrimary" :key="item.to" :to="item.to">
+        <UiIcon :name="item.icon" :size="20" /><span>{{ item.label }}</span>
+      </RouterLink>
+      <button type="button" :class="{ active: isMobileMoreOpen }" @click="isMobileMoreOpen = true">
+        <UiIcon name="more" :size="20" /><span>Ещё</span>
+      </button>
+    </nav>
+
+    <div v-if="isMobileMoreOpen" class="mobile-more-layer" @click.self="isMobileMoreOpen = false">
+      <section class="mobile-more" role="dialog" aria-modal="true" aria-label="Все разделы">
+        <header><h2>Все разделы</h2><button class="secondary" type="button" aria-label="Закрыть" @click="isMobileMoreOpen = false"><UiIcon name="close" :size="18" /></button></header>
+        <div class="mobile-more__grid">
+          <RouterLink v-for="item in navItems" :key="item.to" :to="item.to" @click="isMobileMoreOpen = false">
+            <UiIcon :name="item.icon" :size="20" /><span>{{ item.label }}</span>
+          </RouterLink>
+        </div>
+      </section>
+    </div>
   </main>
 </template>
 
 <style scoped>
 .home-search, .top-action-wrap { position: relative; }
-.top-popover { position: absolute; z-index: 80; top: calc(100% + 8px); right: 0; width: 280px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: var(--surface-solid); box-shadow: 0 16px 40px rgb(0 0 0 / 14%); }
+.top-popover { position: absolute; z-index: 80; top: calc(100% + 8px); right: 0; width: 280px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-card); padding: 8px; background: var(--surface-solid); box-shadow: 0 16px 40px rgb(0 0 0 / 14%); }
 .search-popover { right: auto; left: 0; width: 100%; min-width: 390px; }
 .top-popover button { width: 100%; justify-content: flex-start; border: 0; padding: 10px; color: var(--text); background: transparent; text-align: left; }
 .top-popover button:hover { background: var(--surface-muted); }
@@ -267,7 +290,7 @@ function openTaskCreate() {
 .tasks-topbar h1 { margin: 2px 0 0; font-size: 28px; line-height: 34px; letter-spacing: -0.025em; }
 .tasks-topbar .eyebrow { margin: 0; font-size: 10px; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; }
 .tasks-top-actions { display: flex; align-items: center; gap: 8px; }
-.tasks-top-actions button { height: 38px; border-radius: 8px; padding: 0 13px; font-size: 13px; white-space: nowrap; }
+.tasks-top-actions button { height: 38px; border-radius: var(--radius-control); padding: 0 13px; font-size: 13px; white-space: nowrap; }
 .tasks-top-actions button span { font-size: 15px; }
 .tasks-top-actions .tasks-ai-inbox { gap: 7px; color: #172033; }
 .tasks-ai-inbox span { color: #7656e8; }

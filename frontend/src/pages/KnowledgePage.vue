@@ -1,9 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 
+import UiBadge from "../components/ui/UiBadge.vue";
+import UiEmptyState from "../components/ui/UiEmptyState.vue";
+import UiTabs from "../components/ui/UiTabs.vue";
+import { statusMeta } from "../design-system/statusDictionary";
 import { crmStore } from "../stores/crm";
 
 const activeTab = ref<"chat" | "documents" | "collections" | "agents" | "settings">("chat");
+const brainTabs = [
+  { value: "chat", label: "Вопросы" },
+  { value: "documents", label: "Документы" },
+  { value: "collections", label: "Коллекции" },
+  { value: "agents", label: "AI-агенты" },
+  { value: "settings", label: "Настройки" }
+];
 const uploadInput = ref<HTMLInputElement | null>(null);
 const uploadFile = ref<File | null>(null);
 const uploadTitle = ref("");
@@ -75,13 +86,7 @@ onMounted(() => {
 
 <template>
   <section class="brain-page">
-    <nav class="brain-tabs" aria-label="Разделы базы знаний">
-      <button type="button" :class="{ active: activeTab === 'chat' }" @click="activeTab = 'chat'">Вопросы</button>
-      <button type="button" :class="{ active: activeTab === 'documents' }" @click="activeTab = 'documents'">Документы</button>
-      <button type="button" :class="{ active: activeTab === 'collections' }" @click="activeTab = 'collections'">Коллекции</button>
-      <button type="button" :class="{ active: activeTab === 'agents' }" @click="activeTab = 'agents'">AI-агенты</button>
-      <button type="button" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">Настройки</button>
-    </nav>
+    <UiTabs v-model="activeTab" class="brain-tabs" :items="brainTabs" label="Разделы базы знаний" />
 
     <section v-if="activeTab === 'chat'" class="brain-chat-layout">
       <div class="brain-main">
@@ -163,7 +168,7 @@ onMounted(() => {
               <strong>{{ document.title }}</strong>
               <small>Фрагментов: {{ document.chunks_count }}</small>
             </div>
-            <span :class="['status-pill', document.status]">{{ document.status }}</span>
+            <UiBadge :tone="statusMeta(document.status, 'document').tone">{{ statusMeta(document.status, "document").label }}</UiBadge>
           </div>
           <p v-if="!crmStore.knowledgeDocuments.value.length" class="empty">Документы пока не подключены.</p>
         </section>
@@ -208,10 +213,12 @@ onMounted(() => {
           </div>
           <div>
             <button v-if="document.download_url" type="button" class="secondary" @click="crmStore.downloadKnowledgeDocument(document)">Скачать</button>
-            <span :class="['status-pill', document.status]">{{ document.status }}</span>
+            <UiBadge :tone="statusMeta(document.status, 'document').tone">{{ statusMeta(document.status, "document").label }}</UiBadge>
           </div>
         </article>
-        <section v-if="!crmStore.knowledgeDocuments.value.length" class="empty-state"><strong>Документов пока нет</strong><p>Загрузите файл или добавьте текст, чтобы AI мог отвечать по материалам компании.</p><button type="button" @click="uploadInput?.click()">Загрузить документ</button></section>
+        <UiEmptyState v-if="!crmStore.knowledgeDocuments.value.length" title="Документов пока нет" description="Загрузите файл или добавьте текст, чтобы AI мог отвечать по материалам компании." icon="knowledge">
+          <template #actions><button type="button" @click="uploadInput?.click()">Загрузить документ</button></template>
+        </UiEmptyState>
       </section>
     </section>
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 
+import { statusLabel } from "../design-system/statusDictionary";
 import { crmStore } from "../stores/crm";
 
 onMounted(() => {
@@ -38,7 +39,7 @@ function formatPayload(payload: Record<string, unknown>) {
       <article v-for="action in crmStore.agentActions.value" :key="action.id" class="action-card">
         <header>
           <strong>{{ action.action_type }}</strong>
-          <small>{{ action.status }}</small>
+          <small>{{ statusLabel(action.status, "aiAction") }}</small>
         </header>
         <pre>{{ formatPayload(action.payload) }}</pre>
         <div v-if="action.status === 'pending'" class="button-row">

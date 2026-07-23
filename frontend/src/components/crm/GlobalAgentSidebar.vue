@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
 
+import { statusLabel } from "../../design-system/statusDictionary";
+import UiIcon from "../ui/UiIcon.vue";
 import { crmStore } from "../../stores/crm";
 
 const props = defineProps<{ open: boolean }>();
@@ -57,7 +59,7 @@ function formatPayload(payload: Record<string, unknown>) {
     <section class="agent-card agent-summary">
       <header>
         <strong>Сводка по CRM</strong>
-        <button type="button" @click="send('Дай сводку по CRM')">›</button>
+        <button type="button" aria-label="Открыть сводку" @click="send('Дай сводку по CRM')"><UiIcon name="chevronRight" :size="17" /></button>
       </header>
       <div class="agent-context">
         <div><strong>{{ crmStore.openTasks.value.length }}</strong><small>Открытые задачи</small></div>
@@ -74,9 +76,9 @@ function formatPayload(payload: Record<string, unknown>) {
         type="button"
         @click="send(prompt)"
       >
-        <span class="prompt-icon">⌘</span>
+        <span class="prompt-icon"><UiIcon name="target" :size="16" /></span>
         <strong>{{ prompt }}</strong>
-        <span>›</span>
+        <UiIcon name="chevronRight" :size="16" />
       </button>
     </section>
 
@@ -91,7 +93,7 @@ function formatPayload(payload: Record<string, unknown>) {
     <section class="agent-card agent-recent">
       <h3>Недавние запросы</h3>
       <button v-for="prompt in recentPrompts" :key="prompt.text" type="button" @click="send(prompt.text)">
-        <span class="prompt-icon doc">□</span>
+        <span class="prompt-icon doc"><UiIcon name="file" :size="16" /></span>
         <strong>{{ prompt.text }}</strong>
         <small>{{ prompt.time }}</small>
       </button>
@@ -102,7 +104,7 @@ function formatPayload(payload: Record<string, unknown>) {
       <article v-for="action in crmStore.agentActions.value" :key="action.id" class="action-card">
         <header>
           <strong>{{ action.action_type }}</strong>
-          <small>{{ action.status }}</small>
+          <small>{{ statusLabel(action.status, "aiAction") }}</small>
         </header>
         <pre>{{ formatPayload(action.payload) }}</pre>
         <div v-if="action.status === 'pending'" class="button-row">
@@ -115,7 +117,7 @@ function formatPayload(payload: Record<string, unknown>) {
     <form class="agent-card agent-composer" @submit.prevent="send()">
       <div class="composer-shell">
         <textarea v-model="crmStore.agentForm.value.message" placeholder="Спросите что угодно..." rows="2"></textarea>
-        <button type="submit" :disabled="crmStore.isLoading.value">›</button>
+        <button type="submit" :disabled="crmStore.isLoading.value" aria-label="Отправить"><UiIcon name="send" :size="17" /></button>
       </div>
       <small>AI может ошибаться</small>
     </form>

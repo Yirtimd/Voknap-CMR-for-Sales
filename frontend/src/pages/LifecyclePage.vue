@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import UiIcon from "../components/ui/UiIcon.vue";
 import { ENTITY_CONFIG, ENTITY_TYPES, type LifecycleField } from "../lifecycleConfig";
 import { crmStore } from "../stores/crm";
 import {
@@ -399,7 +400,7 @@ function stateLabel(record: LifecycleRecord) {
         <h2>Управление CRM-записями</h2>
         <p>Редактирование, история, архив, корзина, ответственные и массовые операции в одном месте.</p>
       </div>
-      <button v-if="lifecycleStore.canWrite.value" type="button" @click="openCreate">＋ Создать {{ config.singular }}</button>
+      <button v-if="lifecycleStore.canWrite.value" type="button" @click="openCreate"><UiIcon name="plus" :size="16" /> Создать {{ config.singular }}</button>
     </section>
 
     <nav class="entity-tabs" aria-label="Тип CRM-записей">
@@ -430,7 +431,7 @@ function stateLabel(record: LifecycleRecord) {
           <select v-model="lifecycleStore.sort.value" aria-label="Сортировка" @change="changeSort">
             <option v-for="item in config.sortable" :key="item.value" :value="item.value">{{ item.label }}</option>
           </select>
-          <button class="secondary order-button" type="button" :aria-label="lifecycleStore.order.value === 'desc' ? 'По убыванию' : 'По возрастанию'" @click="lifecycleStore.order.value = lifecycleStore.order.value === 'desc' ? 'asc' : 'desc'; changeSort()">{{ lifecycleStore.order.value === "desc" ? "↓" : "↑" }}</button>
+          <button class="secondary order-button" type="button" :aria-label="lifecycleStore.order.value === 'desc' ? 'По убыванию' : 'По возрастанию'" @click="lifecycleStore.order.value = lifecycleStore.order.value === 'desc' ? 'asc' : 'desc'; changeSort()"><UiIcon :name="lifecycleStore.order.value === 'desc' ? 'arrowDown' : 'arrowUp'" :size="16" /></button>
         </div>
       </header>
 
@@ -476,7 +477,7 @@ function stateLabel(record: LifecycleRecord) {
       <aside class="lifecycle-drawer" aria-modal="true" role="dialog" :aria-label="drawerMode === 'create' ? 'Создание записи' : entityTitle(activeRecord!)">
         <header>
           <div><p class="eyebrow">{{ config.label }} · {{ scope === "deleted" ? "корзина" : scope === "archived" ? "архив" : "активные" }}</p><h2>{{ drawerMode === "create" ? `Новый ${config.singular}` : entityTitle(activeRecord!) }}</h2></div>
-          <button class="secondary close-button" type="button" aria-label="Закрыть" @click="closeDrawer">×</button>
+          <button class="secondary close-button" type="button" aria-label="Закрыть" @click="closeDrawer"><UiIcon name="close" :size="19" /></button>
         </header>
 
         <form v-if="drawerMode === 'create' || drawerMode === 'edit'" class="lifecycle-form" @submit.prevent="saveRecord">
@@ -539,7 +540,7 @@ function stateLabel(record: LifecycleRecord) {
     </div>
 
     <div v-if="lifecycleStore.conflict.value" class="conflict-backdrop" role="alertdialog" aria-modal="true" aria-label="Конфликт версии">
-      <section class="conflict-card"><span class="conflict-icon">↻</span><h2>Запись уже изменена</h2><p>Серверная версия: {{ lifecycleStore.conflict.value.currentVersion ?? "неизвестна" }}. Автоматическая перезапись отключена, чтобы не потерять чужие изменения.</p><div><button type="button" @click="lifecycleStore.clearConflict(); lifecycleStore.load(); closeDrawer()">Загрузить актуальную версию</button><button class="secondary" type="button" @click="lifecycleStore.clearConflict">Отмена</button></div></section>
+      <section class="conflict-card"><span class="conflict-icon"><UiIcon name="refresh" :size="22" /></span><h2>Запись уже изменена</h2><p>Серверная версия: {{ lifecycleStore.conflict.value.currentVersion ?? "неизвестна" }}. Автоматическая перезапись отключена, чтобы не потерять чужие изменения.</p><div><button type="button" @click="lifecycleStore.clearConflict(); lifecycleStore.load(); closeDrawer()">Загрузить актуальную версию</button><button class="secondary" type="button" @click="lifecycleStore.clearConflict">Отмена</button></div></section>
     </div>
   </section>
 </template>

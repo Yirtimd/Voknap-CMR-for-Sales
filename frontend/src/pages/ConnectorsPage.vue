@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 
+import { statusLabel } from "../design-system/statusDictionary";
 import { crmStore } from "../stores/crm";
 
 onMounted(() => {
@@ -22,7 +23,7 @@ function applyEmailProvider() {
       <h2>Доступные коннекторы</h2>
       <div v-for="connector in crmStore.connectorDefinitions.value" :key="connector.code" class="list-row">
         <span>{{ connector.title }}</span>
-        <small>{{ connector.status }}</small>
+        <small>{{ statusLabel(connector.status, "connector") }}</small>
       </div>
     </section>
 

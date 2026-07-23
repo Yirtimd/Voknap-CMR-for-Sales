@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import LoginPage from "./LoginPage.vue";
 
 describe("LoginPage", () => {
-  it("renders registration and login forms", async () => {
+  it("switches between login and registration without competing forms", async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: "/", component: { template: "<div />" } }]
@@ -17,10 +17,13 @@ describe("LoginPage", () => {
       global: { plugins: [router] }
     });
 
-    expect(wrapper.get("h1").text()).toBe("Вход в CRM");
-    expect(wrapper.findAll("form")).toHaveLength(2);
-    expect(wrapper.text()).toContain("Регистрация компании");
+    expect(wrapper.get("h1").text()).toBe("Продажи, которые двигаются сами");
+    expect(wrapper.findAll("form")).toHaveLength(1);
     expect(wrapper.text()).toContain("Войти");
+    await wrapper.get(".auth-switch button:last-child").trigger("click");
+    expect(wrapper.findAll("form")).toHaveLength(1);
+    expect(wrapper.text()).toContain("Создание компании");
+    expect(wrapper.text()).toContain("Создать рабочее пространство");
     wrapper.unmount();
   });
 });
