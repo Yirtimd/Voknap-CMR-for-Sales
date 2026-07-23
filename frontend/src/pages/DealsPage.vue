@@ -681,6 +681,7 @@ watch(
           </label>
           <label>Название<input v-model="crmStore.dealForm.value.title" required /></label>
           <label>Сумма<input v-model.number="crmStore.dealForm.value.amount" type="number" min="0" /></label>
+          <label>Скидка, %<input v-model.number="crmStore.dealForm.value.discount_percent" type="number" min="0" max="100" step="0.01" /></label>
           <label>Лид
             <select v-model="crmStore.dealForm.value.lead_id">
               <option value="">Без лида</option>

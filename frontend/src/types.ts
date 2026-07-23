@@ -284,6 +284,127 @@ export type Deal = {
   updated_at?: string;
 };
 
+export type AutomationTriggerType =
+  | "lead.created"
+  | "deal.created"
+  | "deal.updated"
+  | "deal.stage_changed"
+  | "communication.created"
+  | "schedule.deal_inactive";
+
+export type AutomationConditionOperator =
+  | "eq"
+  | "neq"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "in"
+  | "contains"
+  | "is_empty";
+
+export type AutomationActionType =
+  | "assign_owner"
+  | "create_task"
+  | "send_template"
+  | "request_approval"
+  | "update_next_action";
+
+export type AutomationCondition = {
+  field: string;
+  operator: AutomationConditionOperator;
+  value?: unknown;
+};
+
+export type AutomationAction = {
+  type: AutomationActionType;
+  config: Record<string, unknown>;
+};
+
+export type AutomationWorkflow = {
+  id: string;
+  name: string;
+  description: string | null;
+  trigger_type: AutomationTriggerType;
+  conditions: AutomationCondition[];
+  condition_logic: "all" | "any";
+  actions: AutomationAction[];
+  priority: number;
+  is_active: boolean;
+  version: number;
+  created_by_id: string;
+  updated_by_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AutomationMessageTemplate = {
+  id: string;
+  name: string;
+  channel: string;
+  subject: string;
+  body: string;
+  is_active: boolean;
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AutomationRun = {
+  id: string;
+  workflow_id: string;
+  event_key: string;
+  trigger_type: string;
+  entity_type: string;
+  entity_id: string;
+  actor_id: string | null;
+  status: string;
+  result: Array<Record<string, unknown>>;
+  error: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+
+export type ApprovalRequest = {
+  id: string;
+  workflow_id: string;
+  run_id: string;
+  entity_type: string;
+  entity_id: string;
+  title: string;
+  reason: string | null;
+  requested_by_id: string | null;
+  assigned_to_id: string | null;
+  status: string;
+  decision_comment: string | null;
+  decided_by_id: string | null;
+  decided_at: string | null;
+  created_at: string;
+};
+
+export type AutomationOutboxItem = {
+  id: string;
+  run_id: string;
+  template_id: string;
+  entity_type: string;
+  entity_id: string;
+  channel: string;
+  recipient: string;
+  subject: string;
+  body: string;
+  status: string;
+  attempts: number;
+  available_at: string;
+  sent_at: string | null;
+  last_error: string | null;
+  created_at: string;
+};
+
+export type ScheduledAutomationResult = {
+  evaluated: number;
+  matched_runs: number;
+};
+
 export type LeadConversionResponse = {
   lead: Lead;
   deal: Deal;

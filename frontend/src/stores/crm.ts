@@ -95,6 +95,7 @@ const dealForm = ref({
   company_id: "",
   title: "Первая сделка",
   amount: 50000,
+  discount_percent: 0,
   lead_id: "",
   stage_id: "",
   probability: 50,

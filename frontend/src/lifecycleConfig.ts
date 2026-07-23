@@ -99,6 +99,7 @@ export const ENTITY_CONFIG: Record<EntityType, LifecycleEntityConfig> = {
       { key: "stage_id", label: "Этап", kind: "reference", reference: "stages", required: true, create: true, edit: true },
       { key: "lead_id", label: "Лид", kind: "reference", reference: "leads", create: true, edit: true },
       { key: "amount", label: "Сумма", kind: "number", min: 0, create: true, edit: true },
+      { key: "discount_percent", label: "Скидка, %", kind: "number", min: 0, max: 100, create: true, edit: true },
       { key: "probability", label: "Вероятность, %", kind: "number", min: 0, max: 100, create: true, edit: true },
       { key: "expected_close_date", label: "Ожидаемое закрытие", kind: "datetime-local", create: true, edit: true },
       { key: "expected_next_event", label: "Следующее событие", create: true, edit: true },

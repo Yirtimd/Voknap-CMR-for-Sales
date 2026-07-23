@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteLocationNormalized } from "vue-router";
 
 import AppLayout from "../layouts/AppLayout.vue";
+import AutomationPage from "../pages/AutomationPage.vue";
 import CompaniesPage from "../pages/CompaniesPage.vue";
 import DealsPage from "../pages/DealsPage.vue";
 import HomePage from "../pages/HomePage.vue";
@@ -39,6 +40,7 @@ export const router = createRouter({
         },
         { path: "deals", name: "deals", component: DealsPage, meta: { title: "Сделки", eyebrow: "Воронка продаж" } },
         { path: "tasks", name: "tasks", component: TasksPage, meta: { title: "Задачи", eyebrow: "Рабочий процесс" } },
+        { path: "automation", name: "automation", component: AutomationPage, meta: { title: "Автоматизация", eyebrow: "Процессы и контроль" } },
         { path: "team", name: "team", component: TeamManagementPage, meta: { title: "Управление командой", eyebrow: "Люди и назначения" } },
         { path: "inbox", name: "inbox", component: InboxPage, meta: { title: "Входящие", eyebrow: "Коммуникации" } },
         { path: "knowledge", name: "knowledge", component: KnowledgePage, meta: { title: "База знаний", eyebrow: "Знания компании" } },
