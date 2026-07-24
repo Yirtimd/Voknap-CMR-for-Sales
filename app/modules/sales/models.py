@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -83,12 +83,33 @@ class Company(Base):
 
 class Pipeline(Base):
     __tablename__ = "pipelines"
-    __table_args__ = tenant_table_args("pipelines")
+    __table_args__ = tenant_table_args(
+        "pipelines",
+        extra=(
+            UniqueConstraint("tenant_id", "name", name="uq_pipelines_tenant_name"),
+            Index(
+                "uq_pipelines_one_default",
+                "tenant_id",
+                unique=True,
+                postgresql_where=text("is_default"),
+                sqlite_where=text("is_default"),
+            ),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    __mapper_args__ = {"version_id_col": version}
 
     stages: Mapped[list["PipelineStage"]] = relationship(
         back_populates="pipeline",
@@ -101,14 +122,27 @@ class Pipeline(Base):
 class PipelineStage(Base):
     __tablename__ = "pipeline_stages"
     __table_args__ = tenant_table_args(
-        "pipeline_stages", relations=(("pipeline_id", "pipelines"),)
+        "pipeline_stages",
+        relations=(("pipeline_id", "pipelines"),),
+        extra=(
+            UniqueConstraint("tenant_id", "pipeline_id", "code", name="uq_pipeline_stages_code"),
+            CheckConstraint("stage_type IN ('open', 'won', 'lost')", name="ck_pipeline_stages_type"),
+            CheckConstraint("probability >= 0 AND probability <= 100", name="ck_pipeline_stages_probability"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
     pipeline_id: Mapped[UUID] = mapped_column(ForeignKey("pipelines.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    code: Mapped[str] = mapped_column(
+        String(80), default=lambda: f"stage_{uuid4().hex}", nullable=False
+    )
     sort_order: Mapped[int] = mapped_column(default=0)
+    probability: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    stage_type: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    required_fields_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
 
     pipeline: Mapped[Pipeline] = relationship(
         back_populates="stages", foreign_keys=[pipeline_id]
@@ -116,6 +150,52 @@ class PipelineStage(Base):
     deals: Mapped[list["Deal"]] = relationship(
         back_populates="stage", foreign_keys="Deal.stage_id"
     )
+
+
+class DuplicateCandidate(Base):
+    __tablename__ = "duplicate_candidates"
+    __table_args__ = tenant_table_args(
+        "duplicate_candidates",
+        membership_columns=("detected_by_id", "resolved_by_id"),
+        extra=(
+            UniqueConstraint(
+                "tenant_id",
+                "entity_type",
+                "record_a_id",
+                "record_b_id",
+                name="uq_duplicate_candidates_pair",
+            ),
+            CheckConstraint(
+                "entity_type IN ('contacts', 'leads', 'deals')",
+                name="ck_duplicate_candidates_entity_type",
+            ),
+            CheckConstraint(
+                "status IN ('open', 'dismissed', 'merged')",
+                name="ck_duplicate_candidates_status",
+            ),
+            CheckConstraint(
+                "score >= 0 AND score <= 100",
+                name="ck_duplicate_candidates_score",
+            ),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    record_a_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
+    record_b_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    matched_fields_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="open", nullable=False, index=True)
+    detected_by_id: Mapped[UUID | None] = mapped_column(index=True)
+    resolved_by_id: Mapped[UUID | None] = mapped_column(index=True)
+    resolution_comment: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __mapper_args__ = {"version_id_col": version}
 
 
 class Lead(Base):

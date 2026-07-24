@@ -139,15 +139,49 @@ class ApprovalResponse(BaseModel):
     requested_by_id: UUID | None
     assigned_to_id: UUID | None
     status: str
+    priority: str
+    due_at: datetime | None
+    version: int
     decision_comment: str | None
     decided_by_id: UUID | None
     decided_at: datetime | None
     created_at: datetime
+    updated_at: datetime
 
 
 class ApprovalDecision(BaseModel):
+    version: int = Field(ge=1)
     decision: Literal["approved", "rejected"]
     comment: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def require_rejection_comment(self):
+        if self.decision == "rejected" and not self.comment:
+            raise ValueError("comment is required for rejection")
+        return self
+
+
+class ApprovalReassign(BaseModel):
+    version: int = Field(ge=1)
+    assigned_to_id: UUID
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class ApprovalCancel(BaseModel):
+    version: int = Field(ge=1)
+    comment: str = Field(min_length=1, max_length=2000)
+
+
+class ApprovalHistoryResponse(BaseModel):
+    id: UUID
+    approval_id: UUID
+    action: str
+    from_status: str | None
+    to_status: str | None
+    actor_id: UUID | None
+    comment: str | None
+    metadata: dict[str, Any]
+    created_at: datetime
 
 
 class ScheduledRunResponse(BaseModel):

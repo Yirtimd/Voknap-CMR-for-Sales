@@ -133,6 +133,30 @@ class MergeResponse(BaseModel):
     version: int
 
 
+class DuplicateScanRequest(BaseModel):
+    entity_type: Literal["contacts", "leads", "deals"]
+    minimum_score: int = Field(default=80, ge=50, le=100)
+    limit: int = Field(default=200, ge=1, le=500)
+
+
+class DuplicateCandidateResponse(BaseModel):
+    id: UUID
+    entity_type: str
+    record_a_id: UUID
+    record_b_id: UUID
+    score: int
+    matched_fields: list[str]
+    status: str
+    version: int
+    detected_at: datetime
+    resolved_at: datetime | None
+
+
+class DuplicateDismissRequest(BaseModel):
+    version: int = Field(ge=1)
+    comment: str = Field(min_length=1, max_length=1000)
+
+
 class FieldChangeResponse(BaseModel):
     id: UUID
     entity_type: str

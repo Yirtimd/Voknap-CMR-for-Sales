@@ -47,11 +47,24 @@ const mergeSources = computed(() => {
   const target = activeRecord.value;
   if (!target || !config.value.merge) return [];
   const pool = [...records.value, ...crmList(entityType.value)];
+  const suggestedIds = new Set(
+    lifecycleStore.duplicateCandidates.value.flatMap((candidate) => {
+      if (candidate.entity_type !== entityType.value) return [];
+      if (candidate.record_a_id === target.id) return [candidate.record_b_id];
+      if (candidate.record_b_id === target.id) return [candidate.record_a_id];
+      return [];
+    })
+  );
   const seen = new Set<string>();
   return pool.filter((item) => {
     if (seen.has(item.id)) return false;
     seen.add(item.id);
-    return item.id !== target.id && item.company_id === target.company_id && !item.is_archived && !item.deleted_at && mayEdit(item);
+    return item.id !== target.id
+      && suggestedIds.has(item.id)
+      && item.company_id === target.company_id
+      && !item.is_archived
+      && !item.deleted_at
+      && mayEdit(item);
   });
 });
 const availableBulkActions = computed<Array<{ value: BulkAction; label: string }>>(() => {
@@ -350,6 +363,37 @@ async function loadMergeCandidates() {
   opened.value = records.value.find((item) => item.id === target.id) ?? target;
 }
 
+async function findDuplicates() {
+  if (!["contacts", "leads", "deals"].includes(entityType.value)) return;
+  await act(
+    () => lifecycleStore.scanDuplicates(entityType.value as "contacts" | "leads" | "deals"),
+    "Поиск дублей завершён",
+    false
+  );
+  await loadMergeCandidates();
+}
+
+function duplicateFor(item: LifecycleRecord) {
+  const target = activeRecord.value;
+  if (!target) return undefined;
+  return lifecycleStore.duplicateCandidates.value.find(
+    (candidate) =>
+      candidate.entity_type === entityType.value
+      && [candidate.record_a_id, candidate.record_b_id].includes(target.id)
+      && [candidate.record_a_id, candidate.record_b_id].includes(item.id)
+  );
+}
+
+async function dismissDuplicate(item: LifecycleRecord) {
+  const candidate = duplicateFor(item);
+  if (!candidate) return;
+  await act(
+    () => lifecycleStore.dismissDuplicate(candidate, "Отмечено как не дубль в CRM"),
+    "Кандидат исключён",
+    false
+  );
+}
+
 async function applyBulk() {
   if (!lifecycleStore.selected.value.length) return;
   if (bulkAction.value === "delete" && !window.confirm(`Переместить ${lifecycleStore.selected.value.length} записей в корзину?`)) return;
@@ -522,9 +566,10 @@ function stateLabel(record: LifecycleRecord) {
           </section>
 
           <section v-if="canMutateOpened && config.merge && scope === 'active'" class="drawer-section lifecycle-tool">
-            <h3>Объединение</h3><p>Целевая запись сохранится. Связи отмеченных записей той же компании будут перенесены.</p>
-            <button class="secondary" type="button" @click="loadMergeCandidates">Загрузить записи этой компании</button>
-            <div class="merge-list"><label v-for="item in mergeSources" :key="item.id"><input type="checkbox" :checked="selectedIds.has(item.id)" @change="lifecycleStore.toggleSelected(item)" />{{ entityTitle(item) }}</label></div>
+            <h3>Возможные дубли</h3><p>Сервер сверяет нормализованные email, телефон, название и компанию. Целевая запись сохранится.</p>
+            <button class="secondary" type="button" @click="findDuplicates">Найти дубли</button>
+            <div class="merge-list"><article v-for="item in mergeSources" :key="item.id"><label><input type="checkbox" :checked="selectedIds.has(item.id)" @change="lifecycleStore.toggleSelected(item)" />{{ entityTitle(item) }}</label><small>{{ duplicateFor(item)?.score }}% · {{ duplicateFor(item)?.matched_fields.join(", ") }}</small><button class="secondary" type="button" @click="dismissDuplicate(item)">Не дубль</button></article></div>
+            <p v-if="!mergeSources.length" class="empty">Подтверждённых кандидатов нет.</p>
             <button type="button" :disabled="!mergeSources.some((item) => selectedIds.has(item.id))" @click="mergeSelected">Объединить выбранные</button>
           </section>
 
@@ -596,7 +641,9 @@ function stateLabel(record: LifecycleRecord) {
 .lifecycle-tool p { color: var(--muted); font-size: 13px; }
 .action-grid, .conversion-form { display: grid; gap: 8px; }
 .merge-list { display: grid; gap: 7px; max-height: 170px; overflow-y: auto; }
+.merge-list article { display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:9px;border:1px solid var(--line-soft);border-radius:8px;padding:8px; }
 .merge-list label { display: flex; align-items: center; gap: 9px; margin: 0; }
+.merge-list small { color:var(--muted); }
 .history-panel ol { display: grid; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
 .history-panel li { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 11px; }
 .history-panel small { color: var(--muted); }
@@ -608,5 +655,5 @@ function stateLabel(record: LifecycleRecord) {
 .conflict-card > div { display: flex; justify-content: center; gap: 8px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 @media (max-width: 920px) { .bulk-bar { left: 14px; right: 14px; overflow-x: auto; } .lifecycle-controls { align-items: stretch; flex-direction: column; } .lifecycle-query { flex-wrap: wrap; } .lifecycle-query input { min-width: 200px; } }
-@media (max-width: 620px) { .lifecycle-intro { align-items: stretch; flex-direction: column; } .entity-tabs { width: 100%; } .lifecycle-query > * { flex: 1 1 140px; } .pagination-row { align-items: stretch; flex-direction: column; } .pagination-row > div button { flex: 1; } .lifecycle-form { grid-template-columns: 1fr; } .record-fields { grid-template-columns: 110px minmax(0, 1fr); } .bulk-bar { flex-wrap: wrap; } .bulk-bar strong { flex: 1 0 100%; } }
+@media (max-width: 620px) { .lifecycle-intro { align-items: stretch; flex-direction: column; } .entity-tabs { width: 100%; } .lifecycle-query > * { flex: 1 1 140px; } .pagination-row { align-items: stretch; flex-direction: column; } .pagination-row > div button { flex: 1; } .lifecycle-form { grid-template-columns: 1fr; } .record-fields { grid-template-columns: 110px minmax(0, 1fr); } .bulk-bar { flex-wrap: wrap; } .bulk-bar strong { flex: 1 0 100%; } .merge-list article { grid-template-columns:1fr auto; }.merge-list article label { grid-column:1/-1; } }
 </style>

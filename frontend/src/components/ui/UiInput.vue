@@ -50,5 +50,5 @@ const describedBy = computed(() => {
 .ui-field__hint,.ui-field__error { font-size:12px; line-height:17px; font-weight:400; }
 .ui-field__hint { color:var(--color-text-muted); }
 .ui-field__error { color:var(--color-danger-text); }
+@media(max-width:640px){.ui-input{min-height:44px;font-size:16px}}
 </style>
-

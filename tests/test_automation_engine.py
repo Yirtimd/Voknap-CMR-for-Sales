@@ -256,12 +256,99 @@ def test_large_discount_requests_approval_and_manager_decides(automation_api):
     decision = automation_api["client"].post(
         f"/automations/approvals/{approval.id}/decision",
         headers=_headers(automation_api, "manager"),
-        json={"decision": "approved", "comment": "Допустимо"},
+        json={"version": approval.version, "decision": "approved", "comment": "Допустимо"},
     )
 
     assert decision.status_code == 200
     assert decision.json()["status"] == "approved"
     assert decision.json()["decided_by_id"] == str(automation_api["users"]["manager"].id)
+
+
+def test_approval_pauses_remaining_actions_until_decision(automation_api):
+    _workflow(
+        automation_api,
+        {
+            "name": "Pause for approval",
+            "trigger_type": "deal.updated",
+            "conditions": [{"field": "discount_percent", "operator": "gte", "value": 15}],
+            "actions": [
+                {
+                    "type": "request_approval",
+                    "config": {
+                        "title": "Approve discount",
+                        "user_id": str(automation_api["users"]["manager"].id),
+                        "due_in_hours": 12,
+                        "priority": "high",
+                    },
+                },
+                {
+                    "type": "create_task",
+                    "config": {
+                        "title": "Prepare approved offer",
+                        "user_id": str(automation_api["users"]["rep"].id),
+                        "due_in_days": 1,
+                    },
+                },
+            ],
+        },
+    )
+    updated = automation_api["client"].patch(
+        f"/sales/deals/{automation_api['deal'].id}",
+        headers=_headers(automation_api),
+        json={"version": 1, "discount_percent": 20},
+    )
+    assert updated.status_code == 200
+    run = automation_api["db"].query(AutomationRun).one()
+    approval = automation_api["db"].query(ApprovalRequest).one()
+    assert run.status == "waiting_approval"
+    assert run.completed_at is None
+    assert automation_api["db"].query(Task).count() == 0
+
+    decision = automation_api["client"].post(
+        f"/automations/approvals/{approval.id}/decision",
+        headers=_headers(automation_api, "manager"),
+        json={"version": approval.version, "decision": "approved", "comment": "OK"},
+    )
+    automation_api["db"].refresh(run)
+    assert decision.status_code == 200
+    assert run.status == "succeeded"
+    assert run.completed_at is not None
+    assert automation_api["db"].query(Task).one().title == "Prepare approved offer"
+
+
+def test_pipeline_configuration_is_versioned_and_terminal_stage_updates_deal(automation_api):
+    created = automation_api["client"].post(
+        "/sales/pipelines",
+        headers=_headers(automation_api),
+        json={
+            "name": "Enterprise",
+            "is_default": True,
+            "stages": [
+                {"name": "Discovery", "code": "discovery", "probability": 20},
+                {
+                    "name": "Won",
+                    "code": "won",
+                    "probability": 100,
+                    "stage_type": "won",
+                    "required_fields": ["amount"],
+                },
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    pipeline = created.json()
+    assert pipeline["version"] == 1
+    assert pipeline["is_default"] is True
+
+    won_stage = pipeline["stages"][1]
+    moved = automation_api["client"].patch(
+        f"/sales/deals/{automation_api['deal'].id}/move",
+        headers=_headers(automation_api),
+        json={"version": 1, "stage_id": won_stage["id"]},
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["status"] == "won"
+    assert moved.json()["probability"] == 100
 
 
 def test_new_communication_updates_next_action(automation_api):

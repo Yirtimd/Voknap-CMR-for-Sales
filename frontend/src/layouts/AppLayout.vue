@@ -368,6 +368,6 @@ function openTaskCreate() {
 .tasks-workspace-active .content { width: min(1600px, 100%); padding: 20px 24px 32px; }
 .tasks-workspace-active .topbar { margin: -20px -24px 20px; padding: 18px 24px; }
 @media (max-width: 760px) { .tasks-top-actions .tasks-ai-inbox, .tasks-top-actions .tasks-refresh { display: none; } .tasks-topbar h1 { font-size: 23px; } }
-@media (max-width: 920px) { .app-shell.tasks-workspace-active { grid-template-columns: 1fr; } .tasks-workspace-active .content { padding: 18px 14px 28px; } .tasks-workspace-active .topbar { margin: -18px -14px 16px; padding: 16px 14px 12px; } }
+@media (max-width: 920px) { .app-shell.tasks-workspace-active { grid-template-columns: 1fr; } .tasks-workspace-active .content { padding: calc(18px + env(safe-area-inset-top)) 14px calc(92px + env(safe-area-inset-bottom)); } .tasks-workspace-active .topbar { margin: -18px -14px 16px; padding: 16px 14px 12px; } }
 @media (max-width: 760px) { .search-popover { min-width: 280px; } .top-popover { right: auto; left: 0; } }
 </style>

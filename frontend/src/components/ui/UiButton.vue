@@ -83,4 +83,5 @@ withDefaults(
 .ui-button__spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--radius-pill); animation: ui-spin 700ms linear infinite; }
 @keyframes ui-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ui-button__spinner { animation-duration: 1.5s; } }
+@media (max-width:640px) { .ui-button,.is-compact { min-height:44px; }.is-icon-only { width:44px; } }
 </style>

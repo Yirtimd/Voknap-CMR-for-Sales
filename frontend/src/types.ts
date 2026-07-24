@@ -79,6 +79,19 @@ export type MergeResult = {
   version: number;
 };
 
+export type DuplicateCandidate = {
+  id: string;
+  entity_type: "contacts" | "leads" | "deals";
+  record_a_id: string;
+  record_b_id: string;
+  score: number;
+  matched_fields: string[];
+  status: "open" | "dismissed" | "merged";
+  version: number;
+  detected_at: string;
+  resolved_at: string | null;
+};
+
 export type LeadConversionRequest = {
   version: number;
   stage_id: string;
@@ -250,13 +263,23 @@ export type PipelineStage = {
   id: string;
   name: string;
   sort_order: number;
+  code: string;
+  probability: number;
+  stage_type: "open" | "won" | "lost";
+  is_active: boolean;
+  required_fields: string[];
 };
 
 export type Pipeline = {
   id: string;
   name: string;
+  description: string | null;
+  is_active: boolean;
+  is_default: boolean;
+  version: number;
   stages: PipelineStage[];
   created_at?: string;
+  updated_at?: string;
 };
 
 export type Deal = {
@@ -376,10 +399,14 @@ export type ApprovalRequest = {
   requested_by_id: string | null;
   assigned_to_id: string | null;
   status: string;
+  priority: "low" | "normal" | "high" | "critical";
+  due_at: string | null;
+  version: number;
   decision_comment: string | null;
   decided_by_id: string | null;
   decided_at: string | null;
   created_at: string;
+  updated_at: string;
 };
 
 export type AutomationOutboxItem = {
@@ -735,6 +762,33 @@ export type AnalyticsOverview = {
     overdue_revenue: number;
     won_revenue: number;
     open_deals: number;
+  };
+  forecast_by_owner: Array<{
+    scope_id: string | null;
+    scope_name: string;
+    open_deals: number;
+    open_pipeline: number;
+    due_in_period: number;
+    weighted_revenue: number;
+    commit_revenue: number;
+    overdue_revenue: number;
+  }>;
+  forecast_by_team: Array<{
+    scope_id: string | null;
+    scope_name: string;
+    open_deals: number;
+    open_pipeline: number;
+    due_in_period: number;
+    weighted_revenue: number;
+    commit_revenue: number;
+    overdue_revenue: number;
+  }>;
+  forecast_quality: {
+    completeness_rate: number;
+    missing_owner: number;
+    missing_close_date: number;
+    missing_probability: number;
+    missing_forecast_category: number;
   };
   stage_conversion: Array<{
     pipeline_id: string;

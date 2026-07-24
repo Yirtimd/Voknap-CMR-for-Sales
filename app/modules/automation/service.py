@@ -13,6 +13,7 @@ from app.modules.accounts.models import Membership
 from app.modules.activity.models import Activity
 from app.modules.activity.service import ActivityService
 from app.modules.automation.models import (
+    ApprovalHistory,
     ApprovalRequest,
     AutomationOutbox,
     AutomationRun,
@@ -173,12 +174,12 @@ class AutomationEngine:
                 with self.db.begin_nested():
                     actions = [AutomationAction.model_validate(item) for item in _load(workflow.actions_json)]
                     results = self._execute_actions(workflow, run, context, actions, actor_id)
-                run.status = "succeeded"
+                run.status = "waiting_approval" if self._has_pending_approval(run.id) else "succeeded"
                 run.result_json = _dump(results)
             except Exception as error:  # workflow failure must not abort source CRM transaction
                 run.status = "failed"
                 run.error = str(error)[:4000]
-            run.completed_at = _now()
+            run.completed_at = None if run.status == "waiting_approval" else _now()
             runs.append(run)
         return runs
 
@@ -226,10 +227,16 @@ class AutomationEngine:
         decision: str,
         decided_by_id: UUID,
         comment: str | None,
+        *,
+        allow_override: bool = False,
     ) -> None:
         if approval.status != "pending":
             raise HTTPException(status_code=409, detail="Approval is already decided")
-        if approval.assigned_to_id not in {None, decided_by_id}:
+        if approval.due_at and _as_utc(approval.due_at) < _now():
+            self._finish_approval(approval, "expired", decided_by_id, "Approval SLA expired")
+            self.db.commit()
+            raise HTTPException(status_code=409, detail="Approval SLA expired")
+        if not allow_override and approval.assigned_to_id not in {None, decided_by_id}:
             raise HTTPException(status_code=403, detail="Approval is assigned to another user")
         if decision == "approved":
             actions = [AutomationAction.model_validate(item) for item in _load(approval.continuation_json)]
@@ -243,10 +250,60 @@ class AutomationEngine:
                 results = self._execute_actions(workflow, run, context, actions, decided_by_id)
                 existing = _load(run.result_json)
                 run.result_json = _dump([*existing, {"approval_continuation": results}])
-        approval.status = decision
-        approval.decision_comment = comment
-        approval.decided_by_id = decided_by_id
-        approval.decided_at = _now()
+                run.status = "succeeded"
+                run.completed_at = _now()
+        else:
+            run = self.db.get(AutomationRun, approval.run_id)
+            if run is not None:
+                run.status = "skipped"
+                run.completed_at = _now()
+        self._finish_approval(approval, decision, decided_by_id, comment)
+        self.db.commit()
+
+    def reassign_approval(
+        self,
+        approval: ApprovalRequest,
+        assigned_to_id: UUID,
+        actor_id: UUID,
+        comment: str | None,
+    ) -> None:
+        if approval.status != "pending":
+            raise HTTPException(status_code=409, detail="Approval is already decided")
+        membership = (
+            self.db.query(Membership.id)
+            .filter(
+                Membership.tenant_id == approval.tenant_id,
+                Membership.user_id == assigned_to_id,
+                Membership.is_active.is_(True),
+            )
+            .first()
+        )
+        if membership is None:
+            raise HTTPException(status_code=422, detail="Assignee must be an active tenant member")
+        previous = approval.assigned_to_id
+        approval.assigned_to_id = assigned_to_id
+        self._add_approval_history(
+            approval,
+            "reassigned",
+            actor_id,
+            comment,
+            {"from_assignee_id": str(previous) if previous else None, "to_assignee_id": str(assigned_to_id)},
+        )
+        self.db.commit()
+
+    def cancel_approval(
+        self,
+        approval: ApprovalRequest,
+        actor_id: UUID,
+        comment: str,
+    ) -> None:
+        if approval.status != "pending":
+            raise HTTPException(status_code=409, detail="Approval is already decided")
+        run = self.db.get(AutomationRun, approval.run_id)
+        if run is not None:
+            run.status = "skipped"
+            run.completed_at = _now()
+        self._finish_approval(approval, "cancelled", actor_id, comment)
         self.db.commit()
 
     def deal_context(self, deal: Deal) -> dict[str, Any]:
@@ -271,7 +328,7 @@ class AutomationEngine:
         actor_id: UUID | None,
     ) -> list[dict]:
         results = []
-        for action in actions:
+        for index, action in enumerate(actions):
             if action.type == "assign_owner":
                 results.append(self._assign_owner(run, context, action.config, actor_id))
             elif action.type == "create_task":
@@ -279,7 +336,20 @@ class AutomationEngine:
             elif action.type == "send_template":
                 results.append(self._queue_template(run, context, action.config))
             elif action.type == "request_approval":
-                results.append(self._request_approval(workflow, run, context, action.config, actor_id))
+                remaining = [
+                    *action.config.get("on_approve", []),
+                    *[item.model_dump(mode="json") for item in actions[index + 1 :]],
+                ]
+                results.append(
+                    self._request_approval(
+                        workflow,
+                        run,
+                        context,
+                        {**action.config, "on_approve": remaining},
+                        actor_id,
+                    )
+                )
+                break
             else:
                 results.append(self._update_next_action(run, context, action.config, actor_id))
         return results
@@ -388,11 +458,74 @@ class AutomationEngine:
             reason=_render(config.get("reason"), context),
             requested_by_id=actor_id,
             assigned_to_id=assigned_to_id,
+            priority=config.get("priority", "normal"),
+            due_at=_now() + timedelta(hours=int(config.get("due_in_hours", 24))),
+            context_snapshot_json=_dump(context),
             continuation_json=_dump([item.model_dump(mode="json") for item in continuation]),
         )
         self.db.add(approval)
         self.db.flush()
+        self._add_approval_history(
+            approval,
+            "created",
+            actor_id,
+            approval.reason,
+            {"assigned_to_id": str(assigned_to_id), "priority": approval.priority},
+        )
         return {"type": "request_approval", "approval_id": str(approval.id)}
+
+    def _has_pending_approval(self, run_id: UUID) -> bool:
+        return (
+            self.db.query(ApprovalRequest.id)
+            .filter(ApprovalRequest.run_id == run_id, ApprovalRequest.status == "pending")
+            .first()
+            is not None
+        )
+
+    def _finish_approval(
+        self,
+        approval: ApprovalRequest,
+        status_value: str,
+        actor_id: UUID,
+        comment: str | None,
+    ) -> None:
+        previous = approval.status
+        approval.status = status_value
+        approval.decision_comment = comment
+        approval.decided_by_id = actor_id
+        approval.decided_at = _now()
+        self._add_approval_history(
+            approval,
+            status_value,
+            actor_id,
+            comment,
+            from_status=previous,
+            to_status=status_value,
+        )
+
+    def _add_approval_history(
+        self,
+        approval: ApprovalRequest,
+        action: str,
+        actor_id: UUID | None,
+        comment: str | None,
+        metadata: dict[str, Any] | None = None,
+        *,
+        from_status: str | None = None,
+        to_status: str | None = None,
+    ) -> None:
+        self.db.add(
+            ApprovalHistory(
+                tenant_id=approval.tenant_id,
+                approval_id=approval.id,
+                action=action,
+                from_status=from_status,
+                to_status=to_status,
+                actor_id=actor_id,
+                comment=comment,
+                metadata_json=_dump(metadata or {}),
+            )
+        )
 
     def _update_next_action(
         self,

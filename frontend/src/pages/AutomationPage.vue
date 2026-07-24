@@ -21,7 +21,8 @@ type ActionConfigDraft = {
   title: string;
   description: string;
   due_in_days: number;
-  priority: "low" | "normal" | "high";
+  due_in_hours: number;
+  priority: "low" | "normal" | "high" | "critical";
   template_id: string;
   recipient: string;
   reason: string;
@@ -100,6 +101,7 @@ function newAction(type: AutomationActionType): ActionDraft {
       title: type === "request_approval" ? "Согласовать {{title}}" : type === "create_task" ? "Связаться по {{title}}" : "Позвонить клиенту",
       description: "",
       due_in_days: 1,
+      due_in_hours: 24,
       priority: "normal",
       template_id: "",
       recipient: "",
@@ -156,7 +158,11 @@ function workflowPayload() {
         config.due_in_days = Number(item.config.due_in_days);
         config.priority = item.config.priority;
       }
-      if (item.type === "request_approval" && item.config.reason.trim()) config.reason = item.config.reason.trim();
+      if (item.type === "request_approval") {
+        if (item.config.reason.trim()) config.reason = item.config.reason.trim();
+        config.due_in_hours = Number(item.config.due_in_hours);
+        config.priority = item.config.priority;
+      }
       if (item.type === "send_template") {
         config.template_id = item.config.template_id;
         if (item.config.recipient.trim()) config.recipient = item.config.recipient.trim();
@@ -198,6 +204,7 @@ function editWorkflow(workflow: AutomationWorkflow) {
     draft.config.title = String(item.config.title ?? "");
     draft.config.description = String(item.config.description ?? "");
     draft.config.due_in_days = Number(item.config.due_in_days ?? 1);
+    draft.config.due_in_hours = Number(item.config.due_in_hours ?? 24);
     draft.config.priority = (item.config.priority as ActionConfigDraft["priority"]) ?? "normal";
     draft.config.template_id = String(item.config.template_id ?? "");
     draft.config.recipient = String(item.config.recipient ?? "");
@@ -262,8 +269,12 @@ async function runScheduled() {
   });
 }
 
-async function decide(id: string, decision: "approved" | "rejected") {
-  await guarded(() => automationStore.decideApproval(id, decision, approvalComments[id]).then(() => undefined));
+async function decide(id: string, version: number, decision: "approved" | "rejected") {
+  if (decision === "rejected" && !approvalComments[id]?.trim()) {
+    localError.value = "Для отклонения укажите причину.";
+    return;
+  }
+  await guarded(() => automationStore.decideApproval(id, version, decision, approvalComments[id]).then(() => undefined));
 }
 
 async function markOutbox(id: string, status: "sent" | "failed" | "cancelled") {
@@ -337,6 +348,7 @@ function dateTime(value: string | null) {
                   <div class="form-pair"><label>Ответственный<select v-model="action.config.assignee"><option value="owner">Владелец записи</option><option value="owner_manager">Руководитель владельца</option><option value="actor">Автор события</option></select></label><label>User ID<input v-model="action.config.user_id" placeholder="Необязательно" /></label></div>
                   <label v-if="action.type !== 'assign_owner'">Название<input v-model="action.config.title" required placeholder="Связаться по {{title}}" /></label>
                   <label v-if="action.type === 'request_approval'">Причина<textarea v-model="action.config.reason" rows="2" placeholder="Что нужно согласовать"></textarea></label>
+                  <div v-if="action.type === 'request_approval'" class="action-fields"><label>SLA, часов<input v-model.number="action.config.due_in_hours" type="number" min="1" max="2160" required /></label><label>Приоритет<select v-model="action.config.priority"><option value="low">Низкий</option><option value="normal">Обычный</option><option value="high">Высокий</option><option value="critical">Критический</option></select></label></div>
                   <template v-if="action.type === 'create_task' || action.type === 'update_next_action'">
                     <label>Описание<textarea v-model="action.config.description" rows="2" placeholder="Необязательно"></textarea></label>
                     <div class="action-fields"><label>Срок, дней<input v-model.number="action.config.due_in_days" type="number" min="0" max="365" required /></label><label>Приоритет<select v-model="action.config.priority"><option value="low">Низкий</option><option value="normal">Обычный</option><option value="high">Высокий</option></select></label></div>
@@ -366,7 +378,7 @@ function dateTime(value: string | null) {
 
       <section v-else-if="activeTab === 'approvals'" class="panel automation-list">
         <p v-if="!automationStore.canManageApprovals.value" class="automation-denied">Нет права <code>approvals:manage</code>.</p>
-        <template v-else><header class="list-head"><div><h2>Согласования</h2><p>Решения продолжают workflow только после approve.</p></div><select v-model="approvalFilter" @change="automationStore.refreshApprovals(approvalFilter)"><option value="">Все статусы</option><option value="pending">Ожидают</option><option value="approved">Согласованы</option><option value="rejected">Отклонены</option></select></header><article v-for="item in automationStore.approvals.value" :key="item.id" class="automation-card approval-card"><div><strong>{{ item.title }}</strong><small>{{ item.entity_type }} · {{ item.entity_id }} · {{ dateTime(item.created_at) }}</small><p v-if="item.reason">{{ item.reason }}</p><p v-if="item.decision_comment">Комментарий: {{ item.decision_comment }}</p><textarea v-if="item.status === 'pending'" v-model="approvalComments[item.id]" rows="2" placeholder="Комментарий к решению"></textarea></div><span class="status-pill" :class="`status-${item.status}`">{{ statusLabel(item.status, "approval") }}</span><div v-if="item.status === 'pending'" class="card-actions"><button type="button" @click="decide(item.id, 'approved')">Approve</button><button class="danger-quiet" type="button" @click="decide(item.id, 'rejected')">Reject</button></div></article><p v-if="!automationStore.approvals.value.length" class="empty">Согласований нет.</p></template>
+        <template v-else><header class="list-head"><div><h2>Согласования</h2><p>Сценарий приостановлен до решения; версия защищает от двойного ответа.</p></div><select v-model="approvalFilter" @change="automationStore.refreshApprovals(approvalFilter)"><option value="">Все статусы</option><option value="pending">Ожидают</option><option value="approved">Согласованы</option><option value="rejected">Отклонены</option><option value="cancelled">Отменены</option><option value="expired">Просрочены</option></select></header><article v-for="item in automationStore.approvals.value" :key="item.id" class="automation-card approval-card"><div><strong>{{ item.title }}</strong><small>{{ item.entity_type }} · {{ item.entity_id }} · {{ dateTime(item.created_at) }}</small><small>Приоритет: {{ item.priority }} · SLA: {{ item.due_at ? dateTime(item.due_at) : "не задан" }} · версия {{ item.version }}</small><p v-if="item.reason">{{ item.reason }}</p><p v-if="item.decision_comment">Комментарий: {{ item.decision_comment }}</p><textarea v-if="item.status === 'pending'" v-model="approvalComments[item.id]" rows="2" placeholder="Комментарий к решению (обязателен при отклонении)"></textarea></div><span class="status-pill" :class="`status-${item.status}`">{{ statusLabel(item.status, "approval") }}</span><div v-if="item.status === 'pending'" class="card-actions"><button type="button" @click="decide(item.id, item.version, 'approved')">Согласовать</button><button class="danger-quiet" type="button" @click="decide(item.id, item.version, 'rejected')">Отклонить</button></div></article><p v-if="!automationStore.approvals.value.length" class="empty">Согласований нет.</p></template>
       </section>
 
       <section v-else class="panel automation-list">

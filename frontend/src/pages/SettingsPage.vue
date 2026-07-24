@@ -8,13 +8,14 @@ import UiIcon from "../components/ui/UiIcon.vue";
 import DesignSystemPage from "./DesignSystemPage.vue";
 import { crmStore } from "../stores/crm";
 import IntegrationsSettings from "../components/settings/IntegrationsSettings.vue";
+import PipelineSettings from "../components/settings/PipelineSettings.vue";
 
-type SettingsSection = "workspace" | "integrations" | "templates" | "admin" | "components";
+type SettingsSection = "workspace" | "sales" | "integrations" | "templates" | "admin" | "components";
 const route = useRoute();
 const activeSection = ref<SettingsSection>("workspace");
 const loading = ref(true);
 const canAdmin = computed(() => ["owner", "admin"].includes(crmStore.me.value?.role ?? ""));
-const settingsSections: SettingsSection[] = ["workspace", "integrations", "templates", "admin", "components"];
+const settingsSections: SettingsSection[] = ["workspace", "sales", "integrations", "templates", "admin", "components"];
 
 watch(
   () => route.query.section,
@@ -54,7 +55,7 @@ onMounted(async () => {
   <section class="settings-page">
     <header class="settings-hero"><div><p class="eyebrow">Рабочее пространство</p><h2>Настройки</h2><p>Управление компанией, интеграциями, шаблонами и доступными возможностями.</p></div><UiButton variant="secondary" icon="refresh" :loading="loading" @click="refreshSettings">Обновить</UiButton></header>
     <nav class="settings-nav" aria-label="Разделы настроек">
-      <button v-for="item in [{id:'workspace',label:'Компания',icon:'companies'},{id:'integrations',label:'Интеграции',icon:'automation'},{id:'templates',label:'Шаблоны',icon:'file'},{id:'admin',label:'Администрирование',icon:'settings'},{id:'components',label:'Компоненты',icon:'grid'}]" :key="item.id" type="button" :class="{ active: activeSection === item.id }" @click="activeSection = item.id as SettingsSection"><UiIcon :name="item.icon as any" :size="18" />{{ item.label }}</button>
+      <button v-for="item in [{id:'workspace',label:'Компания',icon:'companies'},{id:'sales',label:'Продажи',icon:'deals'},{id:'integrations',label:'Интеграции',icon:'automation'},{id:'templates',label:'Шаблоны',icon:'file'},{id:'admin',label:'Администрирование',icon:'settings'},{id:'components',label:'Компоненты',icon:'grid'}]" :key="item.id" type="button" :class="{ active: activeSection === item.id }" @click="activeSection = item.id as SettingsSection"><UiIcon :name="item.icon as any" :size="18" />{{ item.label }}</button>
     </nav>
     <div v-if="loading && activeSection !== 'components'" class="settings-loading"><span></span><span></span></div>
 
@@ -64,6 +65,8 @@ onMounted(async () => {
       <label>ID рабочего пространства<input v-model="crmStore.tenantId.value" @change="crmStore.saveTenantId" /></label>
       <p class="hint">{{ crmStore.activeTenant.value?.name }} / {{ crmStore.activeTenant.value?.slug }}</p>
     </section>
+
+    <PipelineSettings v-show="!loading && activeSection === 'sales'" />
 
     <section class="panel settings-card">
       <header><UiIcon name="file" :size="20" /><div><h2>Заметка по умолчанию</h2><p>Используется быстрыми действиями в лидах и сделках.</p></div></header>

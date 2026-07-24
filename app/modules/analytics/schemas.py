@@ -18,6 +18,25 @@ class ForecastSummary(BaseModel):
     open_deals: int
 
 
+class ForecastBreakdown(BaseModel):
+    scope_id: UUID | None
+    scope_name: str
+    open_deals: int
+    open_pipeline: float
+    due_in_period: float
+    weighted_revenue: float
+    commit_revenue: float
+    overdue_revenue: float
+
+
+class ForecastDataQuality(BaseModel):
+    completeness_rate: float
+    missing_owner: int
+    missing_close_date: int
+    missing_probability: int
+    missing_forecast_category: int
+
+
 class StageConversion(BaseModel):
     pipeline_id: UUID
     pipeline_name: str
@@ -122,6 +141,9 @@ class RiskMap(BaseModel):
 class AnalyticsOverview(BaseModel):
     generated_at: datetime
     forecast: ForecastSummary
+    forecast_by_owner: list[ForecastBreakdown]
+    forecast_by_team: list[ForecastBreakdown]
+    forecast_quality: ForecastDataQuality
     stage_conversion: list[StageConversion]
     stuck_deals: list[StuckDeal]
     task_sla: TaskSLASummary

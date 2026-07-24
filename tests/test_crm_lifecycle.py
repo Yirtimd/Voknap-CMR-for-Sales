@@ -284,6 +284,46 @@ def test_contact_merge_rewires_relations_and_soft_deletes_source(lifecycle_api):
     assert merged_source.deleted_at is not None
 
 
+def test_duplicate_scan_persists_candidate_and_merge_resolves_it(lifecycle_api):
+    lifecycle_api["duplicate_contact"].email = lifecycle_api["contact"].email
+    lifecycle_api["db"].commit()
+    scanned = lifecycle_api["client"].post(
+        "/sales/dedup/scan",
+        headers=_headers(lifecycle_api, "owner"),
+        json={"entity_type": "contacts", "minimum_score": 80},
+    )
+    assert scanned.status_code == 200, scanned.text
+    candidates = lifecycle_api["client"].get(
+        "/sales/dedup/candidates?entity_type=contacts",
+        headers=_headers(lifecycle_api, "owner"),
+    )
+    assert candidates.status_code == 200
+    candidate = candidates.json()[0]
+    assert candidate["score"] == 100
+    assert "email" in candidate["matched_fields"]
+
+    merged = lifecycle_api["client"].post(
+        f"/sales/contacts/{lifecycle_api['contact'].id}/merge",
+        headers=_headers(lifecycle_api),
+        json={
+            "target_version": lifecycle_api["contact"].version,
+            "sources": [
+                {
+                    "id": str(lifecycle_api["duplicate_contact"].id),
+                    "version": lifecycle_api["duplicate_contact"].version,
+                }
+            ],
+        },
+    )
+    assert merged.status_code == 200, merged.text
+    resolved = lifecycle_api["client"].get(
+        "/sales/dedup/candidates?entity_type=contacts&status=merged",
+        headers=_headers(lifecycle_api, "owner"),
+    )
+    assert resolved.status_code == 200
+    assert resolved.json()[0]["id"] == candidate["id"]
+
+
 def test_bulk_archive_and_owner_reassignment(lifecycle_api):
     task = lifecycle_api["task"]
     archived = lifecycle_api["client"].post(

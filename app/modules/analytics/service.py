@@ -4,12 +4,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.modules.accounts.models import Membership, User
+from app.modules.accounts.models import Membership, SalesTeam, User
 from app.modules.activity.models import Activity
 from app.modules.analytics.schemas import (
     AnalyticsOverview,
     CompanyHealthItem,
     DealRiskItem,
+    ForecastBreakdown,
+    ForecastDataQuality,
     ForecastSummary,
     ManagerActivity,
     OwnerTaskSLA,
@@ -79,6 +81,7 @@ class AnalyticsService:
         memberships = (
             self.db.query(Membership).filter(Membership.tenant_id == tenant_id).all()
         )
+        teams = self.db.query(SalesTeam).filter(SalesTeam.tenant_id == tenant_id).all()
         user_ids = {membership.user_id for membership in memberships}
         users = self.db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
 
@@ -86,6 +89,8 @@ class AnalyticsService:
         pipeline_by_id = {pipeline.id: pipeline for pipeline in pipelines}
         stage_by_id = {stage.id: stage for stage in stages}
         user_by_id = {user.id: user for user in users}
+        membership_by_user = {membership.user_id: membership for membership in memberships}
+        team_by_id = {team.id: team for team in teams}
         insight_by_company = {insight.company_id: insight for insight in insights}
 
         deal_activities: dict[UUID, list[Activity]] = defaultdict(list)
@@ -123,9 +128,31 @@ class AnalyticsService:
             health_by_company=health_by_company,
         )
 
+        forecast = self._forecast(now, deals, forecast_days)
         return AnalyticsOverview(
             generated_at=now,
-            forecast=self._forecast(now, deals, forecast_days),
+            forecast=forecast,
+            forecast_by_owner=self._forecast_breakdown(
+                now,
+                deals,
+                forecast_days,
+                lambda deal: deal.owner_id,
+                lambda owner_id: user_by_id.get(owner_id).full_name
+                if owner_id in user_by_id
+                else "Без ответственного",
+            ),
+            forecast_by_team=self._forecast_breakdown(
+                now,
+                deals,
+                forecast_days,
+                lambda deal: membership_by_user.get(deal.owner_id).team_id
+                if deal.owner_id in membership_by_user
+                else None,
+                lambda team_id: team_by_id.get(team_id).name
+                if team_id in team_by_id
+                else "Без команды",
+            ),
+            forecast_quality=self._forecast_quality(deals),
             stage_conversion=self._stage_conversion(
                 deals, stages, pipeline_by_id, stuck_ids
             ),
@@ -165,8 +192,8 @@ class AnalyticsService:
         due = [
             deal
             for deal in open_deals
-            if deal.expected_close_date is None
-            or (_utc(deal.expected_close_date) or now) <= period_end
+            if deal.expected_close_date is not None
+            and now <= (_utc(deal.expected_close_date) or now) <= period_end
         ]
 
         def total(items: list[Deal]) -> float:
@@ -197,6 +224,49 @@ class AnalyticsService:
             ),
             won_revenue=total([deal for deal in deals if str(deal.status).lower() == "won"]),
             open_deals=len(open_deals),
+        )
+
+    @classmethod
+    def _forecast_breakdown(
+        cls,
+        now: datetime,
+        deals: list[Deal],
+        forecast_days: int,
+        key,
+        name,
+    ) -> list[ForecastBreakdown]:
+        result = []
+        for scope_id, scoped_deals in _group_by(deals, key).items():
+            summary = cls._forecast(now, scoped_deals, forecast_days)
+            result.append(
+                ForecastBreakdown(
+                    scope_id=scope_id,
+                    scope_name=name(scope_id),
+                    open_deals=summary.open_deals,
+                    open_pipeline=summary.open_pipeline,
+                    due_in_period=summary.due_in_period,
+                    weighted_revenue=summary.weighted_revenue,
+                    commit_revenue=summary.commit_revenue,
+                    overdue_revenue=summary.overdue_revenue,
+                )
+            )
+        return sorted(result, key=lambda item: item.weighted_revenue, reverse=True)
+
+    @staticmethod
+    def _forecast_quality(deals: list[Deal]) -> ForecastDataQuality:
+        open_deals = [deal for deal in deals if _is_open(deal)]
+        missing_owner = sum(deal.owner_id is None for deal in open_deals)
+        missing_close_date = sum(deal.expected_close_date is None for deal in open_deals)
+        missing_probability = sum(deal.probability is None for deal in open_deals)
+        missing_category = sum(not deal.forecast_category for deal in open_deals)
+        expected = len(open_deals) * 4
+        missing = missing_owner + missing_close_date + missing_probability + missing_category
+        return ForecastDataQuality(
+            completeness_rate=_percent(expected - missing, expected),
+            missing_owner=missing_owner,
+            missing_close_date=missing_close_date,
+            missing_probability=missing_probability,
+            missing_forecast_category=missing_category,
         )
 
     @staticmethod

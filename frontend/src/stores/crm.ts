@@ -997,6 +997,35 @@ async function createPipeline() {
   }, "Воронка создана");
 }
 
+async function savePipeline(payload: {
+  id?: string;
+  version?: number;
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
+  is_default?: boolean;
+  stages: Array<{
+    id?: string;
+    name: string;
+    code?: string;
+    probability: number;
+    stage_type: "open" | "won" | "lost";
+    required_fields: string[];
+  }>;
+}) {
+  const message = payload.id ? "Воронка обновлена" : "Воронка создана";
+  await run(async () => {
+    const { id, version, ...values } = payload;
+    await api<Pipeline>(
+      id ? `/sales/pipelines/${id}` : "/sales/pipelines",
+      post(id ? { version, ...values } : values, id ? "PATCH" : "POST"),
+      token.value,
+      tenantId.value
+    );
+    await refreshAll();
+  }, message);
+}
+
 async function createContact() {
   await run(async () => {
     await api<Contact>("/sales/contacts", post(emptyToNull(contactForm.value)), token.value, tenantId.value);
@@ -1201,6 +1230,7 @@ export const crmStore = {
   refreshActivities,
   refreshAnalytics,
   createPipeline,
+  savePipeline,
   createContact,
   createLead,
   createDeal,

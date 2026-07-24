@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
@@ -184,15 +185,44 @@ class LeadResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PipelineStageInput(BaseModel):
+    id: UUID | None = None
+    name: str = Field(min_length=1, max_length=120)
+    code: str | None = Field(default=None, pattern=r"^[a-z0-9_]+$", max_length=80)
+    probability: int = Field(default=0, ge=0, le=100)
+    stage_type: Literal["open", "won", "lost"] = "open"
+    required_fields: list[str] = Field(default_factory=list, max_length=20)
+
+
 class PipelineCreate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
-    stages: list[str] = Field(default_factory=lambda: ["Новый", "В работе", "КП", "Сделка"])
+    description: str | None = Field(default=None, max_length=2000)
+    is_default: bool = False
+    stages: list[str | PipelineStageInput] = Field(
+        default_factory=lambda: ["Новый", "В работе", "КП", "Сделка"],
+        min_length=1,
+        max_length=30,
+    )
+
+
+class PipelineUpdate(BaseModel):
+    version: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    is_active: bool | None = None
+    is_default: bool | None = None
+    stages: list[PipelineStageInput] | None = Field(default=None, min_length=1, max_length=30)
 
 
 class PipelineStageResponse(BaseModel):
     id: UUID
     name: str
     sort_order: int
+    code: str
+    probability: int
+    stage_type: str
+    is_active: bool
+    required_fields: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -200,8 +230,13 @@ class PipelineStageResponse(BaseModel):
 class PipelineResponse(BaseModel):
     id: UUID
     name: str
+    description: str | None
+    is_active: bool
+    is_default: bool
+    version: int
     stages: list[PipelineStageResponse]
     created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 

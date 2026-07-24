@@ -121,9 +121,9 @@ describe("automation store", () => {
       .mockResolvedValueOnce(response([]));
     vi.stubGlobal("fetch", fetchMock);
 
-    await automationStore.decideApproval("approval-1", "approved", "OK");
+    await automationStore.decideApproval("approval-1", 2, "approved", "OK");
 
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({ decision: "approved", comment: "OK" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({ version: 2, decision: "approved", comment: "OK" });
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 

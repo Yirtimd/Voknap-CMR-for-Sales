@@ -61,6 +61,9 @@ from app.modules.sales.schemas import (
     NoteResponse,
     PipelineCreate,
     PipelineResponse,
+    PipelineStageInput,
+    PipelineStageResponse,
+    PipelineUpdate,
     TaskCreate,
     TaskDoneRequest,
     TaskResponse,
@@ -556,31 +559,88 @@ def create_pipeline(
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(require_permission(Permission.SALES_MANAGE)),
 ) -> Pipeline:
-    pipeline = Pipeline(tenant_id=tenant.id, name=payload.name)
+    if payload.is_default:
+        db.query(Pipeline).filter(Pipeline.tenant_id == tenant.id).update(
+            {Pipeline.is_default: False}, synchronize_session=False
+        )
+    pipeline = Pipeline(
+        tenant_id=tenant.id,
+        name=payload.name,
+        description=payload.description,
+        is_default=payload.is_default,
+    )
     db.add(pipeline)
     db.flush()
 
-    for index, stage_name in enumerate(payload.stages):
+    for index, stage_value in enumerate(payload.stages):
+        stage = _pipeline_stage_input(stage_value, index, len(payload.stages))
         db.add(
             PipelineStage(
                 tenant_id=tenant.id,
                 pipeline_id=pipeline.id,
-                name=stage_name,
+                name=stage.name,
+                code=stage.code or _stage_code(stage.name, index),
                 sort_order=index,
+                probability=stage.probability,
+                stage_type=stage.stage_type,
+                required_fields_json=json.dumps(stage.required_fields),
             )
         )
 
     db.commit()
     db.refresh(pipeline)
-    return pipeline
+    return _pipeline_response(pipeline)
 
 
 @router.get("/pipelines", response_model=list[PipelineResponse])
 def list_pipelines(
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(get_current_tenant),
-) -> list[Pipeline]:
-    return db.query(Pipeline).filter(Pipeline.tenant_id == tenant.id).order_by(Pipeline.created_at.desc()).all()
+) -> list[PipelineResponse]:
+    rows = (
+        db.query(Pipeline)
+        .filter(Pipeline.tenant_id == tenant.id)
+        .order_by(Pipeline.is_default.desc(), Pipeline.created_at.desc())
+        .all()
+    )
+    return [_pipeline_response(row) for row in rows]
+
+
+@router.patch("/pipelines/{pipeline_id}", response_model=PipelineResponse)
+def update_pipeline(
+    pipeline_id: UUID,
+    payload: PipelineUpdate,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(require_permission(Permission.SALES_MANAGE)),
+) -> PipelineResponse:
+    pipeline = _get_for_tenant(db, Pipeline, tenant.id, pipeline_id)
+    require_version(pipeline, payload.version)
+    if payload.is_active is False:
+        active_deal = (
+            db.query(Deal.id)
+            .join(PipelineStage, Deal.stage_id == PipelineStage.id)
+            .filter(
+                Deal.tenant_id == tenant.id,
+                PipelineStage.pipeline_id == pipeline.id,
+                Deal.status == "open",
+                Deal.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if active_deal:
+            raise HTTPException(status_code=409, detail="Pipeline has open deals")
+    if payload.is_default:
+        db.query(Pipeline).filter(
+            Pipeline.tenant_id == tenant.id, Pipeline.id != pipeline.id
+        ).update({Pipeline.is_default: False}, synchronize_session=False)
+    for field_name in ("name", "description", "is_active", "is_default"):
+        value = getattr(payload, field_name)
+        if value is not None:
+            setattr(pipeline, field_name, value)
+    if payload.stages is not None:
+        _replace_pipeline_stages(db, tenant.id, pipeline, payload.stages)
+    commit_versioned(db, pipeline)
+    return _pipeline_response(pipeline)
 
 
 @router.post("/deals", response_model=DealResponse, status_code=status.HTTP_201_CREATED)
@@ -596,13 +656,19 @@ def create_deal(
         payload.model_fields_set,
         {"owner_id", "probability", "risk_level", "forecast_category"},
     )
-    _get_for_tenant(db, PipelineStage, tenant.id, payload.stage_id)
+    stage = _get_for_tenant(db, PipelineStage, tenant.id, payload.stage_id)
+    if not stage.is_active or not stage.pipeline.is_active:
+        raise HTTPException(status_code=422, detail="Deal stage is inactive")
     if payload.lead_id is not None:
         lead = _get_for_tenant(db, Lead, tenant.id, payload.lead_id)
         if lead.company_id != payload.company_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lead belongs to another company")
 
     deal_data = payload.model_dump()
+    if deal_data["probability"] is None:
+        deal_data["probability"] = stage.probability
+    if stage.stage_type in {"won", "lost"}:
+        deal_data["status"] = stage.stage_type
     if tenant.role.value == "sales_rep":
         deal_data["owner_id"] = tenant.user_id
     deal = Deal(tenant_id=tenant.id, **deal_data)
@@ -799,8 +865,14 @@ def move_deal(
     require_version(deal, payload.version)
     old_stage_id = deal.stage_id
     new_stage = _get_for_tenant(db, PipelineStage, tenant.id, payload.stage_id)
+    if not new_stage.is_active or not new_stage.pipeline.is_active:
+        raise HTTPException(status_code=422, detail="Deal stage is inactive")
+    _require_stage_fields(deal, new_stage)
 
     deal.stage_id = payload.stage_id
+    deal.probability = new_stage.probability
+    if new_stage.stage_type in {"won", "lost"}:
+        deal.status = new_stage.stage_type
     add_history(
         db,
         tenant,
@@ -1352,6 +1424,128 @@ def _status_label(status_value: str) -> str:
         "inactive": "Неактивный",
         "archived": "Архив",
     }.get(status_value, status_value)
+
+
+def _pipeline_stage_input(
+    value: str | PipelineStageInput,
+    index: int,
+    total: int,
+) -> PipelineStageInput:
+    if isinstance(value, PipelineStageInput):
+        return value
+    stage_type = "won" if index == total - 1 else "open"
+    probability = 100 if stage_type == "won" else round(index * 100 / max(total, 1))
+    return PipelineStageInput(
+        name=value,
+        code=f"stage_{index + 1}",
+        probability=probability,
+        stage_type=stage_type,
+    )
+
+
+def _stage_code(name: str, index: int) -> str:
+    ascii_code = "".join(
+        character if character.isascii() and character.isalnum() else "_"
+        for character in name.lower()
+    ).strip("_")
+    return ascii_code[:70] or f"stage_{index + 1}"
+
+
+def _replace_pipeline_stages(
+    db: Session,
+    tenant_id: UUID,
+    pipeline: Pipeline,
+    stages: list[PipelineStageInput],
+) -> None:
+    existing = {stage.id: stage for stage in pipeline.stages}
+    retained: set[UUID] = set()
+    codes: set[str] = set()
+    for index, payload in enumerate(stages):
+        code = payload.code or _stage_code(payload.name, index)
+        if code in codes:
+            raise HTTPException(status_code=422, detail=f"Duplicate stage code: {code}")
+        codes.add(code)
+        if payload.id is None:
+            stage = PipelineStage(
+                tenant_id=tenant_id,
+                pipeline_id=pipeline.id,
+                code=code,
+            )
+            db.add(stage)
+        else:
+            stage = existing.get(payload.id)
+            if stage is None:
+                raise HTTPException(status_code=422, detail="Stage does not belong to pipeline")
+            retained.add(stage.id)
+        stage.name = payload.name
+        stage.code = code
+        stage.sort_order = index
+        stage.probability = payload.probability
+        stage.stage_type = payload.stage_type
+        stage.is_active = True
+        stage.required_fields_json = json.dumps(payload.required_fields)
+
+    for stage_id, stage in existing.items():
+        if stage_id in retained:
+            continue
+        used = (
+            db.query(Deal.id)
+            .filter(
+                Deal.tenant_id == tenant_id,
+                Deal.stage_id == stage.id,
+                Deal.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if used:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Stage '{stage.name}' has deals and cannot be removed",
+            )
+        db.delete(stage)
+
+
+def _pipeline_response(pipeline: Pipeline) -> PipelineResponse:
+    return PipelineResponse(
+        id=pipeline.id,
+        name=pipeline.name,
+        description=pipeline.description,
+        is_active=pipeline.is_active,
+        is_default=pipeline.is_default,
+        version=pipeline.version,
+        stages=[
+            PipelineStageResponse(
+                id=stage.id,
+                name=stage.name,
+                sort_order=stage.sort_order,
+                code=stage.code,
+                probability=stage.probability,
+                stage_type=stage.stage_type,
+                is_active=stage.is_active,
+                required_fields=json.loads(stage.required_fields_json),
+            )
+            for stage in sorted(pipeline.stages, key=lambda item: item.sort_order)
+        ],
+        created_at=pipeline.created_at,
+        updated_at=pipeline.updated_at,
+    )
+
+
+def _require_stage_fields(deal: Deal, stage: PipelineStage) -> None:
+    allowed = {
+        "amount",
+        "expected_close_date",
+        "next_step",
+        "owner_id",
+        "forecast_category",
+    }
+    required = json.loads(stage.required_fields_json)
+    invalid = set(required) - allowed
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Unsupported required fields: {sorted(invalid)}")
+    missing = [field for field in required if getattr(deal, field, None) in {None, ""}]
+    if missing:
+        raise HTTPException(status_code=422, detail={"message": "Required deal fields are missing", "fields": missing})
 
 
 def _initials(name: str) -> str:

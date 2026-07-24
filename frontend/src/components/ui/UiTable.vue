@@ -7,7 +7,7 @@ withDefaults(defineProps<{ label?: string; loading?: boolean; striped?: boolean 
 </script>
 
 <template>
-  <div class="ui-table-wrap" :aria-busy="loading || undefined">
+  <div class="ui-table-wrap" :aria-busy="loading || undefined" tabindex="0" role="region" :aria-label="`${label}. Таблица прокручивается по горизонтали на узком экране.`">
     <table class="ui-table" :class="{ striped }" :aria-label="label">
       <slot />
     </table>
@@ -24,4 +24,6 @@ withDefaults(defineProps<{ label?: string; loading?: boolean; striped?: boolean 
 .ui-table :deep(tbody tr:hover) { background:var(--color-surface-subtle); }
 .ui-table.striped :deep(tbody tr:nth-child(even)) { background:var(--color-surface-subtle); }
 .ui-table__loading { position:absolute; inset:0; display:grid; place-items:center; color:var(--color-text-muted); background:var(--color-surface-overlay); font-size:13px; }
+.ui-table-wrap:focus-visible { outline:3px solid var(--color-focus); outline-offset:2px; }
+@media(max-width:640px){.ui-table{min-width:max-content}.ui-table :deep(th),.ui-table :deep(td){padding:11px 12px;white-space:nowrap}}
 </style>

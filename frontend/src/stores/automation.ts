@@ -145,16 +145,45 @@ async function runScheduled() {
   }, "Scheduled-проверка завершена");
 }
 
-async function decideApproval(id: string, decision: "approved" | "rejected", comment?: string | null) {
+async function decideApproval(
+  id: string,
+  version: number,
+  decision: "approved" | "rejected",
+  comment?: string | null
+) {
   return mutate(async () => {
     const result = await api<ApprovalRequest>(
       `/automations/approvals/${id}/decision`,
-      post({ decision, comment: comment || null }),
+      post({ version, decision, comment: comment || null }),
       ...auth()
     );
     await Promise.all([refreshApprovals(), canManageAutomations.value ? refreshRuns() : Promise.resolve()]);
     return result;
   }, decision === "approved" ? "Согласование подтверждено" : "Согласование отклонено");
+}
+
+async function reassignApproval(id: string, version: number, assignedToId: string, comment?: string | null) {
+  return mutate(async () => {
+    const result = await api<ApprovalRequest>(
+      `/automations/approvals/${id}/reassign`,
+      post({ version, assigned_to_id: assignedToId, comment: comment || null }),
+      ...auth()
+    );
+    await refreshApprovals();
+    return result;
+  }, "Согласование переназначено");
+}
+
+async function cancelApproval(id: string, version: number, comment: string) {
+  return mutate(async () => {
+    const result = await api<ApprovalRequest>(
+      `/automations/approvals/${id}/cancel`,
+      post({ version, comment }),
+      ...auth()
+    );
+    await Promise.all([refreshApprovals(), canManageAutomations.value ? refreshRuns() : Promise.resolve()]);
+    return result;
+  }, "Согласование отменено");
 }
 
 async function updateOutbox(
@@ -234,6 +263,8 @@ export const automationStore = {
   updateTemplate,
   runScheduled,
   decideApproval,
+  reassignApproval,
+  cancelApproval,
   updateOutbox,
   clearMessages
 };

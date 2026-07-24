@@ -13,6 +13,7 @@ from app.modules.automation.service import AutomationEngine
 from app.modules.communication.models import CommunicationEvent
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeDocument, KnowledgeQuery
 from app.modules.sales.authorization import require_company_write_access
+from app.modules.sales.deduplication import scan_duplicates
 from app.modules.sales.lifecycle import (
     OWNER_FIELDS,
     EntityType,
@@ -34,6 +35,9 @@ from app.modules.sales.lifecycle_schemas import (
     BulkActionResponse,
     ContactUpdate,
     DealUpdate,
+    DuplicateCandidateResponse,
+    DuplicateDismissRequest,
+    DuplicateScanRequest,
     FieldChangeResponse,
     LeadConversionRequest,
     LeadConversionResponse,
@@ -50,6 +54,7 @@ from app.modules.sales.models import (
     CompanyFile,
     Contact,
     Deal,
+    DuplicateCandidate,
     FieldChange,
     Lead,
     NextAction,
@@ -67,6 +72,64 @@ from app.modules.sales.schemas import (
 
 
 router = APIRouter()
+
+
+@router.post("/dedup/scan", response_model=dict)
+def scan_duplicate_candidates(
+    payload: DuplicateScanRequest,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(require_permission(Permission.SALES_MANAGE)),
+) -> dict:
+    detected = scan_duplicates(
+        db,
+        tenant.id,
+        payload.entity_type,
+        tenant.user_id,
+        payload.minimum_score,
+        payload.limit,
+    )
+    return {"entity_type": payload.entity_type, "detected": detected}
+
+
+@router.get("/dedup/candidates", response_model=list[DuplicateCandidateResponse])
+def list_duplicate_candidates(
+    entity_type: str | None = None,
+    candidate_status: str = Query(default="open", alias="status"),
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(require_permission(Permission.CRM_READ)),
+) -> list[DuplicateCandidateResponse]:
+    query = db.query(DuplicateCandidate).filter(
+        DuplicateCandidate.tenant_id == tenant.id,
+        DuplicateCandidate.status == candidate_status,
+    )
+    if entity_type:
+        query = query.filter(DuplicateCandidate.entity_type == entity_type)
+    return [_duplicate_response(row) for row in query.order_by(DuplicateCandidate.score.desc())]
+
+
+@router.post("/dedup/candidates/{candidate_id}/dismiss", response_model=DuplicateCandidateResponse)
+def dismiss_duplicate_candidate(
+    candidate_id: UUID,
+    payload: DuplicateDismissRequest,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(require_permission(Permission.SALES_MANAGE)),
+) -> DuplicateCandidateResponse:
+    candidate = (
+        db.query(DuplicateCandidate)
+        .filter(DuplicateCandidate.tenant_id == tenant.id, DuplicateCandidate.id == candidate_id)
+        .one_or_none()
+    )
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="Duplicate candidate not found")
+    require_version(candidate, payload.version)
+    if candidate.status != "open":
+        raise HTTPException(status_code=409, detail="Duplicate candidate is already resolved")
+    candidate.status = "dismissed"
+    candidate.resolved_by_id = tenant.user_id
+    candidate.resolution_comment = payload.comment
+    candidate.resolved_at = utc_now()
+    commit_versioned(db, candidate)
+    return _duplicate_response(candidate)
 
 
 @router.get("/contacts/{entity_id}", response_model=ContactResponse)
@@ -376,6 +439,7 @@ def merge_entities(
             )
         _rewire_merge_references(db, tenant.id, entity_type, source.id, target.id)
         soft_delete(db, tenant, entity_type, source)
+        _resolve_duplicate_pair(db, tenant.id, entity_type, source.id, target.id, tenant.user_id)
         source_ids.append(source.id)
 
     add_history(
@@ -634,3 +698,45 @@ def _lifecycle_result(entity) -> dict:
         "deleted_at": entity.deleted_at,
         "version": entity.version,
     }
+
+
+def _duplicate_response(row: DuplicateCandidate) -> DuplicateCandidateResponse:
+    return DuplicateCandidateResponse(
+        id=row.id,
+        entity_type=row.entity_type,
+        record_a_id=row.record_a_id,
+        record_b_id=row.record_b_id,
+        score=row.score,
+        matched_fields=json.loads(row.matched_fields_json),
+        status=row.status,
+        version=row.version,
+        detected_at=row.detected_at,
+        resolved_at=row.resolved_at,
+    )
+
+
+def _resolve_duplicate_pair(
+    db: Session,
+    tenant_id: UUID,
+    entity_type: str,
+    source_id: UUID,
+    target_id: UUID,
+    actor_id: UUID,
+) -> None:
+    a_id, b_id = sorted((source_id, target_id), key=str)
+    candidate = (
+        db.query(DuplicateCandidate)
+        .filter(
+            DuplicateCandidate.tenant_id == tenant_id,
+            DuplicateCandidate.entity_type == entity_type,
+            DuplicateCandidate.record_a_id == a_id,
+            DuplicateCandidate.record_b_id == b_id,
+            DuplicateCandidate.status == "open",
+        )
+        .one_or_none()
+    )
+    if candidate:
+        candidate.status = "merged"
+        candidate.resolved_by_id = actor_id
+        candidate.resolution_comment = "Merged through CRM lifecycle"
+        candidate.resolved_at = utc_now()

@@ -33,6 +33,9 @@ const taskSla = computed(() => data.value?.task_sla);
 const topRiskDeals = computed(() => riskMap.value?.deals?.slice(0, 3) ?? []);
 const stuckDeals = computed(() => data.value?.stuck_deals?.slice(0, 3) ?? []);
 const managerActivity = computed(() => data.value?.manager_activity ?? []);
+const forecastOwners = computed(() => data.value?.forecast_by_owner ?? []);
+const forecastTeams = computed(() => data.value?.forecast_by_team ?? []);
+const forecastQuality = computed(() => data.value?.forecast_quality);
 const unhealthyCompanies = computed(() => data.value?.company_health?.filter((company) => company.risk_level !== "low").slice(0, 3) ?? []);
 
 const bottleneckStage = computed(() => {
@@ -312,6 +315,22 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
         </div>
         <div class="goal-track"><i :style="{ width: `${goalProgress}%` }"></i></div>
       </article>
+    </section>
+
+    <section class="forecast-breakdowns">
+      <section class="analytics-panel">
+        <div class="panel-title"><div><p class="eyebrow">Прогноз по командам</p><h3>Ответственность за результат</h3></div><span>{{ forecastTeams.length }}</span></div>
+        <article v-for="item in forecastTeams" :key="item.scope_id || 'none'" class="forecast-scope-row"><div><strong>{{ item.scope_name }}</strong><small>{{ item.open_deals }} сделок · commit {{ crmStore.money(item.commit_revenue) }}</small></div><b>{{ crmStore.money(item.weighted_revenue) }}</b></article>
+        <p v-if="!forecastTeams.length" class="empty">Команды не назначены.</p>
+      </section>
+      <section class="analytics-panel">
+        <div class="panel-title"><div><p class="eyebrow">Прогноз по менеджерам</p><h3>Взвешенная выручка</h3></div><span>{{ forecastOwners.length }}</span></div>
+        <article v-for="item in forecastOwners.slice(0, 8)" :key="item.scope_id || 'none'" class="forecast-scope-row"><div><strong>{{ item.scope_name }}</strong><small>{{ crmStore.money(item.open_pipeline) }} в работе · просрочено {{ crmStore.money(item.overdue_revenue) }}</small></div><b>{{ crmStore.money(item.weighted_revenue) }}</b></article>
+      </section>
+      <section class="analytics-panel forecast-quality">
+        <div class="panel-title"><div><p class="eyebrow">Качество прогноза</p><h3>{{ forecastQuality?.completeness_rate ?? 0 }}% заполнено</h3></div></div>
+        <dl><div><dt>Нет даты закрытия</dt><dd>{{ forecastQuality?.missing_close_date ?? 0 }}</dd></div><div><dt>Нет вероятности</dt><dd>{{ forecastQuality?.missing_probability ?? 0 }}</dd></div><div><dt>Нет категории</dt><dd>{{ forecastQuality?.missing_forecast_category ?? 0 }}</dd></div><div><dt>Нет владельца</dt><dd>{{ forecastQuality?.missing_owner ?? 0 }}</dd></div></dl>
+      </section>
     </section>
 
     <section class="analytics-main-grid">
@@ -1031,6 +1050,48 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
   text-align: left;
 }
 
+.forecast-breakdowns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(240px, .7fr);
+  gap: 14px;
+}
+
+.forecast-breakdowns > .analytics-panel {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.forecast-scope-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: 10px;
+}
+
+.forecast-scope-row div {
+  display: grid;
+  gap: 3px;
+}
+
+.forecast-scope-row small {
+  color: var(--color-text-muted);
+}
+
+.forecast-quality dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.forecast-quality dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 @media (max-width: 1320px) {
   .analytics-top-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1042,6 +1103,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
 
   .company-strip {
     grid-template-columns: 1fr;
+  }
+
+  .forecast-breakdowns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .forecast-quality {
+    grid-column: 1 / -1;
   }
 }
 
@@ -1055,6 +1124,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
   .analytics-main-grid,
   .analytics-main-grid.lower {
     grid-template-columns: 1fr;
+  }
+
+  .forecast-breakdowns {
+    grid-template-columns: 1fr;
+  }
+
+  .forecast-quality {
+    grid-column: auto;
   }
 
   .analytics-actions,

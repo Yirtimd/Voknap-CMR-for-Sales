@@ -6,6 +6,7 @@ import type {
   BulkAction,
   BulkActionResult,
   Deal,
+  DuplicateCandidate,
   EntityType,
   EntityVersion,
   FieldChange,
@@ -66,6 +67,7 @@ const loading = ref(false);
 const error = ref("");
 const conflict = ref<LifecycleConflict | null>(null);
 const members = ref<LifecycleMember[]>([]);
+const duplicateCandidates = ref<DuplicateCandidate[]>([]);
 
 let listController: AbortController | null = null;
 
@@ -263,9 +265,43 @@ async function merge(type: Extract<EntityType, "contacts" | "leads" | "deals">, 
       crmStore.tenantId.value
     );
     selected.value = [];
+    await loadDuplicateCandidates(type);
     await syncCrmLists();
     return result;
   });
+}
+
+async function scanDuplicates(type: Extract<EntityType, "contacts" | "leads" | "deals">) {
+  return mutation(type, undefined, async () => {
+    await api<{ entity_type: string; detected: number }>(
+      "/sales/dedup/scan",
+      post({ entity_type: type, minimum_score: 80, limit: 200 }),
+      crmStore.token.value,
+      crmStore.tenantId.value
+    );
+    await loadDuplicateCandidates(type);
+  }, false);
+}
+
+async function loadDuplicateCandidates(type: Extract<EntityType, "contacts" | "leads" | "deals">) {
+  duplicateCandidates.value = await api<DuplicateCandidate[]>(
+    `/sales/dedup/candidates?entity_type=${encodeURIComponent(type)}&status=open`,
+    {},
+    crmStore.token.value,
+    crmStore.tenantId.value
+  );
+}
+
+async function dismissDuplicate(candidate: DuplicateCandidate, comment: string) {
+  return mutation(candidate.entity_type, undefined, async () => {
+    await api<DuplicateCandidate>(
+      `/sales/dedup/candidates/${candidate.id}/dismiss`,
+      post({ version: candidate.version, comment }),
+      crmStore.token.value,
+      crmStore.tenantId.value
+    );
+    await loadDuplicateCandidates(candidate.entity_type);
+  }, false);
 }
 
 async function qualify(entity: EntityVersion, qualified: boolean, reason?: string | null) {
@@ -466,6 +502,7 @@ export const lifecycleStore = {
   error,
   conflict,
   members,
+  duplicateCandidates,
   knownOwners,
   canRead,
   canWrite,
@@ -485,6 +522,9 @@ export const lifecycleStore = {
   history,
   bulk,
   merge,
+  scanDuplicates,
+  loadDuplicateCandidates,
+  dismissDuplicate,
   qualify,
   convert,
   loadMembers,

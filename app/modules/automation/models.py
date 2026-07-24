@@ -81,7 +81,7 @@ class AutomationRun(Base):
                 "tenant_id", "workflow_id", "event_key", name="uq_automation_runs_event"
             ),
             CheckConstraint(
-                "status IN ('running', 'succeeded', 'failed', 'skipped')",
+                "status IN ('running', 'waiting_approval', 'succeeded', 'failed', 'skipped')",
                 name="ck_automation_runs_status",
             ),
         ),
@@ -114,8 +114,12 @@ class ApprovalRequest(Base):
         membership_columns=("requested_by_id", "assigned_to_id", "decided_by_id"),
         extra=(
             CheckConstraint(
-                "status IN ('pending', 'approved', 'rejected', 'cancelled')",
+                "status IN ('pending', 'approved', 'rejected', 'cancelled', 'expired')",
                 name="ck_approval_requests_status",
+            ),
+            CheckConstraint(
+                "priority IN ('low', 'normal', 'high', 'critical')",
+                name="ck_approval_requests_priority",
             ),
         ),
     )
@@ -131,10 +135,39 @@ class ApprovalRequest(Base):
     requested_by_id: Mapped[UUID | None] = mapped_column(index=True)
     assigned_to_id: Mapped[UUID | None] = mapped_column(index=True)
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
+    priority: Mapped[str] = mapped_column(String(20), default="normal", nullable=False, index=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    context_snapshot_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     continuation_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     decision_comment: Mapped[str | None] = mapped_column(Text)
     decided_by_id: Mapped[UUID | None] = mapped_column(index=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    __mapper_args__ = {"version_id_col": version}
+
+
+class ApprovalHistory(Base):
+    __tablename__ = "approval_history"
+    __table_args__ = tenant_table_args(
+        "approval_history",
+        relations=(("approval_id", "approval_requests"),),
+        membership_columns=("actor_id",),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
+    approval_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(20))
+    to_status: Mapped[str | None] = mapped_column(String(20))
+    actor_id: Mapped[UUID | None] = mapped_column(index=True)
+    comment: Mapped[str | None] = mapped_column(Text)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 

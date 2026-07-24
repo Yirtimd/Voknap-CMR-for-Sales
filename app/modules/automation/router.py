@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.dependencies import CurrentTenant
 from app.core.rbac import Permission, require_permission
 from app.modules.automation.models import (
+    ApprovalHistory,
     ApprovalRequest,
     AutomationOutbox,
     AutomationRun,
@@ -18,6 +19,9 @@ from app.modules.automation.models import (
 )
 from app.modules.automation.schemas import (
     ApprovalDecision,
+    ApprovalCancel,
+    ApprovalHistoryResponse,
+    ApprovalReassign,
     ApprovalResponse,
     AutomationAction,
     AutomationCondition,
@@ -193,13 +197,26 @@ def run_scheduled_automations(
 @router.get("/approvals", response_model=list[ApprovalResponse])
 def list_approvals(
     approval_status: str | None = Query(default=None, alias="status"),
+    assigned_to_id: UUID | None = None,
+    overdue: bool = False,
+    limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
     tenant: CurrentTenant = Depends(require_permission(Permission.APPROVALS_MANAGE)),
 ) -> list[ApprovalResponse]:
     query = db.query(ApprovalRequest).filter(ApprovalRequest.tenant_id == tenant.id)
     if approval_status:
         query = query.filter(ApprovalRequest.status == approval_status)
-    return [_approval_response(row) for row in query.order_by(ApprovalRequest.created_at.desc())]
+    if assigned_to_id:
+        query = query.filter(ApprovalRequest.assigned_to_id == assigned_to_id)
+    if overdue:
+        query = query.filter(
+            ApprovalRequest.status == "pending",
+            ApprovalRequest.due_at < datetime.now(timezone.utc),
+        )
+    return [
+        _approval_response(row)
+        for row in query.order_by(ApprovalRequest.created_at.desc()).limit(limit)
+    ]
 
 
 @router.post("/approvals/{approval_id}/decision", response_model=ApprovalResponse)
@@ -210,14 +227,78 @@ def decide_approval(
     tenant: CurrentTenant = Depends(require_permission(Permission.APPROVALS_MANAGE)),
 ) -> ApprovalResponse:
     approval = _get(db, ApprovalRequest, tenant.id, approval_id, "Approval")
+    if approval.version != payload.version:
+        raise HTTPException(status_code=409, detail={"message": "Version conflict", "current_version": approval.version})
     AutomationEngine(db).decide_approval(
         approval,
         payload.decision,
         tenant.user_id,
         payload.comment,
+        allow_override=tenant.role.value in {"owner", "admin"},
     )
     db.refresh(approval)
     return _approval_response(approval)
+
+
+@router.post("/approvals/{approval_id}/reassign", response_model=ApprovalResponse)
+def reassign_approval(
+    approval_id: UUID,
+    payload: ApprovalReassign,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(require_permission(Permission.APPROVALS_MANAGE)),
+) -> ApprovalResponse:
+    approval = _get(db, ApprovalRequest, tenant.id, approval_id, "Approval")
+    if approval.version != payload.version:
+        raise HTTPException(status_code=409, detail={"message": "Version conflict", "current_version": approval.version})
+    AutomationEngine(db).reassign_approval(
+        approval, payload.assigned_to_id, tenant.user_id, payload.comment
+    )
+    db.refresh(approval)
+    return _approval_response(approval)
+
+
+@router.post("/approvals/{approval_id}/cancel", response_model=ApprovalResponse)
+def cancel_approval(
+    approval_id: UUID,
+    payload: ApprovalCancel,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(require_permission(Permission.AUTOMATIONS_MANAGE)),
+) -> ApprovalResponse:
+    approval = _get(db, ApprovalRequest, tenant.id, approval_id, "Approval")
+    if approval.version != payload.version:
+        raise HTTPException(status_code=409, detail={"message": "Version conflict", "current_version": approval.version})
+    AutomationEngine(db).cancel_approval(approval, tenant.user_id, payload.comment)
+    db.refresh(approval)
+    return _approval_response(approval)
+
+
+@router.get("/approvals/{approval_id}/history", response_model=list[ApprovalHistoryResponse])
+def approval_history(
+    approval_id: UUID,
+    db: Session = Depends(get_db),
+    tenant: CurrentTenant = Depends(require_permission(Permission.APPROVALS_MANAGE)),
+) -> list[ApprovalHistoryResponse]:
+    _get(db, ApprovalRequest, tenant.id, approval_id, "Approval")
+    rows = (
+        db.query(ApprovalHistory)
+        .filter(ApprovalHistory.tenant_id == tenant.id, ApprovalHistory.approval_id == approval_id)
+        .order_by(ApprovalHistory.created_at)
+        .all()
+    )
+    return [
+        ApprovalHistoryResponse(
+            id=row.id,
+            approval_id=row.approval_id,
+            action=row.action,
+            from_status=row.from_status,
+            to_status=row.to_status,
+            actor_id=row.actor_id,
+            comment=row.comment,
+            metadata=json.loads(row.metadata_json),
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
 
 
 @router.get("/outbox", response_model=list[OutboxResponse])
@@ -306,10 +387,14 @@ def _approval_response(row: ApprovalRequest) -> ApprovalResponse:
         requested_by_id=row.requested_by_id,
         assigned_to_id=row.assigned_to_id,
         status=row.status,
+        priority=row.priority,
+        due_at=row.due_at,
+        version=row.version,
         decision_comment=row.decision_comment,
         decided_by_id=row.decided_by_id,
         decided_at=row.decided_at,
         created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
