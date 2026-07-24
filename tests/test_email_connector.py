@@ -1,4 +1,5 @@
 from app.modules.connectors.service import ConnectorService
+from app.modules.connectors.providers import send_smtp_email
 
 
 RAW_EMAIL = b"""From: =?UTF-8?B?0JjQstCw0L0g0J/RtdGC0YDQvtCy?= <client@example.com>\r
@@ -56,3 +57,41 @@ def test_imap_fetch_decodes_message_and_advances_cursor(monkeypatch):
     assert messages[0]["subject"] == "Запрос на КП"
     assert messages[0]["body"] == "Please send proposal."
     assert messages[0]["external_id"].endswith(":INBOX:42")
+
+
+def test_smtp_send_uses_configured_account(monkeypatch):
+    sent = []
+
+    class FakeSmtp:
+        def __init__(self, host, port, timeout, context):
+            assert (host, port, timeout) == ("smtp.example.com", 465, 20)
+
+        def login(self, username, password):
+            assert (username, password) == ("sales@example.com", "app-password")
+
+        def send_message(self, message):
+            sent.append(message)
+
+        def quit(self):
+            return None
+
+    monkeypatch.setattr("app.modules.connectors.providers.smtplib.SMTP_SSL", FakeSmtp)
+
+    message_id = send_smtp_email(
+        {"username": "sales@example.com", "password": "app-password"},
+        {
+            "smtp_host": "smtp.example.com",
+            "smtp_port": 465,
+            "smtp_use_ssl": True,
+            "from_email": "sales@example.com",
+        },
+        {
+            "recipient": "client@example.com",
+            "subject": "Proposal",
+            "body": "Attached later",
+        },
+    )
+
+    assert sent[0]["To"] == "client@example.com"
+    assert sent[0]["Subject"] == "Proposal"
+    assert message_id.startswith("<")

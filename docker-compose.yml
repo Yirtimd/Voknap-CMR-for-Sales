@@ -61,6 +61,24 @@ services:
       timeout: 5s
       retries: 12
 
+  integration-worker:
+    profiles: ["production"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cmr_integration_worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://cmr:cmr@postgres:5432/cmr
+    command: ["python", "scripts/run_integration_worker.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   minio_data:

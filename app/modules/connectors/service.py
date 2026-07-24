@@ -16,11 +16,12 @@ from uuid import UUID
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.config import settings as app_settings
 from app.modules.communication.models import CommunicationEvent
 from app.modules.communication.schemas import CommunicationEventCreate
 from app.modules.communication.service import CommunicationService
 from app.modules.connectors.models import ConnectorAccount, ConnectorSyncRun
+from app.modules.connectors.providers import test_smtp_connection
 from app.modules.sales.models import Company, Contact, Lead
 
 
@@ -30,17 +31,70 @@ class ConnectorDefinition:
     title: str
     description: str
     status: str
+    reason: str | None = None
 
 
 CONNECTORS = [
-    ConnectorDefinition("csv", "CSV import/export", "Импорт и экспорт лидов и контактов через CSV.", "ready"),
-    ConnectorDefinition("email", "Email (IMAP)", "Реальная загрузка входящих писем по IMAP и привязка к CRM.", "ready"),
-    ConnectorDefinition("calendar", "Calendar", "Импорт событий календаря через API пока не подключён.", "placeholder"),
-    ConnectorDefinition("telephony", "Telephony", "Placeholder для звонков, записей и call activity.", "placeholder"),
-    ConnectorDefinition("bitrix24", "Bitrix24", "Миграция компаний, контактов и лидов из Bitrix24.", "ready"),
-    ConnectorDefinition("amocrm", "amoCRM", "Миграция компаний, контактов и сделок из amoCRM.", "ready"),
-    ConnectorDefinition("onec", "1C", "Placeholder для клиентов, товаров и счетов из 1C.", "placeholder"),
+    ConnectorDefinition(
+        "csv",
+        "CSV/XLSX import",
+        "Импорт с preview и mapping; обработка выполняется фоновым заданием.",
+        "ready",
+    ),
+    ConnectorDefinition(
+        "email",
+        "Email (IMAP + SMTP)",
+        "Двусторонняя синхронизация: входящие по IMAP, исходящие по SMTP.",
+        "ready",
+    ),
+    ConnectorDefinition(
+        "google_calendar",
+        "Google Calendar",
+        "OAuth 2.0, incremental sync и создание событий.",
+        "ready",
+    ),
+    ConnectorDefinition(
+        "microsoft_calendar",
+        "Microsoft 365 Calendar",
+        "Microsoft OAuth 2.0, Graph delta sync и создание событий.",
+        "ready",
+    ),
+    ConnectorDefinition(
+        "webhooks",
+        "Webhooks",
+        "Подписки с HMAC-подписью, retry и dead-letter queue.",
+        "ready",
+    ),
+    ConnectorDefinition(
+        "public_api",
+        "Public API",
+        "API-ключи с хешированием и ограниченными scopes.",
+        "ready",
+    ),
+    ConnectorDefinition(
+        "telephony",
+        "Телефония",
+        "Нужен выбранный провайдер и его webhook/API-контракт.",
+        "requires_provider",
+        "Без выбора Mango, UIS, Zadarma или другого провайдера реальную интеграцию создать нельзя.",
+    ),
+    ConnectorDefinition(
+        "telegram_whatsapp",
+        "Telegram / WhatsApp",
+        "Нужен канал и провайдер, выбранный под рынок заказчика.",
+        "requires_provider",
+        "Telegram Bot API и WhatsApp Business Platform имеют разные модель согласий и владения каналом.",
+    ),
+    ConnectorDefinition(
+        "onec",
+        "1С",
+        "Нужен контракт обмена конкретной конфигурации 1С.",
+        "requires_provider",
+        "Типовая конфигурация, OData/HTTP-сервис и правила мастер-данных пока не выбраны.",
+    ),
 ]
+
+ACCOUNT_CONNECTORS = {"csv", "email", "google_calendar", "microsoft_calendar"}
 
 
 class ConnectorService:
@@ -58,14 +112,20 @@ class ConnectorService:
         credentials: dict,
         settings: dict,
     ) -> ConnectorAccount:
-        if connector_code not in {connector.code for connector in CONNECTORS}:
-            raise ValueError("Unknown connector")
+        if connector_code not in ACCOUNT_CONNECTORS:
+            raise ValueError("This integration is configured in its dedicated section or requires a provider decision")
 
+        if connector_code != "csv" and (
+            app_settings.secret_key == "change-me-in-production"
+            or len(app_settings.secret_key) < 32
+        ):
+            raise ValueError(
+                "Set a unique SECRET_KEY of at least 32 characters before connecting external accounts"
+            )
         if connector_code == "email":
-            if settings.secret_key == "change-me-in-production" or len(settings.secret_key) < 32:
-                raise ValueError("Set a unique SECRET_KEY of at least 32 characters before connecting email")
             self._validate_email_config(credentials, settings)
             self._test_imap_connection(credentials, settings)
+            test_smtp_connection(credentials, settings)
 
         account = ConnectorAccount(
             tenant_id=tenant_id,
@@ -74,7 +134,11 @@ class ConnectorService:
             credentials_json=self._encrypt_credentials(credentials),
             credentials_encrypted=True,
             settings_json=json.dumps(settings),
-            status="connected" if connector_code in {"csv", "email", "bitrix24", "amocrm"} else "placeholder",
+            status=(
+                "awaiting_authorization"
+                if connector_code in {"google_calendar", "microsoft_calendar"}
+                else "connected"
+            ),
         )
         self.db.add(account)
         self.db.commit()
@@ -148,14 +212,8 @@ class ConnectorService:
         try:
             if account.connector_code == "email":
                 run = self._sync_email(tenant_id, account, payload or {})
-            elif account.connector_code == "calendar":
-                run = self._sync_calendar(tenant_id, account, payload or {})
-            elif account.connector_code == "telephony":
-                run = self._placeholder_run(tenant_id, account, "telephony_sync", "Telephony connector placeholder is ready")
-            elif account.connector_code in {"amocrm", "bitrix24"}:
-                run = self._sync_crm_migration(tenant_id, account, payload or {})
             else:
-                run = self._placeholder_run(tenant_id, account, f"{account.connector_code}_sync", "Connector sync placeholder is ready")
+                raise ValueError("This connector is processed by the integration worker")
             run.started_at = started_at
             run.finished_at = datetime.now(timezone.utc)
             account.last_sync_at = run.finished_at
@@ -313,8 +371,9 @@ class ConnectorService:
 
     def _validate_email_config(self, credentials: dict, settings: dict) -> None:
         missing = [key for key in ("username", "password") if not credentials.get(key)]
-        if not settings.get("host"):
-            missing.append("host")
+        for key in ("host", "smtp_host"):
+            if not settings.get(key):
+                missing.append(key)
         if missing:
             raise ValueError(f"Email connector requires: {', '.join(missing)}")
 
@@ -446,30 +505,6 @@ class ConnectorService:
                 pass
         return datetime.now(timezone.utc)
 
-    def _sync_calendar(self, tenant_id: UUID, account: ConnectorAccount, payload: dict) -> ConnectorSyncRun:
-        events = payload.get("events") or json.loads(account.settings_json or "{}").get("events") or []
-        created = 0
-        for item in events:
-            company = self._get_or_create_company(tenant_id, item.get("company_name") or "Calendar company")
-            CommunicationService(self.db).create(
-                tenant_id=tenant_id,
-                created_by=None,
-                payload=CommunicationEventCreate(
-                    channel="calendar",
-                    direction="inbound",
-                    external_id=item.get("id"),
-                    sender=item.get("organizer"),
-                    recipient=item.get("attendee"),
-                    subject=item.get("title") or "Meeting scheduled",
-                    body=item.get("description"),
-                    company_id=company.id,
-                    connector_account_id=account.id,
-                    metadata={"connector_account_id": str(account.id), "starts_at": item.get("starts_at")},
-                ),
-            )
-            created += 1
-        return self._save_run(tenant_id, account.id, "inbound", "success", created, 0, 0, "Calendar sync completed", job_type="calendar_sync")
-
     def _sync_crm_migration(self, tenant_id: UUID, account: ConnectorAccount, payload: dict) -> ConnectorSyncRun:
         rows = payload.get("records") or json.loads(account.settings_json or "{}").get("records") or []
         created = 0
@@ -521,9 +556,6 @@ class ConnectorService:
             f"{account.connector_code} migration completed",
             job_type=f"{account.connector_code}_migration",
         )
-
-    def _placeholder_run(self, tenant_id: UUID, account: ConnectorAccount, job_type: str, message: str) -> ConnectorSyncRun:
-        return self._save_run(tenant_id, account.id, "inbound", "queued", 0, 0, 0, message, job_type=job_type)
 
     def _get_account(self, tenant_id: UUID, account_id: UUID) -> ConnectorAccount | None:
         return (
@@ -587,14 +619,25 @@ class ConnectorService:
             return json.loads(decrypted.decode("utf-8"))
         except InvalidToken:
             # Compatibility with accounts created before authenticated encryption.
-            key = settings.secret_key.encode("utf-8")
+            key = app_settings.secret_key.encode("utf-8")
             data = base64.urlsafe_b64decode(value.encode("ascii"))
             decrypted = bytes(byte ^ key[index % len(key)] for index, byte in enumerate(data))
             return json.loads(decrypted.decode("utf-8"))
 
     def _fernet(self) -> Fernet:
-        key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode("utf-8")).digest())
+        key = base64.urlsafe_b64encode(
+            hashlib.sha256(app_settings.secret_key.encode("utf-8")).digest()
+        )
         return Fernet(key)
+
+    def _encrypt_secret(self, value: str) -> str:
+        return self._fernet().encrypt(value.encode()).decode("ascii")
+
+    def _decrypt_secret(self, value: str) -> str:
+        try:
+            return self._fernet().decrypt(value.encode("ascii")).decode()
+        except InvalidToken as error:
+            raise ValueError("Encrypted integration secret cannot be decrypted") from error
 
 
 def account_identity(settings: dict, credentials: dict) -> str:

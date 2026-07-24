@@ -9,6 +9,7 @@ class ConnectorDefinitionResponse(BaseModel):
     title: str
     description: str
     status: str
+    reason: str | None = None
 
 
 class ConnectorAccountCreate(BaseModel):
@@ -56,8 +57,98 @@ class ConnectorSyncResponse(BaseModel):
 
 class ConnectorSyncRequest(BaseModel):
     payload: dict = Field(default_factory=dict)
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=255)
 
 
 class CsvExportResponse(BaseModel):
     filename: str
     csv_text: str
+
+
+class IntegrationJobResponse(BaseModel):
+    id: UUID
+    account_id: UUID | None
+    job_type: str
+    idempotency_key: str
+    status: str
+    attempt: int
+    max_attempts: int
+    available_at: datetime
+    completed_at: datetime | None
+    result: dict
+    last_error: str | None
+    error_log: list[dict]
+    created_at: datetime
+
+
+class EmailSendRequest(BaseModel):
+    recipient: str = Field(min_length=3, max_length=255)
+    subject: str = Field(min_length=1, max_length=255)
+    body: str = Field(default="", max_length=1_000_000)
+    idempotency_key: str = Field(min_length=8, max_length=255)
+
+
+class CalendarEventCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=100_000)
+    starts_at: datetime
+    ends_at: datetime
+    timezone: str = Field(default="UTC", min_length=1, max_length=80)
+    attendees: list[str] = Field(default_factory=list, max_length=100)
+    idempotency_key: str = Field(min_length=8, max_length=255)
+
+
+class OAuthStartResponse(BaseModel):
+    authorization_url: str
+
+
+class WebhookEndpointCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=160)
+    url: str = Field(min_length=10, max_length=2048)
+    event_types: list[str] = Field(min_length=1, max_length=30)
+
+
+class WebhookEndpointResponse(BaseModel):
+    id: UUID
+    title: str
+    url: str
+    event_types: list[str]
+    is_active: bool
+    signing_secret: str | None = None
+    created_at: datetime
+
+
+class WebhookTestRequest(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=255)
+
+
+class PublicApiKeyCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=160)
+    scopes: list[str] = Field(min_length=1, max_length=20)
+    expires_at: datetime | None = None
+
+
+class PublicApiKeyResponse(BaseModel):
+    id: UUID
+    title: str
+    key_prefix: str
+    scopes: list[str]
+    is_active: bool
+    expires_at: datetime | None
+    last_used_at: datetime | None
+    created_at: datetime
+    api_key: str | None = None
+
+
+class ImportPreviewResponse(BaseModel):
+    filename: str
+    headers: list[str]
+    rows: list[dict]
+    suggested_mapping: dict[str, str]
+    total_rows: int
+
+
+class ImportEnqueueResponse(BaseModel):
+    job: IntegrationJobResponse
+    accepted_rows: int
+    validation_errors: list[dict]

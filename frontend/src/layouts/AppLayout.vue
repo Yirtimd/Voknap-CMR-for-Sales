@@ -54,7 +54,8 @@ const sidebarMode = ref<"full" | "compact" | "hidden">(
   (localStorage.getItem("cmr_sidebar_mode") as "full" | "compact" | "hidden" | null) ?? "full"
 );
 const searchQuery = ref("");
-const activePanel = ref<"search" | "new" | "notifications" | "profile" | "menu" | null>(null);
+const appearanceMenu = ref<HTMLElement | null>(null);
+const activePanel = ref<"search" | "new" | "notifications" | "profile" | "menu" | "appearance" | null>(null);
 
 const searchResults = computed(() => {
   const needle = searchQuery.value.trim().toLowerCase();
@@ -105,12 +106,26 @@ function keyboardShortcut(event: KeyboardEvent) {
   if (event.key === "Escape") activePanel.value = null;
 }
 
+function closeAppearanceOnOutsideClick(event: PointerEvent) {
+  if (
+    activePanel.value === "appearance"
+    && event.target instanceof Node
+    && !appearanceMenu.value?.contains(event.target)
+  ) {
+    activePanel.value = null;
+  }
+}
+
 onMounted(async () => {
   await Promise.allSettled([crmStore.refreshAll(), crmStore.refreshMe(), crmStore.refreshCommunication()]);
   window.addEventListener("keydown", keyboardShortcut);
+  window.addEventListener("pointerdown", closeAppearanceOnOutsideClick);
 });
 
-onBeforeUnmount(() => window.removeEventListener("keydown", keyboardShortcut));
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", keyboardShortcut);
+  window.removeEventListener("pointerdown", closeAppearanceOnOutsideClick);
+});
 
 function togglePanel(panel: Exclude<typeof activePanel.value, null>) {
   activePanel.value = activePanel.value === panel ? null : panel;
@@ -160,7 +175,38 @@ function openTaskCreate() {
         </section>
       </nav>
 
-      <div class="sidebar-footer"><UiThemeToggle /><UiDensityToggle /><button class="secondary" type="button" @click="logout">Выйти</button></div>
+      <div class="sidebar-footer">
+        <div ref="appearanceMenu" class="sidebar-appearance">
+          <button
+            class="secondary sidebar-appearance__trigger"
+            type="button"
+            :aria-expanded="activePanel === 'appearance'"
+            aria-haspopup="dialog"
+            @click="togglePanel('appearance')"
+          >
+            <UiIcon name="sun" :size="17" />
+            <span>Оформление</span>
+            <UiIcon class="sidebar-appearance__chevron" name="chevronDown" :size="15" />
+          </button>
+          <section
+            v-if="activePanel === 'appearance'"
+            class="sidebar-appearance__popover"
+            role="dialog"
+            aria-label="Оформление интерфейса"
+          >
+            <header><strong>Оформление</strong></header>
+            <div class="sidebar-appearance__group">
+              <span>Тема</span>
+              <UiThemeToggle />
+            </div>
+            <div class="sidebar-appearance__group">
+              <span>Плотность</span>
+              <UiDensityToggle />
+            </div>
+          </section>
+        </div>
+        <button class="secondary" type="button" @click="logout">Выйти</button>
+      </div>
     </aside>
 
     <div v-if="sidebarMode === 'hidden'" class="sidebar-hover-zone" aria-hidden="true"></div>
@@ -279,7 +325,17 @@ function openTaskCreate() {
 
 <style scoped>
 .home-search, .top-action-wrap { position: relative; }
-.sidebar-footer :deep(.ui-theme span) { display:none; }
+.sidebar-appearance { position:relative; }
+.sidebar-appearance__trigger { width:100%; justify-content:flex-start; gap:8px; }
+.sidebar-appearance__trigger span { flex:1; text-align:left; }
+.sidebar-appearance__chevron { transition:transform var(--duration-fast) var(--ease-standard); }
+.sidebar-appearance__trigger[aria-expanded="true"] .sidebar-appearance__chevron { transform:rotate(180deg); }
+.sidebar-appearance__popover { position:absolute; z-index:85; bottom:calc(100% + 8px); left:0; display:grid; gap:14px; width:260px; border:1px solid var(--color-border); border-radius:var(--radius-card); padding:14px; color:var(--color-text-primary); background:var(--color-surface); box-shadow:var(--shadow-popover); }
+.sidebar-appearance__popover header { display:flex; align-items:center; justify-content:space-between; }
+.sidebar-appearance__group { display:grid; gap:7px; }
+.sidebar-appearance__group > span { color:var(--color-text-muted); font-size:var(--font-size-meta); font-weight:700; }
+.sidebar-appearance__popover :deep(.ui-theme span),
+.sidebar-appearance__popover :deep(.ui-density span) { display:none; }
 .top-popover { position: absolute; z-index: 80; top: calc(100% + 8px); right: 0; width: 280px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-card); padding: 8px; background: var(--surface-solid); box-shadow: 0 16px 40px rgb(0 0 0 / 14%); }
 .search-popover { right: auto; left: 0; width: 100%; min-width: 390px; }
 .top-popover button { width: 100%; justify-content: flex-start; border: 0; padding: 10px; color: var(--text); background: transparent; text-align: left; }

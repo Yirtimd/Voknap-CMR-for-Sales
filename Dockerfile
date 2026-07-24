@@ -19,6 +19,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY alembic ./alembic
 COPY alembic.ini pyproject.toml ./
 COPY app ./app
+COPY scripts ./scripts
 
 RUN useradd --create-home --uid 10001 cmr
 USER cmr

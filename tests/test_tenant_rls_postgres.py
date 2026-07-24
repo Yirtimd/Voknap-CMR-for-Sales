@@ -250,3 +250,84 @@ def test_workflow_rejects_cross_tenant_actor(postgres_connection):
             ),
             {"id": uuid4(), "tenant_id": tenant_a, "user_id": user_b},
         )
+
+
+def test_integration_tables_are_forced_rls_and_reject_cross_tenant_actor(
+    postgres_connection,
+):
+    connection, tenant_a, tenant_b, _company_a, _company_b = postgres_connection
+    user_a, user_b = uuid4(), uuid4()
+    connection.execute(
+        text(
+            "INSERT INTO users (id, email, full_name, password_hash, is_active, created_at) VALUES "
+            "(:user_a, :email_a, 'A', 'hash', true, now()), "
+            "(:user_b, :email_b, 'B', 'hash', true, now())"
+        ),
+        {
+            "user_a": user_a,
+            "user_b": user_b,
+            "email_a": f"rls-integration-a-{user_a}@example.com",
+            "email_b": f"rls-integration-b-{user_b}@example.com",
+        },
+    )
+    connection.execute(
+        text(
+            "INSERT INTO memberships (id, tenant_id, user_id, role, is_active, created_at) VALUES "
+            "(:member_a, :tenant_a, :user_a, 'owner', true, now()), "
+            "(:member_b, :tenant_b, :user_b, 'owner', true, now())"
+        ),
+        {
+            "member_a": uuid4(),
+            "member_b": uuid4(),
+            "tenant_a": tenant_a,
+            "tenant_b": tenant_b,
+            "user_a": user_a,
+            "user_b": user_b,
+        },
+    )
+    connection.execute(
+        text(
+            "INSERT INTO webhook_endpoints "
+            "(id, tenant_id, title, url, event_types_json, secret_encrypted, "
+            "is_active, created_by_id, created_at, updated_at) VALUES "
+            "(:id_a, :tenant_a, 'A', 'https://a.example.com', '[]', 'secret', "
+            "true, :user_a, now(), now()), "
+            "(:id_b, :tenant_b, 'B', 'https://b.example.com', '[]', 'secret', "
+            "true, :user_b, now(), now())"
+        ),
+        {
+            "id_a": uuid4(),
+            "id_b": uuid4(),
+            "tenant_a": tenant_a,
+            "tenant_b": tenant_b,
+            "user_a": user_a,
+            "user_b": user_b,
+        },
+    )
+    forced = connection.execute(
+        text(
+            "SELECT count(*) FROM pg_class WHERE relname IN "
+            "('integration_jobs', 'webhook_endpoints', 'public_api_keys') "
+            "AND relrowsecurity AND relforcerowsecurity"
+        )
+    ).scalar_one()
+    assert forced == 3
+
+    connection.exec_driver_sql(f'SET LOCAL ROLE "{settings.database_runtime_role}"')
+    assert connection.execute(text("SELECT count(*) FROM webhook_endpoints")).scalar_one() == 0
+    connection.execute(
+        text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_a)},
+    )
+    assert connection.execute(text("SELECT title FROM webhook_endpoints")).scalar_one() == "A"
+    with pytest.raises(IntegrityError):
+        connection.execute(
+            text(
+                "INSERT INTO webhook_endpoints "
+                "(id, tenant_id, title, url, event_types_json, secret_encrypted, "
+                "is_active, created_by_id, created_at, updated_at) VALUES "
+                "(:id, :tenant_a, 'Cross', 'https://cross.example.com', '[]', 'secret', "
+                "true, :user_b, now(), now())"
+            ),
+            {"id": uuid4(), "tenant_a": tenant_a, "user_b": user_b},
+        )

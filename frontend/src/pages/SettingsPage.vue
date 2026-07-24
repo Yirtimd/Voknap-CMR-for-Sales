@@ -1,39 +1,60 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 
 import UiAlert from "../components/ui/UiAlert.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiIcon from "../components/ui/UiIcon.vue";
-import UiDensityToggle from "../components/ui/UiDensityToggle.vue";
-import UiThemeToggle from "../components/ui/UiThemeToggle.vue";
-import { statusLabel } from "../design-system/statusDictionary";
 import DesignSystemPage from "./DesignSystemPage.vue";
 import { crmStore } from "../stores/crm";
+import IntegrationsSettings from "../components/settings/IntegrationsSettings.vue";
 
-type SettingsSection = "workspace" | "appearance" | "integrations" | "templates" | "admin" | "components";
+type SettingsSection = "workspace" | "integrations" | "templates" | "admin" | "components";
+const route = useRoute();
 const activeSection = ref<SettingsSection>("workspace");
 const loading = ref(true);
 const canAdmin = computed(() => ["owner", "admin"].includes(crmStore.me.value?.role ?? ""));
+const settingsSections: SettingsSection[] = ["workspace", "integrations", "templates", "admin", "components"];
+
+watch(
+  () => route.query.section,
+  (section) => {
+    if (typeof section === "string" && settingsSections.includes(section as SettingsSection)) {
+      activeSection.value = section as SettingsSection;
+    }
+  },
+  { immediate: true }
+);
+
+async function refreshSettings() {
+  loading.value = true;
+  crmStore.error.value = "";
+  const results = await Promise.allSettled([
+    crmStore.refreshMe(),
+    crmStore.refreshConnectors(),
+    crmStore.refreshTemplates(),
+    crmStore.refreshProduction()
+  ]);
+  const rejected = results.find((result) => result.status === "rejected");
+  if (rejected?.status === "rejected") {
+    crmStore.error.value = rejected.reason instanceof Error ? rejected.reason.message : "Не удалось загрузить настройки";
+  }
+  loading.value = false;
+}
 
 onMounted(async () => {
-  try {
-    await Promise.allSettled([
-      crmStore.refreshMe(),
-      crmStore.refreshConnectors(),
-      crmStore.refreshTemplates(),
-      crmStore.refreshProduction()
-    ]);
-  } finally {
-    loading.value = false;
+  if (new URLSearchParams(window.location.search).has("integration") || new URLSearchParams(window.location.search).has("integration_error")) {
+    activeSection.value = "integrations";
   }
+  await refreshSettings();
 });
 </script>
 
 <template>
   <section class="settings-page">
-    <header class="settings-hero"><div><p class="eyebrow">Рабочее пространство</p><h2>Настройки</h2><p>Управление компанией, интеграциями, шаблонами и доступными возможностями.</p></div><UiButton variant="secondary" icon="refresh" :loading="loading" @click="crmStore.refreshProduction">Обновить</UiButton></header>
+    <header class="settings-hero"><div><p class="eyebrow">Рабочее пространство</p><h2>Настройки</h2><p>Управление компанией, интеграциями, шаблонами и доступными возможностями.</p></div><UiButton variant="secondary" icon="refresh" :loading="loading" @click="refreshSettings">Обновить</UiButton></header>
     <nav class="settings-nav" aria-label="Разделы настроек">
-      <button v-for="item in [{id:'workspace',label:'Компания',icon:'companies'},{id:'appearance',label:'Оформление',icon:'sun'},{id:'integrations',label:'Интеграции',icon:'automation'},{id:'templates',label:'Шаблоны',icon:'file'},{id:'admin',label:'Администрирование',icon:'settings'},{id:'components',label:'Компоненты',icon:'grid'}]" :key="item.id" type="button" :class="{ active: activeSection === item.id }" @click="activeSection = item.id as SettingsSection"><UiIcon :name="item.icon as any" :size="18" />{{ item.label }}</button>
+      <button v-for="item in [{id:'workspace',label:'Компания',icon:'companies'},{id:'integrations',label:'Интеграции',icon:'automation'},{id:'templates',label:'Шаблоны',icon:'file'},{id:'admin',label:'Администрирование',icon:'settings'},{id:'components',label:'Компоненты',icon:'grid'}]" :key="item.id" type="button" :class="{ active: activeSection === item.id }" @click="activeSection = item.id as SettingsSection"><UiIcon :name="item.icon as any" :size="18" />{{ item.label }}</button>
     </nav>
     <div v-if="loading && activeSection !== 'components'" class="settings-loading"><span></span><span></span></div>
 
@@ -56,33 +77,7 @@ onMounted(async () => {
     </section>
 
     <section v-show="!loading && activeSection === 'integrations'" class="settings-grid">
-      <form class="panel settings-card wide" @submit.prevent="crmStore.createConnectorAccount">
-        <header><UiIcon name="automation" :size="20" /><div><h2>Интеграции</h2><p>Источники писем, звонков и календарных событий.</p></div></header>
-        <label>Коннектор
-          <select v-model="crmStore.connectorAccountForm.value.connector_code">
-            <option v-for="definition in crmStore.connectorDefinitions.value" :key="definition.code" :value="definition.code">
-              {{ definition.title }}
-            </option>
-          </select>
-        </label>
-        <label>Название<input v-model="crmStore.connectorAccountForm.value.title" /></label>
-        <button type="submit">Подключить</button>
-        <article v-for="account in crmStore.connectorAccounts.value" :key="account.id" class="list-row">
-          <span>{{ account.title }}</span>
-          <small>{{ statusLabel(account.status, "connector") }} · {{ account.credentials_encrypted ? "данные защищены" : "без шифрования" }}</small>
-          <button class="secondary" type="button" @click="crmStore.syncConnectorAccount(account.id)">Синхронизировать</button>
-        </article>
-        <article v-for="run in crmStore.connectorRuns.value.slice(0, 5)" :key="run.id" class="list-row">
-          <span>{{ run.job_type }} / {{ statusLabel(run.status, "connector") }}</span>
-          <small>Создано: {{ run.created_count }} · попытка {{ run.attempt }}/{{ run.max_attempts }}</small>
-          <button
-            v-if="run.status === 'failed' || run.status === 'retry_scheduled'"
-            class="secondary"
-            type="button"
-            @click="crmStore.retryConnectorRun(run.id)"
-          >Повторить</button>
-        </article>
-      </form>
+      <IntegrationsSettings class="wide" />
     </section>
 
     <section v-show="!loading && activeSection === 'templates'" class="settings-grid">
@@ -123,18 +118,6 @@ onMounted(async () => {
           <button class="secondary" type="button" @click="crmStore.createAuditMarker">Создать отметку аудита</button>
           <button class="secondary" type="button" @click="crmStore.exportTenantData">Экспортировать данные</button>
         </div>
-      </section>
-    </section>
-
-    <section v-show="activeSection === 'appearance'" class="settings-grid">
-      <section class="panel settings-card">
-        <header><UiIcon name="moon" :size="20" /><div><h2>Тема интерфейса</h2><p>Светлая, системная или тёмная палитра.</p></div></header>
-        <UiThemeToggle />
-        <p class="hint">Системная тема автоматически следует настройке устройства.</p>
-      </section>
-      <section class="panel settings-card">
-        <header><UiIcon name="list" :size="20" /><div><h2>Плотность</h2><p>Количество информации в списках и таблицах.</p></div></header>
-        <UiDensityToggle />
       </section>
     </section>
 

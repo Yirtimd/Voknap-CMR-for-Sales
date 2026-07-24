@@ -17,6 +17,10 @@ import type {
   ConnectorAccount,
   ConnectorDefinition,
   ConnectorSyncRun,
+  ImportPreview,
+  IntegrationJob,
+  PublicApiKey,
+  WebhookEndpoint,
   CsvExportResponse,
   AppliedTemplate,
   CompanyTemplate,
@@ -64,6 +68,13 @@ const homeCopilot = ref<HomeCopilot | null>(null);
 const connectorDefinitions = ref<ConnectorDefinition[]>([]);
 const connectorAccounts = ref<ConnectorAccount[]>([]);
 const connectorRuns = ref<ConnectorSyncRun[]>([]);
+const integrationJobs = ref<IntegrationJob[]>([]);
+const webhookEndpoints = ref<WebhookEndpoint[]>([]);
+const publicApiKeys = ref<PublicApiKey[]>([]);
+const importPreview = ref<ImportPreview | null>(null);
+const importFile = ref<File | null>(null);
+const revealedWebhookSecret = ref("");
+const revealedApiKey = ref("");
 const communicationEvents = ref<CommunicationEvent[]>([]);
 const csvExport = ref<CsvExportResponse | null>(null);
 const companyTemplates = ref<CompanyTemplate[]>([]);
@@ -123,16 +134,45 @@ const knowledgeSearchForm = ref({ query: "Что делать после нов�
 const knowledgeAskForm = ref({ question: "Что делать после новой заявки?", limit: 6 });
 const agentForm = ref({ message: "Дай сводку по CRM", company_id: "", deal_id: "" });
 const connectorAccountForm = ref({
-  connector_code: "csv",
-  title: "CSV import/export",
+  connector_code: "email",
+  title: "Рабочая почта",
   email_provider: "gmail",
   host: "imap.gmail.com",
   port: 993,
   username: "",
   password: "",
   folder: "INBOX",
-  use_ssl: true
+  use_ssl: true,
+  smtp_host: "smtp.gmail.com",
+  smtp_port: 465,
+  smtp_use_ssl: true,
+  from_email: ""
 });
+const emailSendForm = ref({
+  account_id: "",
+  recipient: "",
+  subject: "",
+  body: ""
+});
+const calendarEventForm = ref({
+  account_id: "",
+  title: "",
+  description: "",
+  starts_at: "",
+  ends_at: "",
+  timezone: "Europe/Moscow",
+  attendees: ""
+});
+const webhookForm = ref({
+  title: "",
+  url: "",
+  event_types: ["lead.created"]
+});
+const apiKeyForm = ref({
+  title: "",
+  scopes: ["leads:read", "leads:write"]
+});
+const importMapping = ref<Record<string, string>>({});
 const csvImportForm = ref({
   account_id: "",
   csv_text: "name,phone,email,company_name,lead_title,source\nИван Петров,+79990000000,client@example.com,Ромашка,Заявка из CSV,csv"
@@ -544,18 +584,27 @@ async function rejectAgentAction(actionId: string) {
 
 async function refreshConnectors() {
   if (!isAuthed.value) return;
-  const [definitions, accounts, runs] = await Promise.all([
+  const results = await Promise.allSettled([
     api<ConnectorDefinition[]>("/connectors/definitions", {}, token.value, tenantId.value),
     api<ConnectorAccount[]>("/connectors/accounts", {}, token.value, tenantId.value),
-    api<ConnectorSyncRun[]>("/connectors/runs", {}, token.value, tenantId.value)
+    api<ConnectorSyncRun[]>("/connectors/runs", {}, token.value, tenantId.value),
+    api<IntegrationJob[]>("/connectors/jobs", {}, token.value, tenantId.value),
+    api<WebhookEndpoint[]>("/connectors/webhooks", {}, token.value, tenantId.value),
+    api<PublicApiKey[]>("/connectors/api-keys", {}, token.value, tenantId.value)
   ]);
-  connectorDefinitions.value = definitions;
-  connectorAccounts.value = accounts;
-  connectorRuns.value = runs;
+  const [definitions, accounts, runs, jobs, webhooks, apiKeys] = results;
+  if (definitions.status === "fulfilled") connectorDefinitions.value = definitions.value;
+  if (accounts.status === "fulfilled") connectorAccounts.value = accounts.value;
+  if (runs.status === "fulfilled") connectorRuns.value = runs.value;
+  if (jobs.status === "fulfilled") integrationJobs.value = jobs.value;
+  if (webhooks.status === "fulfilled") webhookEndpoints.value = webhooks.value;
+  if (apiKeys.status === "fulfilled") publicApiKeys.value = apiKeys.value;
   if (!csvImportForm.value.account_id) {
-    const csvAccount = accounts.find((account) => account.connector_code === "csv");
+    const csvAccount = connectorAccounts.value.find((account) => account.connector_code === "csv");
     csvImportForm.value.account_id = csvAccount?.id ?? "";
   }
+  const rejected = results.find((result) => result.status === "rejected");
+  if (rejected?.status === "rejected") throw rejected.reason;
 }
 
 async function createConnectorAccount() {
@@ -579,6 +628,11 @@ async function createConnectorAccount() {
               folder: connectorAccountForm.value.folder,
               use_ssl: connectorAccountForm.value.use_ssl,
               starttls: !connectorAccountForm.value.use_ssl,
+              smtp_host: connectorAccountForm.value.smtp_host,
+              smtp_port: connectorAccountForm.value.smtp_port,
+              smtp_use_ssl: connectorAccountForm.value.smtp_use_ssl,
+              smtp_starttls: !connectorAccountForm.value.smtp_use_ssl,
+              from_email: connectorAccountForm.value.from_email || connectorAccountForm.value.username,
               sync_limit: 100
             }
           : {}
@@ -593,16 +647,179 @@ async function createConnectorAccount() {
 
 async function syncConnectorAccount(accountId: string) {
   await run(async () => {
-    await api<ConnectorSyncRun>(
+    await api<IntegrationJob>(
       `/connectors/accounts/${accountId}/sync`,
       post({ payload: {} }),
       token.value,
       tenantId.value
     );
-    await refreshAll();
-    await refreshCommunication();
     await refreshConnectors();
-  }, "Синхронизация запущена");
+  }, "Задание синхронизации добавлено в очередь");
+}
+
+async function startConnectorOAuth(accountId: string) {
+  await run(async () => {
+    const result = await api<{ authorization_url: string }>(
+      `/connectors/accounts/${accountId}/oauth/start`,
+      post({}),
+      token.value,
+      tenantId.value
+    );
+    window.location.assign(result.authorization_url);
+  }, "Переход к OAuth-провайдеру");
+}
+
+async function disconnectConnectorAccount(accountId: string) {
+  await run(async () => {
+    await api<void>(
+      `/connectors/accounts/${accountId}`,
+      { method: "DELETE" },
+      token.value,
+      tenantId.value
+    );
+    await refreshConnectors();
+  }, "Интеграция отключена");
+}
+
+async function sendIntegrationEmail() {
+  await run(async () => {
+    await api<IntegrationJob>(
+      `/connectors/accounts/${emailSendForm.value.account_id}/email/send`,
+      post({
+        recipient: emailSendForm.value.recipient,
+        subject: emailSendForm.value.subject,
+        body: emailSendForm.value.body,
+        idempotency_key: crypto.randomUUID()
+      }),
+      token.value,
+      tenantId.value
+    );
+    await refreshConnectors();
+  }, "Письмо добавлено в очередь");
+}
+
+async function createIntegrationCalendarEvent() {
+  await run(async () => {
+    await api<IntegrationJob>(
+      `/connectors/accounts/${calendarEventForm.value.account_id}/calendar/events`,
+      post({
+        ...calendarEventForm.value,
+        starts_at: new Date(calendarEventForm.value.starts_at).toISOString(),
+        ends_at: new Date(calendarEventForm.value.ends_at).toISOString(),
+        attendees: calendarEventForm.value.attendees.split(",").map((item) => item.trim()).filter(Boolean),
+        idempotency_key: crypto.randomUUID()
+      }),
+      token.value,
+      tenantId.value
+    );
+    await refreshConnectors();
+  }, "Событие добавлено в очередь");
+}
+
+async function replayIntegrationJob(jobId: string) {
+  await run(async () => {
+    await api<IntegrationJob>(
+      `/connectors/jobs/${jobId}/replay`,
+      post({}),
+      token.value,
+      tenantId.value
+    );
+    await refreshConnectors();
+  }, "Задание возвращено из DLQ");
+}
+
+async function previewIntegrationImport(file: File) {
+  await run(async () => {
+    const body = new FormData();
+    body.append("file", file);
+    importPreview.value = await api<ImportPreview>(
+      "/connectors/imports/preview",
+      { method: "POST", body },
+      token.value,
+      tenantId.value
+    );
+    importFile.value = file;
+    importMapping.value = { ...importPreview.value.suggested_mapping };
+  }, "Preview готов");
+}
+
+async function enqueueIntegrationImport() {
+  if (!importFile.value) return;
+  await run(async () => {
+    const body = new FormData();
+    body.append("file", importFile.value as File);
+    body.append("mapping_json", JSON.stringify(importMapping.value));
+    body.append("idempotency_key", crypto.randomUUID());
+    await api<{ job: IntegrationJob }>(
+      "/connectors/imports",
+      { method: "POST", body },
+      token.value,
+      tenantId.value
+    );
+    await refreshConnectors();
+  }, "Импорт добавлен в очередь");
+}
+
+async function createWebhookEndpoint() {
+  await run(async () => {
+    const endpoint = await api<WebhookEndpoint>(
+      "/connectors/webhooks",
+      post(webhookForm.value),
+      token.value,
+      tenantId.value
+    );
+    revealedWebhookSecret.value = endpoint.signing_secret ?? "";
+    await refreshConnectors();
+  }, "Webhook создан. Сохраните секрет.");
+}
+
+async function testWebhookEndpoint(endpointId: string) {
+  await run(async () => {
+    await api<IntegrationJob>(
+      `/connectors/webhooks/${endpointId}/test`,
+      post({ idempotency_key: crypto.randomUUID() }),
+      token.value,
+      tenantId.value
+    );
+    await refreshConnectors();
+  }, "Тест webhook добавлен в очередь");
+}
+
+async function disableWebhookEndpoint(endpointId: string) {
+  await run(async () => {
+    await api<void>(
+      `/connectors/webhooks/${endpointId}`,
+      { method: "DELETE" },
+      token.value,
+      tenantId.value
+    );
+    await refreshConnectors();
+  }, "Webhook отключен");
+}
+
+async function issuePublicApiKey() {
+  await run(async () => {
+    const key = await api<PublicApiKey>(
+      "/connectors/api-keys",
+      post(apiKeyForm.value),
+      token.value,
+      tenantId.value
+    );
+    revealedApiKey.value = key.api_key ?? "";
+    await refreshConnectors();
+  }, "API-ключ создан. Сохраните его.");
+}
+
+async function revokePublicApiKey(keyId: string) {
+  await run(async () => {
+    await api<void>(
+      `/connectors/api-keys/${keyId}`,
+      { method: "DELETE" },
+      token.value,
+      tenantId.value
+    );
+    await refreshConnectors();
+  }, "API-ключ отозван");
 }
 
 async function retryConnectorRun(runId: string) {
@@ -914,6 +1131,13 @@ export const crmStore = {
   connectorDefinitions,
   connectorAccounts,
   connectorRuns,
+  integrationJobs,
+  webhookEndpoints,
+  publicApiKeys,
+  importPreview,
+  importMapping,
+  revealedWebhookSecret,
+  revealedApiKey,
   communicationEvents,
   csvExport,
   companyTemplates,
@@ -941,6 +1165,10 @@ export const crmStore = {
   knowledgeAskForm,
   agentForm,
   connectorAccountForm,
+  emailSendForm,
+  calendarEventForm,
+  webhookForm,
+  apiKeyForm,
   csvImportForm,
   templateApplyForm,
   featureFlagForm,
@@ -992,6 +1220,18 @@ export const crmStore = {
   rejectAgentAction,
   createConnectorAccount,
   syncConnectorAccount,
+  startConnectorOAuth,
+  disconnectConnectorAccount,
+  sendIntegrationEmail,
+  createIntegrationCalendarEvent,
+  replayIntegrationJob,
+  previewIntegrationImport,
+  enqueueIntegrationImport,
+  createWebhookEndpoint,
+  testWebhookEndpoint,
+  disableWebhookEndpoint,
+  issuePublicApiKey,
+  revokePublicApiKey,
   retryConnectorRun,
   createCommunicationEvent,
   linkCommunicationEvent,

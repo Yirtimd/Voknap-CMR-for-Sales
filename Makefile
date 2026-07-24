@@ -3,7 +3,7 @@
 PYTHON := .venv/bin/python
 ALEMBIC := .venv/bin/alembic
 
-.PHONY: help check db db-ready infra infra-ready migrate dev production seed automation-run test stop
+.PHONY: help check db db-ready infra infra-ready migrate dev production seed automation-run integrations-run test stop
 
 help:
 	@echo "CRM Sales App"
@@ -11,6 +11,7 @@ help:
 	@echo "  make production - start PostgreSQL, MinIO, and OCR-ready backend"
 	@echo "  make seed  - recreate demo workspace data"
 	@echo "  make automation-run - process scheduled CRM automations once"
+	@echo "  make integrations-run - process integration jobs once"
 	@echo "  make test  - run backend and frontend checks"
 	@echo "  make stop  - stop Docker services"
 
@@ -50,6 +51,9 @@ seed: check db-ready migrate
 
 automation-run: check db-ready migrate
 	$(PYTHON) scripts/run_automations.py
+
+integrations-run: check db-ready migrate
+	$(PYTHON) scripts/run_integration_worker.py --once
 
 test: check
 	bash scripts/quality_gate.sh

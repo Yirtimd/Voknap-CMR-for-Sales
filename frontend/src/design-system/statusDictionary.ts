@@ -81,9 +81,17 @@ const dictionaries: Record<StatusDomain, Record<string, StatusMeta>> = {
     failed: { label: "Ошибка обработки", tone: "danger" }
   },
   connector: {
+    ready: { label: "Доступно", tone: "success" },
+    requires_provider: { label: "Нужен провайдер", tone: "warning" },
     connected: { label: "Подключён", tone: "success" },
+    awaiting_authorization: { label: "Ожидает OAuth", tone: "warning" },
     disconnected: { label: "Отключён", tone: "neutral" },
     syncing: { label: "Синхронизация", tone: "info" },
+    pending: { label: "В очереди", tone: "warning" },
+    running: { label: "Выполняется", tone: "info" },
+    retry: { label: "Повтор запланирован", tone: "warning" },
+    dead: { label: "Dead letter", tone: "danger" },
+    succeeded: { label: "Успешно", tone: "success" },
     success: { label: "Успешно", tone: "success" },
     retry_scheduled: { label: "Повтор запланирован", tone: "warning" },
     failed: { label: "Ошибка синхронизации", tone: "danger" }

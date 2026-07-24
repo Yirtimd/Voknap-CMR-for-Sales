@@ -18,6 +18,7 @@ from app.core.rbac import (
 )
 from app.modules.activity.service import ActivityService
 from app.modules.automation.service import AutomationEngine
+from app.modules.connectors.jobs import publish_webhook_event
 from app.modules.accounts.models import User
 from app.modules.accounts.assignment import assign_company, assign_lead
 from app.modules.knowledge.models import KnowledgeDocument
@@ -474,6 +475,19 @@ def create_lead(
             "owner_id": str(lead.owner_id) if lead.owner_id else None,
             "company_id": str(lead.company_id),
             "title": lead.title,
+        },
+        actor_id=tenant.user_id,
+    )
+    publish_webhook_event(
+        db,
+        tenant_id=tenant.id,
+        event_type="lead.created",
+        data={
+            "id": str(lead.id),
+            "company_id": str(lead.company_id),
+            "title": lead.title,
+            "source": lead.source,
+            "status": lead.status,
         },
         actor_id=tenant.user_id,
     )

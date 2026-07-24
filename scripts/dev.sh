@@ -29,7 +29,12 @@ echo "Applying migrations..."
 .venv/bin/alembic upgrade head
 
 backend_pid=""
+worker_pid=""
 cleanup() {
+  if [[ -n "$worker_pid" ]] && kill -0 "$worker_pid" 2>/dev/null; then
+    kill "$worker_pid" 2>/dev/null || true
+    wait "$worker_pid" 2>/dev/null || true
+  fi
   if [[ -n "$backend_pid" ]] && kill -0 "$backend_pid" 2>/dev/null; then
     kill "$backend_pid" 2>/dev/null || true
     wait "$backend_pid" 2>/dev/null || true
@@ -40,6 +45,10 @@ trap cleanup EXIT INT TERM
 echo "Backend: http://localhost:8000"
 .venv/bin/uvicorn app.main:app --reload &
 backend_pid=$!
+
+echo "Integration worker: running"
+.venv/bin/python scripts/run_integration_worker.py &
+worker_pid=$!
 
 echo "Frontend: http://localhost:5173"
 npm --prefix frontend run dev

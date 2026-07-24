@@ -38,7 +38,8 @@ permissions, integrations, terminology, and industry requirements.
 - pipeline analytics, forecasting, deal risk, and manager-level signals;
 - configurable trigger-condition-action automation, approvals, scheduled checks,
   message templates, and transactional delivery outbox;
-- connector framework with CSV and IMAP email synchronization;
+- bidirectional IMAP/SMTP email, Google and Microsoft calendar OAuth,
+  signed webhooks, scoped public API keys, and mapped CSV/XLSX import;
 - industry templates, feature flags, tenant plans, audit data, and export;
 - Vue-based responsive workspace backed by a modular FastAPI API.
 
@@ -62,7 +63,8 @@ flowchart LR
     API --> DB["PostgreSQL + pgvector"]
     API --> OBJECTS["S3-compatible storage"]
     API --> AI["LLM and embedding providers"]
-    API --> CONNECTORS["Email, CSV, external connectors"]
+    API --> QUEUE["PostgreSQL integration jobs"]
+    QUEUE --> CONNECTORS["Email, calendars, webhooks, imports"]
     DB --> RLS["Forced tenant RLS"]
 ```
 
@@ -154,7 +156,7 @@ make dev
 ```
 
 This starts PostgreSQL and MinIO, applies Alembic migrations, and runs the
-backend and frontend development servers.
+backend, frontend, and integration background worker.
 
 Open:
 
@@ -198,6 +200,12 @@ Run scheduled automation once from cron or a worker scheduler:
 make automation-run
 ```
 
+Process one integration-job batch manually:
+
+```bash
+make integrations-run
+```
+
 ## Configuration highlights
 
 ```text
@@ -217,6 +225,13 @@ S3_ENDPOINT_URL
 S3_ACCESS_KEY
 S3_SECRET_KEY
 S3_BUCKET
+PUBLIC_API_BASE_URL
+FRONTEND_URL
+GOOGLE_OAUTH_CLIENT_ID
+GOOGLE_OAUTH_CLIENT_SECRET
+MICROSOFT_OAUTH_CLIENT_ID
+MICROSOFT_OAUTH_CLIENT_SECRET
+MICROSOFT_OAUTH_TENANT
 ```
 
 The complete development template is available in `.env.example`.
@@ -224,11 +239,17 @@ The complete development template is available in `.env.example`.
 ## Implemented
 
 - modular CRM backend and Vue workspace;
-- PostgreSQL migrations through `0016_automation_engine`;
+- PostgreSQL migrations through `0017_real_integrations`;
 - native pgvector storage and scoped retrieval;
 - company workspace and activity timeline;
 - analytics and AI-assisted recommendations;
-- IMAP and CSV connector flows;
+- bidirectional IMAP/SMTP email with encrypted credentials;
+- Google Calendar incremental sync and Microsoft Graph delta sync through OAuth 2.0;
+- background integration jobs with retry, idempotency, stale-worker recovery,
+  dead-letter queue, replay, and per-attempt error journal;
+- HTTPS webhooks with HMAC-SHA256 signatures and SSRF restrictions;
+- hashed, scoped public API keys and `/public/v1/leads`;
+- CSV/XLSX import with preview, field mapping, validation, and background execution;
 - MinIO/S3 file storage and OCR;
 - forced tenant RLS and tenant-aware constraints;
 - centralized RBAC with object- and field-level write protection;
@@ -242,17 +263,30 @@ The complete development template is available in `.env.example`.
 
 ## Hardening in progress
 
-- background processing for integrations and document ingestion;
+- production worker autoscaling and scheduler orchestration;
 - structured audit events, monitoring, tracing, and alerting;
 - AI/RAG evaluation and production guardrails.
 
 ## Planned product capabilities
 
 - custom fields and customer-specific process configuration;
-- sales sequences and calendar synchronization;
+- sales sequences;
 - products, price books, quotes, and contract workflows;
 - configurable reports, dashboards, quotas, and advanced forecasting;
 - production deployment, backup, recovery, and compliance profiles.
+
+## Integration boundaries
+
+Google and Microsoft connections require customer-owned OAuth applications and
+redirect URIs configured from `.env.example`. Email requires working IMAP and
+SMTP credentials; the connection is tested before it is saved.
+
+Telephony is intentionally not represented by a fake adapter: a provider such
+as Mango, UIS, Zadarma, or a customer-specific PBX must be selected first.
+Telegram/WhatsApp require a channel-ownership and consent decision for the
+target market. A 1C integration requires the exact 1C configuration, exchange
+transport, and master-data contract. The Settings page reports these boundaries
+instead of offering non-functional connect buttons.
 
 ## Repository scope
 

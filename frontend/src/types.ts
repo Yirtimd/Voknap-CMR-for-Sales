@@ -553,6 +553,7 @@ export type ConnectorDefinition = {
   title: string;
   description: string;
   status: string;
+  reason: string | null;
 };
 
 export type ConnectorAccount = {
@@ -585,6 +586,52 @@ export type ConnectorSyncRun = {
   error_code: string | null;
   error_details: Record<string, unknown>;
   created_at: string;
+};
+
+export type IntegrationJob = {
+  id: string;
+  account_id: string | null;
+  job_type: string;
+  idempotency_key: string;
+  status: "pending" | "running" | "retry" | "succeeded" | "dead";
+  attempt: number;
+  max_attempts: number;
+  available_at: string;
+  completed_at: string | null;
+  result: Record<string, unknown>;
+  last_error: string | null;
+  error_log: Array<Record<string, unknown>>;
+  created_at: string;
+};
+
+export type WebhookEndpoint = {
+  id: string;
+  title: string;
+  url: string;
+  event_types: string[];
+  is_active: boolean;
+  signing_secret: string | null;
+  created_at: string;
+};
+
+export type PublicApiKey = {
+  id: string;
+  title: string;
+  key_prefix: string;
+  scopes: string[];
+  is_active: boolean;
+  expires_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  api_key: string | null;
+};
+
+export type ImportPreview = {
+  filename: string;
+  headers: string[];
+  rows: Array<Record<string, string>>;
+  suggested_mapping: Record<string, string>;
+  total_rows: number;
 };
 
 export type CommunicationEvent = {

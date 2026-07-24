@@ -19,6 +19,7 @@ from app.modules.automation.router import router as automation_router
 from app.modules.auth.router import router as auth_router
 from app.modules.communication.router import router as communication_router
 from app.modules.connectors.router import router as connectors_router
+from app.modules.connectors.public_router import router as public_api_router
 from app.modules.health.router import router as health_router
 from app.modules.knowledge.router import router as knowledge_router
 from app.modules.me.router import router as me_router
@@ -63,5 +64,6 @@ app.include_router(analytics_router, prefix="/analytics", tags=["analytics"])
 app.include_router(automation_router, prefix="/automations", tags=["automations"])
 app.include_router(communication_router, prefix="/communication", tags=["communication"])
 app.include_router(connectors_router, prefix="/connectors", tags=["connectors"])
+app.include_router(public_api_router, prefix="/public/v1", tags=["public-api"])
 app.include_router(templates_router, prefix="/templates", tags=["templates"])
 app.include_router(production_router, prefix="/production", tags=["production"])
