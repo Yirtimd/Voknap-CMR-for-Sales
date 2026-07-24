@@ -4,10 +4,13 @@ import { computed, onMounted, ref } from "vue";
 import UiAlert from "../components/ui/UiAlert.vue";
 import UiButton from "../components/ui/UiButton.vue";
 import UiIcon from "../components/ui/UiIcon.vue";
+import UiDensityToggle from "../components/ui/UiDensityToggle.vue";
+import UiThemeToggle from "../components/ui/UiThemeToggle.vue";
 import { statusLabel } from "../design-system/statusDictionary";
+import DesignSystemPage from "./DesignSystemPage.vue";
 import { crmStore } from "../stores/crm";
 
-type SettingsSection = "workspace" | "integrations" | "templates" | "admin";
+type SettingsSection = "workspace" | "appearance" | "integrations" | "templates" | "admin" | "components";
 const activeSection = ref<SettingsSection>("workspace");
 const loading = ref(true);
 const canAdmin = computed(() => ["owner", "admin"].includes(crmStore.me.value?.role ?? ""));
@@ -30,9 +33,9 @@ onMounted(async () => {
   <section class="settings-page">
     <header class="settings-hero"><div><p class="eyebrow">Рабочее пространство</p><h2>Настройки</h2><p>Управление компанией, интеграциями, шаблонами и доступными возможностями.</p></div><UiButton variant="secondary" icon="refresh" :loading="loading" @click="crmStore.refreshProduction">Обновить</UiButton></header>
     <nav class="settings-nav" aria-label="Разделы настроек">
-      <button v-for="item in [{id:'workspace',label:'Компания',icon:'companies'},{id:'integrations',label:'Интеграции',icon:'automation'},{id:'templates',label:'Шаблоны',icon:'file'},{id:'admin',label:'Администрирование',icon:'settings'}]" :key="item.id" type="button" :class="{ active: activeSection === item.id }" @click="activeSection = item.id as SettingsSection"><UiIcon :name="item.icon as any" :size="18" />{{ item.label }}</button>
+      <button v-for="item in [{id:'workspace',label:'Компания',icon:'companies'},{id:'appearance',label:'Оформление',icon:'sun'},{id:'integrations',label:'Интеграции',icon:'automation'},{id:'templates',label:'Шаблоны',icon:'file'},{id:'admin',label:'Администрирование',icon:'settings'},{id:'components',label:'Компоненты',icon:'grid'}]" :key="item.id" type="button" :class="{ active: activeSection === item.id }" @click="activeSection = item.id as SettingsSection"><UiIcon :name="item.icon as any" :size="18" />{{ item.label }}</button>
     </nav>
-    <div v-if="loading" class="settings-loading"><span></span><span></span></div>
+    <div v-if="loading && activeSection !== 'components'" class="settings-loading"><span></span><span></span></div>
 
     <section v-show="!loading && activeSection === 'workspace'" class="settings-grid">
     <section class="panel settings-card">
@@ -122,6 +125,20 @@ onMounted(async () => {
         </div>
       </section>
     </section>
+
+    <section v-show="activeSection === 'appearance'" class="settings-grid">
+      <section class="panel settings-card">
+        <header><UiIcon name="moon" :size="20" /><div><h2>Тема интерфейса</h2><p>Светлая, системная или тёмная палитра.</p></div></header>
+        <UiThemeToggle />
+        <p class="hint">Системная тема автоматически следует настройке устройства.</p>
+      </section>
+      <section class="panel settings-card">
+        <header><UiIcon name="list" :size="20" /><div><h2>Плотность</h2><p>Количество информации в списках и таблицах.</p></div></header>
+        <UiDensityToggle />
+      </section>
+    </section>
+
+    <DesignSystemPage v-if="activeSection === 'components'" embedded />
   </section>
 </template>
 

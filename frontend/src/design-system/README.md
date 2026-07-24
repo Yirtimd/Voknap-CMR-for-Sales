@@ -31,8 +31,13 @@ import {
   UiInput,
   UiModal,
   UiSelect,
+  UiSkeleton,
+  UiSkeletonGroup,
+  UiSparkline,
   UiTable,
-  UiTabs
+  UiTabs,
+  UiDensityToggle,
+  UiThemeToggle
 } from "../components/ui";
 ```
 
@@ -90,3 +95,17 @@ Before merge:
 - Metric terminology comes from `metricVocabulary.ts`.
 - Mobile navigation is persistent; drawers and workspace modals become fullscreen at 640 px.
 - Automation action configuration is edited through form controls, never raw JSON.
+
+## P2 contracts
+
+- `/design-system` is the living component catalogue and state reference.
+- `UiSkeleton` and `UiSkeletonGroup` are the shared loading primitives.
+- Global list density is `comfortable` or `compact`; read and change it through `useDensity()`.
+- Theme preference is `light`, `system` or `dark`; read and change it through `useTheme()`.
+- Dark mode overrides canonical semantic tokens. Legacy exceptions belong only in `dark-theme.css`.
+- Chart colors come only from `--chart-*` tokens. See `docs/chart-system.md`.
+- `npm test` includes the WCAG AA semantic contrast check.
+- `npm run test:visual` compares the six key screens at 1440, 1024, 768 and 390 px.
+- Every visual target is captured in both light and dark themes.
+- Update approved screenshots only with `npm run test:visual:update`.
+- Run the complete P2 gate with `npm run quality:p2`.

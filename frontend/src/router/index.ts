@@ -4,6 +4,7 @@ import AppLayout from "../layouts/AppLayout.vue";
 import AutomationPage from "../pages/AutomationPage.vue";
 import CompaniesPage from "../pages/CompaniesPage.vue";
 import DealsPage from "../pages/DealsPage.vue";
+import DesignSystemPage from "../pages/DesignSystemPage.vue";
 import HomePage from "../pages/HomePage.vue";
 import InboxPage from "../pages/InboxPage.vue";
 import LoginPage from "../pages/LoginPage.vue";
@@ -21,6 +22,7 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/login", name: "login", component: LoginPage },
+    { path: "/design-system", name: "design-system", component: DesignSystemPage },
     { path: "/accept-invitation", name: "accept-invitation", component: InvitationAcceptPage },
     {
       path: "/",

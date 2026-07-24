@@ -21,6 +21,7 @@ withDefaults(defineProps<{ padding?: "none" | "compact" | "standard" | "large"; 
 .has-none-padding { padding:0; }
 .has-compact-padding { padding:var(--space-3); }
 .has-standard-padding { padding:var(--space-4); }
+:global(.density-compact) .has-standard-padding { padding:var(--space-3); }
 .has-large-padding { padding:var(--space-6); }
 .is-interactive { transition:border-color var(--duration-standard) ease, box-shadow var(--duration-standard) ease, transform var(--duration-standard) ease; }
 .is-interactive:hover { border-color:var(--color-border-strong); box-shadow:var(--shadow-card-hover); transform:translateY(-1px); }

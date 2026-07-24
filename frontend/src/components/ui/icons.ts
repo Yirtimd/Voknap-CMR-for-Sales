@@ -43,7 +43,10 @@ export const iconPaths = {
   check: ["m5 12 4 4L19 6"],
   plus: ["M12 5v14M5 12h14"],
   close: ["M6 6l12 12M18 6 6 18"],
-  bell: ["M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"]
+  bell: ["M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"],
+  sun: ["M12 4V2M12 22v-2M4 12H2M22 12h-2M5.64 5.64 4.22 4.22M19.78 19.78l-1.42-1.42M18.36 5.64l1.42-1.42M4.22 19.78l1.42-1.42M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"],
+  moon: ["M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"],
+  monitor: ["M3 4h18v13H3V4Zm5 18h8M12 17v5"]
 } as const;
 
 export type IconName = keyof typeof iconPaths;

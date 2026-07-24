@@ -3,14 +3,21 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import voknapLogo from "../assets/voknap-logo.png";
+import voknapLogoDark from "../assets/voknap-logo-dark.png";
 import GlobalAgentSidebar from "../components/crm/GlobalAgentSidebar.vue";
 import UiAlert from "../components/ui/UiAlert.vue";
+import UiDensityToggle from "../components/ui/UiDensityToggle.vue";
 import UiIcon from "../components/ui/UiIcon.vue";
+import UiThemeToggle from "../components/ui/UiThemeToggle.vue";
 import type { IconName } from "../components/ui/icons";
+import { useDensity } from "../design-system/density";
+import { useTheme } from "../design-system/theme";
 import { crmStore } from "../stores/crm";
 
 const router = useRouter();
 const route = useRoute();
+const { density } = useDensity();
+const { theme } = useTheme();
 
 const navGroups: Array<{ label: string; items: Array<{ to: string; label: string; icon: IconName }> }> = [
   { label: "Работа", items: [
@@ -132,7 +139,7 @@ function openTaskCreate() {
 </script>
 
 <template>
-  <main class="app-shell" :class="[`sidebar-${sidebarMode}`, { 'agent-open': isAgentOpen, 'tasks-workspace-active': isTasks }]">
+  <main class="app-shell" :class="[`sidebar-${sidebarMode}`, `density-${density}`, { 'agent-open': isAgentOpen, 'tasks-workspace-active': isTasks }]" :data-density="density">
     <aside class="sidebar" aria-label="Основная навигация">
       <div class="sidebar-controls" aria-label="Режим боковой панели">
         <button type="button" :class="{ active: sidebarMode === 'full' }" aria-label="Полный сайдбар" title="Полный сайдбар" @click="setSidebarMode('full')"><span class="layout-icon layout-icon-full" aria-hidden="true"></span></button>
@@ -140,7 +147,7 @@ function openTaskCreate() {
         <button type="button" :class="{ active: sidebarMode === 'hidden' }" aria-label="Скрыть сайдбар" title="Скрыть сайдбар" @click="setSidebarMode('hidden')"><span class="layout-icon layout-icon-hidden" aria-hidden="true"></span></button>
       </div>
       <div class="brand">
-        <span class="brand-mark"><img :src="voknapLogo" alt="Voknap" /></span>
+        <span class="brand-mark"><img :src="theme === 'dark' ? voknapLogoDark : voknapLogo" alt="Voknap" /></span>
       </div>
 
       <nav class="nav">
@@ -153,7 +160,7 @@ function openTaskCreate() {
         </section>
       </nav>
 
-      <button class="secondary" type="button" @click="logout">Выйти</button>
+      <div class="sidebar-footer"><UiThemeToggle /><UiDensityToggle /><button class="secondary" type="button" @click="logout">Выйти</button></div>
     </aside>
 
     <div v-if="sidebarMode === 'hidden'" class="sidebar-hover-zone" aria-hidden="true"></div>
@@ -258,6 +265,8 @@ function openTaskCreate() {
     <div v-if="isMobileMoreOpen" class="mobile-more-layer" @click.self="isMobileMoreOpen = false">
       <section class="mobile-more" role="dialog" aria-modal="true" aria-label="Все разделы">
         <header><h2>Все разделы</h2><button class="secondary" type="button" aria-label="Закрыть" @click="isMobileMoreOpen = false"><UiIcon name="close" :size="18" /></button></header>
+        <UiThemeToggle class="mobile-theme" />
+        <UiDensityToggle class="mobile-density" />
         <div class="mobile-more__grid">
           <RouterLink v-for="item in navItems" :key="item.to" :to="item.to" @click="isMobileMoreOpen = false">
             <UiIcon :name="item.icon" :size="20" /><span>{{ item.label }}</span>
@@ -270,6 +279,7 @@ function openTaskCreate() {
 
 <style scoped>
 .home-search, .top-action-wrap { position: relative; }
+.sidebar-footer :deep(.ui-theme span) { display:none; }
 .top-popover { position: absolute; z-index: 80; top: calc(100% + 8px); right: 0; width: 280px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-card); padding: 8px; background: var(--surface-solid); box-shadow: 0 16px 40px rgb(0 0 0 / 14%); }
 .search-popover { right: auto; left: 0; width: 100%; min-width: 390px; }
 .top-popover button { width: 100%; justify-content: flex-start; border: 0; padding: 10px; color: var(--text); background: transparent; text-align: left; }

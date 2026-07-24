@@ -42,6 +42,7 @@
   --color-text-secondary: #374151;
   --color-text-muted: #6b7280;
   --color-text-disabled: #98a2b3;
+  --color-text-on-accent: #ffffff;
   --color-primary: #0b72e7;
   --color-primary-hover: #0865ce;
   --color-primary-active: #075ab8;
@@ -50,7 +51,7 @@
   --color-success-text: #08794a;
   --color-success-soft: #e8f8f0;
   --color-warning: #e99a14;
-  --color-warning-text: #ad6500;
+  --color-warning-text: #965700;
   --color-warning-soft: #fff6df;
   --color-danger: #dc3f45;
   --color-danger-text: #c82e36;
@@ -61,6 +62,13 @@
   --color-overlay: rgb(17 24 39 / 40%);
   --color-surface-overlay: rgb(255 255 255 / 78%);
   --color-focus: rgb(11 114 231 / 18%);
+  --chart-primary: #0b72e7;
+  --chart-comparison: #98a2b3;
+  --chart-positive: #16a36a;
+  --chart-warning: #e99a14;
+  --chart-risk: #dc3f45;
+  --chart-ai: #7656e8;
+  --chart-grid: #e2e7ee;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -83,6 +91,9 @@
   --control-height-compact: 32px;
   --control-height: 38px;
   --control-height-prominent: 44px;
+  --density-row-height: 60px;
+  --density-card-padding: 20px;
+  --density-list-gap: 10px;
 
   --shadow-card: 0 1px 3px rgb(15 23 42 / 4%);
   --shadow-card-hover: 0 8px 24px rgb(15 23 42 / 8%);
@@ -95,4 +106,57 @@
   --duration-fast: 120ms;
   --duration-standard: 150ms;
   --duration-layout: 180ms;
+}
+
+:root[data-theme="dark"] {
+  color: #f4f7fb;
+  background: #0b0f17;
+  color-scheme: dark;
+
+  --color-bg-canvas: #0b0f17;
+  --color-bg-sidebar: #101621;
+  --color-surface: #131a24;
+  --color-surface-subtle: #171f2b;
+  --color-surface-muted: #1d2735;
+  --color-border: #2a3545;
+  --color-border-subtle: #202a38;
+  --color-border-strong: #3a4759;
+  --color-text-primary: #f4f7fb;
+  --color-text-secondary: #c5cfdc;
+  --color-text-muted: #9aa8b9;
+  --color-text-disabled: #68778a;
+  --color-text-on-accent: #07111f;
+  --color-primary: #4c9dff;
+  --color-primary-hover: #6aadff;
+  --color-primary-active: #2f83eb;
+  --color-primary-soft: #132c49;
+  --color-success: #45d59a;
+  --color-success-text: #75e5b5;
+  --color-success-soft: #112e25;
+  --color-warning: #f7b955;
+  --color-warning-text: #ffd166;
+  --color-warning-soft: #33270d;
+  --color-danger: #ff747b;
+  --color-danger-text: #ff9ba0;
+  --color-danger-soft: #38181d;
+  --color-ai: #a78bfa;
+  --color-ai-hover: #bba7ff;
+  --color-ai-soft: #261c45;
+  --color-overlay: rgb(0 0 0 / 64%);
+  --color-surface-overlay: rgb(19 26 36 / 84%);
+  --color-focus: rgb(76 157 255 / 30%);
+  --chart-primary: #4c9dff;
+  --chart-comparison: #9aa8b9;
+  --chart-positive: #45d59a;
+  --chart-warning: #f7b955;
+  --chart-risk: #ff747b;
+  --chart-ai: #a78bfa;
+  --chart-grid: #2a3545;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 28%);
+  --shadow-card-hover: 0 10px 28px rgb(0 0 0 / 30%);
+  --shadow-popover: 0 18px 48px rgb(0 0 0 / 42%);
+  --shadow-drawer: -18px 0 52px rgb(0 0 0 / 46%);
+  --shadow-modal:
+    0 32px 96px rgb(0 0 0 / 56%),
+    0 8px 28px rgb(0 0 0 / 34%);
 }

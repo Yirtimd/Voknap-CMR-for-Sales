@@ -66,16 +66,16 @@ withDefaults(
 .is-compact { min-height: var(--control-height-compact); padding-inline: var(--space-3); }
 .is-standard { min-height: var(--control-height); }
 .is-prominent { min-height: var(--control-height-prominent); }
-.is-primary { color: var(--color-surface); background: var(--color-primary); }
+.is-primary { color: var(--color-text-on-accent); background: var(--color-primary); }
 .is-primary:hover { background: var(--color-primary-hover); }
 .is-primary:active { background: var(--color-primary-active); }
 .is-secondary { color: var(--color-text-secondary); border-color: var(--color-border-strong); background: var(--color-surface); }
 .is-secondary:hover,
 .is-ghost:hover { background: var(--color-surface-muted); }
 .is-ghost { color: var(--color-text-secondary); background: transparent; }
-.is-danger { color: var(--color-surface); background: var(--color-danger); }
+.is-danger { color: var(--color-text-on-accent); background: var(--color-danger); }
 .is-danger:hover { background: var(--color-danger-text); }
-.is-ai { color: var(--color-surface); background: var(--color-ai); }
+.is-ai { color: var(--color-text-on-accent); background: var(--color-ai); }
 .is-ai:hover { background: var(--color-ai-hover); }
 .is-icon-only { width: var(--control-height); padding: 0; }
 .ui-button:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
@@ -84,4 +84,3 @@ withDefaults(
 @keyframes ui-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ui-button__spinner { animation-duration: 1.5s; } }
 </style>
-

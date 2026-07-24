@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "vue-tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && npm run test:contrast",
+    "test:contrast": "node scripts/check-contrast.mjs",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
+    "screenshots": "playwright test --update-snapshots",
+    "quality:p2": "npm run typecheck && npm test && npm run test:visual && npm run build",
     "build": "vue-tsc && vite build",
     "preview": "vite preview"
   },
@@ -15,6 +20,7 @@
     "vue-router": "^4.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.4.6",
     "jsdom": "^25.0.1",

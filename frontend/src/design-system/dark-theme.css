@@ -1,0 +1,264 @@
+/* Dark compatibility layer for legacy screens.
+   New components must use semantic tokens instead of adding selectors here. */
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] #app,
+:root[data-theme="dark"] .app-shell,
+:root[data-theme="dark"] .content {
+  color: var(--color-text-primary);
+  background: var(--color-bg-canvas);
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+  background-color: var(--color-surface);
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: var(--color-text-disabled);
+}
+
+:root[data-theme="dark"] .secondary,
+:root[data-theme="dark"] .secondary-link {
+  color: var(--color-text-secondary);
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
+}
+
+:root[data-theme="dark"] .secondary:hover,
+:root[data-theme="dark"] .secondary-link:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-disabled);
+  background: var(--color-surface-muted);
+}
+
+:root[data-theme="dark"] .sidebar {
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+  background: var(--color-bg-sidebar);
+}
+
+:root[data-theme="dark"] .sidebar-controls {
+  border-color: var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  box-shadow: var(--shadow-popover);
+}
+
+:root[data-theme="dark"] .sidebar-controls button {
+  color: var(--color-text-muted);
+}
+
+:root[data-theme="dark"] .sidebar-controls button:hover,
+:root[data-theme="dark"] .sidebar-controls button.active {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-muted);
+}
+
+:root[data-theme="dark"] .nav a {
+  color: var(--color-text-secondary);
+}
+
+:root[data-theme="dark"] .nav a:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-muted);
+}
+
+:root[data-theme="dark"] .nav a.router-link-active {
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+:root[data-theme="dark"] .sidebar-compact .nav a:hover::after,
+:root[data-theme="dark"] .sidebar-compact .nav a:focus-visible::after,
+:root[data-theme="dark"] .sidebar-hidden .nav a:hover::after,
+:root[data-theme="dark"] .sidebar-hidden .nav a:focus-visible::after {
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popover);
+}
+
+:root[data-theme="dark"] .topbar,
+:root[data-theme="dark"] .tasks-topbar {
+  border-color: var(--color-border-subtle);
+  background: color-mix(in srgb, var(--color-bg-canvas) 90%, transparent);
+}
+
+:root[data-theme="dark"] .top-popover,
+:root[data-theme="dark"] .mobile-more,
+:root[data-theme="dark"] .mobile-nav {
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  box-shadow: var(--shadow-popover);
+}
+
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .metric,
+:root[data-theme="dark"] .drawer,
+:root[data-theme="dark"] .agent-sidebar,
+:root[data-theme="dark"] .notes-drawer,
+:root[data-theme="dark"] .company-modal,
+:root[data-theme="dark"] .company-workspace-modal,
+:root[data-theme="dark"] .entity-crud-drawer,
+:root[data-theme="dark"] .crud-conflict,
+:root[data-theme="dark"] .team-modal,
+:root[data-theme="dark"] .invite-card,
+:root[data-theme="dark"] .cm-card {
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+:root[data-theme="dark"] .company-modal__rail,
+:root[data-theme="dark"] .company-workspace-rail,
+:root[data-theme="dark"] .drawer-section,
+:root[data-theme="dark"] .list-row,
+:root[data-theme="dark"] .entity-row,
+:root[data-theme="dark"] .data-table th,
+:root[data-theme="dark"] .kanban-column {
+  color: var(--color-text-secondary);
+  border-color: var(--color-border-subtle);
+  background: var(--color-surface-subtle);
+}
+
+:root[data-theme="dark"] .data-table td,
+:root[data-theme="dark"] .company-modal__header-actions button,
+:root[data-theme="dark"] .knowledge-suggestion {
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+:root[data-theme="dark"] .list-row:hover,
+:root[data-theme="dark"] .entity-row:hover,
+:root[data-theme="dark"] .data-table tbody tr:hover {
+  background: var(--color-surface-muted);
+}
+
+:root[data-theme="dark"] .workspace-modal-backdrop,
+:root[data-theme="dark"] .drawer-backdrop,
+:root[data-theme="dark"] .entity-crud-backdrop,
+:root[data-theme="dark"] .company-workspace-backdrop,
+:root[data-theme="dark"] .team-modal-backdrop,
+:root[data-theme="dark"] .analytics-modal-backdrop {
+  background: var(--color-overlay);
+}
+
+:root[data-theme="dark"] .app-shell.tasks-workspace-active {
+  background: var(--color-bg-canvas);
+}
+
+:root[data-theme="dark"] .tasks-ai-inbox,
+:root[data-theme="dark"] .tasks-refresh,
+:root[data-theme="dark"] .tasks-more {
+  color: var(--color-text-secondary);
+}
+
+:root[data-theme="dark"] .tasks-ai-inbox b {
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+:root[data-theme="dark"] .home-ai-label b {
+  color: var(--color-ai);
+  background: var(--color-ai-soft);
+}
+
+:root[data-theme="dark"] .home-search,
+:root[data-theme="dark"] .home-kpi,
+:root[data-theme="dark"] .home-card,
+:root[data-theme="dark"] .home-focus-card,
+:root[data-theme="dark"] .home-wide-button,
+:root[data-theme="dark"] .home-call-button {
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+:root[data-theme="dark"] .home-welcome h1,
+:root[data-theme="dark"] .home-kpi strong,
+:root[data-theme="dark"] .home-card h2,
+:root[data-theme="dark"] .home-time-row time,
+:root[data-theme="dark"] .home-time-row strong,
+:root[data-theme="dark"] .home-risk-row strong,
+:root[data-theme="dark"] .home-risk-money strong,
+:root[data-theme="dark"] .home-activity-row strong,
+:root[data-theme="dark"] .home-next-action h3,
+:root[data-theme="dark"] .home-focus-card h3,
+:root[data-theme="dark"] .home-focus-amount,
+:root[data-theme="dark"] .home-focus-card dd,
+:root[data-theme="dark"] .home-ai-label,
+:root[data-theme="dark"] .home-ai h2 {
+  color: var(--color-text-primary);
+}
+
+:root[data-theme="dark"] .home-ai-label {
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="dark"] .home-welcome p,
+:root[data-theme="dark"] .home-kpi p,
+:root[data-theme="dark"] .home-card p,
+:root[data-theme="dark"] .home-card dl,
+:root[data-theme="dark"] .home-ai p,
+:root[data-theme="dark"] .home-ai small,
+:root[data-theme="dark"] .home-activity-row time,
+:root[data-theme="dark"] .home-focus-card dt {
+  color: var(--color-text-muted);
+}
+
+:root[data-theme="dark"] .home-ai {
+  color: var(--color-text-primary);
+  border-color: color-mix(in srgb, var(--color-ai) 38%, var(--color-border));
+  background:
+    radial-gradient(circle at 92% 40%, rgb(167 139 250 / 18%), transparent 22%),
+    linear-gradient(135deg, var(--color-surface), var(--color-ai-soft));
+}
+
+:root[data-theme="dark"] .home-time-row + .home-time-row::before,
+:root[data-theme="dark"] .home-risk-row {
+  border-color: var(--color-border-subtle);
+}
+
+:root[data-theme="dark"] .home-icon.blue { color:var(--color-primary); background:var(--color-primary-soft); }
+:root[data-theme="dark"] .home-icon.green { color:var(--color-success-text); background:var(--color-success-soft); }
+:root[data-theme="dark"] .home-icon.orange { color:var(--color-warning-text); background:var(--color-warning-soft); }
+:root[data-theme="dark"] .home-icon.red { color:var(--color-danger-text); background:var(--color-danger-soft); }
+:root[data-theme="dark"] .home-icon.purple { color:var(--color-ai); background:var(--color-ai-soft); }
+:root[data-theme="dark"] .home-icon.slate { color:var(--color-text-muted); background:var(--color-surface-muted); }
+:root[data-theme="dark"] .risk-badge { color:var(--color-warning-text); background:var(--color-warning-soft); }
+:root[data-theme="dark"] .risk-badge.high { color:var(--color-danger-text); background:var(--color-danger-soft); }
+
+:root[data-theme="dark"] .ask-analytics {
+  background: var(--color-surface-muted);
+}
+
+:root[data-theme="dark"] .ask-analytics button {
+  color: var(--color-text-muted) !important;
+}
+
+:root[data-theme="dark"] .analytics-error,
+:root[data-theme="dark"] .team-denied,
+:root[data-theme="dark"] .crud-danger {
+  color: var(--color-danger-text);
+  border-color: color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
+  background: var(--color-danger-soft);
+}
+
+:root[data-theme="dark"] .alert.warning {
+  color: var(--color-warning-text);
+  border-color: color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
+  background: var(--color-warning-soft);
+}
+
+:root[data-theme="dark"] ::selection {
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-primary) 34%, transparent);
+}

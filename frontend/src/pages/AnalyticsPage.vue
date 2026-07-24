@@ -30,10 +30,10 @@ const forecast = computed(() => data.value?.forecast);
 const riskMap = computed(() => data.value?.risk_map);
 const taskSla = computed(() => data.value?.task_sla);
 
-const topRiskDeals = computed(() => riskMap.value?.deals.slice(0, 3) ?? []);
-const stuckDeals = computed(() => data.value?.stuck_deals.slice(0, 3) ?? []);
+const topRiskDeals = computed(() => riskMap.value?.deals?.slice(0, 3) ?? []);
+const stuckDeals = computed(() => data.value?.stuck_deals?.slice(0, 3) ?? []);
 const managerActivity = computed(() => data.value?.manager_activity ?? []);
-const unhealthyCompanies = computed(() => data.value?.company_health.filter((company) => company.risk_level !== "low").slice(0, 3) ?? []);
+const unhealthyCompanies = computed(() => data.value?.company_health?.filter((company) => company.risk_level !== "low").slice(0, 3) ?? []);
 
 const bottleneckStage = computed(() => {
   const stages = data.value?.stage_conversion ?? [];
@@ -327,13 +327,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
           <svg viewBox="0 0 296 160" preserveAspectRatio="none" role="img" aria-label="Динамика прогноза выручки">
             <defs>
               <linearGradient id="forecastFill" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stop-color="#0071e3" stop-opacity="0.24" />
-                <stop offset="100%" stop-color="#0071e3" stop-opacity="0" />
+                <stop offset="0%" stop-color="var(--chart-primary)" stop-opacity="0.24" />
+                <stop offset="100%" stop-color="var(--chart-primary)" stop-opacity="0" />
               </linearGradient>
             </defs>
             <path :d="`M10,148 L${forecastPoints} L290,148 Z`" fill="url(#forecastFill)" />
-            <polyline :points="forecastPoints" fill="none" stroke="#0071e3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
-            <line x1="10" y1="148" x2="290" y2="148" stroke="#d8d8dc" vector-effect="non-scaling-stroke" />
+            <polyline :points="forecastPoints" fill="none" stroke="var(--chart-primary)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+            <line x1="10" y1="148" x2="290" y2="148" stroke="var(--chart-grid)" vector-effect="non-scaling-stroke" />
           </svg>
         </div>
         <div class="forecast-legend">
@@ -529,7 +529,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
   border-radius: 8px;
   padding: 10px 14px;
   color: var(--danger);
-  background: #fff1f0;
+  background: var(--color-danger-soft);
 }
 
 .analytics-top-grid {
@@ -835,7 +835,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", handleEscape));
   width: 100%;
   border-radius: 8px;
   padding: 12px;
-  background: #f7f8fa;
+  background: var(--color-surface-muted);
 }
 
 .ask-analytics span {

@@ -9,6 +9,7 @@ import UiEmptyState from "../components/ui/UiEmptyState.vue";
 import UiIcon from "../components/ui/UiIcon.vue";
 import UiInput from "../components/ui/UiInput.vue";
 import UiSelect from "../components/ui/UiSelect.vue";
+import UiSkeletonGroup from "../components/ui/UiSkeletonGroup.vue";
 import { statusLabel, statusTone } from "../design-system/statusDictionary";
 import { crmStore } from "../stores/crm";
 import type { Contact, EntityType, Lead, Note } from "../types";
@@ -110,7 +111,7 @@ function companyName(companyId: string) {
         </div>
       </header>
 
-      <div v-if="loading" class="leads-loading" aria-live="polite"><span></span><span></span><span></span></div>
+      <UiSkeletonGroup v-if="loading" :rows="3" avatar />
       <template v-else-if="activeList === 'leads'">
         <button v-for="lead in filteredLeads" :key="lead.id" class="lead-row" type="button" @click="openCrud('leads', lead)">
           <span class="lead-avatar">{{ lead.title.slice(0, 2).toUpperCase() }}</span>

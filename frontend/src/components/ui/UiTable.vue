@@ -20,6 +20,7 @@ withDefaults(defineProps<{ label?: string; loading?: boolean; striped?: boolean 
 .ui-table { width:100%; border-collapse:collapse; color:var(--color-text-secondary); font-family:var(--font-family-sans); font-size:13px; }
 .ui-table :deep(th) { position:sticky; top:0; z-index:1; color:var(--color-text-muted); background:var(--color-surface-subtle); font-size:12px; font-weight:600; text-align:left; }
 .ui-table :deep(th),.ui-table :deep(td) { border-bottom:1px solid var(--color-border-subtle); padding:12px 14px; }
+:global(.density-compact) .ui-table :deep(th),:global(.density-compact) .ui-table :deep(td) { padding:8px 10px; }
 .ui-table :deep(tbody tr:hover) { background:var(--color-surface-subtle); }
 .ui-table.striped :deep(tbody tr:nth-child(even)) { background:var(--color-surface-subtle); }
 .ui-table__loading { position:absolute; inset:0; display:grid; place-items:center; color:var(--color-text-muted); background:var(--color-surface-overlay); font-size:13px; }
