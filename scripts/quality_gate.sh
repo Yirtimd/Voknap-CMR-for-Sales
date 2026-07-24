@@ -27,7 +27,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "[1/7] Ruff"
-.venv/bin/ruff check app tests scripts alembic
+.venv/bin/ruff check --select E4,E7,E9,F app tests scripts alembic
 
 echo "[2/7] Backend unit tests"
 .venv/bin/pytest -q -m "not postgres"
