@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 
-import { ApiError, api, apiPage, buildQuery, post, type QueryParams, type QueryValue } from "../api";
+import { ApiError, api, apiErrorMessage, apiPage, buildQuery, post, type QueryParams, type QueryValue } from "../api";
 import { crmStore } from "./crm";
 import type {
   BulkAction,
@@ -79,6 +79,7 @@ const canReassign = computed(() => permissions.value.has("assignments:manage") |
 const canManageMembers = computed(() => permissions.value.has("members:manage") || ["owner", "admin"].includes(role.value ?? ""));
 const canViewDeleted = computed(() => permissions.value.has("sales:manage") || ["owner", "admin", "sales_manager"].includes(role.value ?? ""));
 const canMerge = computed(() => canWrite.value);
+const canManageSales = computed(() => permissions.value.has("sales:manage") || ["owner", "admin", "sales_manager"].includes(role.value ?? ""));
 
 const knownOwners = computed<LifecycleMember[]>(() => {
   const byUserId = new Map<string, LifecycleMember>();
@@ -292,6 +293,15 @@ async function loadDuplicateCandidates(type: Extract<EntityType, "contacts" | "l
   );
 }
 
+async function loadDuplicateRecord(type: Extract<EntityType, "contacts" | "leads" | "deals">, id: string) {
+  return api<Contact | Lead | Deal>(
+    `/sales/${type}/${id}`,
+    {},
+    crmStore.token.value,
+    crmStore.tenantId.value
+  );
+}
+
 async function dismissDuplicate(candidate: DuplicateCandidate, comment: string) {
   return mutation(candidate.entity_type, undefined, async () => {
     await api<DuplicateCandidate>(
@@ -483,7 +493,7 @@ function isAborted(caught: unknown) {
 }
 
 function messageOf(caught: unknown) {
-  return caught instanceof Error ? caught.message : "Не удалось выполнить действие";
+  return apiErrorMessage(caught);
 }
 
 export const lifecycleStore = {
@@ -510,6 +520,7 @@ export const lifecycleStore = {
   canManageMembers,
   canViewDeleted,
   canMerge,
+  canManageSales,
   setQuery,
   currentQuery,
   load,
@@ -524,6 +535,7 @@ export const lifecycleStore = {
   merge,
   scanDuplicates,
   loadDuplicateCandidates,
+  loadDuplicateRecord,
   dismissDuplicate,
   qualify,
   convert,

@@ -66,8 +66,6 @@ onMounted(async () => {
       <p class="hint">{{ crmStore.activeTenant.value?.name }} / {{ crmStore.activeTenant.value?.slug }}</p>
     </section>
 
-    <PipelineSettings v-show="!loading && activeSection === 'sales'" />
-
     <section class="panel settings-card">
       <header><UiIcon name="file" :size="20" /><div><h2>Заметка по умолчанию</h2><p>Используется быстрыми действиями в лидах и сделках.</p></div></header>
       <label>Текст<textarea v-model="crmStore.noteForm.value.text"></textarea></label>
@@ -78,6 +76,8 @@ onMounted(async () => {
       <p v-if="!crmStore.notes.value.length" class="empty">Заметок пока нет</p>
     </section>
     </section>
+
+    <PipelineSettings v-show="!loading && activeSection === 'sales'" />
 
     <section v-show="!loading && activeSection === 'integrations'" class="settings-grid">
       <IntegrationsSettings class="wide" />

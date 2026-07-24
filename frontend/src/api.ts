@@ -34,6 +34,20 @@ export class ApiError extends Error {
   }
 }
 
+export function apiErrorMessage(caught: unknown, fallback = "Не удалось выполнить действие"): string {
+  if (!(caught instanceof ApiError)) return caught instanceof Error ? caught.message : fallback;
+
+  const detail = detailMessage(caught.detail);
+  if (caught.status === 409) {
+    const version = caught.currentVersion ? ` Текущая версия: ${caught.currentVersion}.` : "";
+    return `Конфликт версии: данные уже изменены.${version} Обновите объект и повторите действие.${detail ? ` ${detail}` : ""}`;
+  }
+  if (caught.status === 422) return detail ? `Проверьте поля: ${detail}` : "Проверьте заполнение и формат полей.";
+  if (caught.status === 403) return "Недостаточно прав для этого действия.";
+  if (caught.status === 404) return "Объект не найден. Обновите данные.";
+  return detail || caught.message || fallback;
+}
+
 export function buildQuery(path: string, query: QueryParams = {}): string {
   const [basePath, existingQuery = ""] = path.split("?", 2);
   const params = new URLSearchParams(existingQuery);
@@ -161,9 +175,26 @@ function currentVersionFrom(value: unknown): number | null {
 }
 
 function errorMessage(status: number, detail: unknown): string {
+  const message = detailMessage(detail);
+  if (message) return message;
+  return `API error ${status}`;
+}
+
+function detailMessage(detail: unknown): string {
   if (typeof detail === "string" && detail) return detail;
   if (isRecord(detail) && typeof detail.message === "string") return detail.message;
-  return `API error ${status}`;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (!isRecord(item)) return String(item);
+        const location = Array.isArray(item.loc) ? item.loc.filter((part) => part !== "body").join(".") : "";
+        const message = typeof item.msg === "string" ? item.msg : "";
+        return [location, message].filter(Boolean).join(": ");
+      })
+      .filter(Boolean)
+      .join("; ");
+  }
+  return "";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -409,6 +409,18 @@ export type ApprovalRequest = {
   updated_at: string;
 };
 
+export type ApprovalHistory = {
+  id: string;
+  approval_id: string;
+  action: string;
+  from_status: string | null;
+  to_status: string | null;
+  actor_id: string | null;
+  comment: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
 export type AutomationOutboxItem = {
   id: string;
   run_id: string;

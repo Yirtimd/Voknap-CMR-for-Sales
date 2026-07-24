@@ -61,6 +61,9 @@ const runFilter = ref("");
 const approvalFilter = ref("");
 const outboxFilter = ref("");
 const approvalComments = reactive<Record<string, string>>({});
+const approvalAssignees = reactive<Record<string, string>>({});
+const approvalCancelComments = reactive<Record<string, string>>({});
+const openApprovalHistory = reactive<Record<string, boolean>>({});
 const outboxErrors = reactive<Record<string, string>>({});
 const editingWorkflowId = ref("");
 const editingTemplateId = ref("");
@@ -277,6 +280,37 @@ async function decide(id: string, version: number, decision: "approved" | "rejec
   await guarded(() => automationStore.decideApproval(id, version, decision, approvalComments[id]).then(() => undefined));
 }
 
+async function reassignApproval(id: string, version: number) {
+  if (!approvalAssignees[id]?.trim()) {
+    localError.value = "Укажите ID нового согласующего.";
+    return;
+  }
+  await guarded(() => automationStore.reassignApproval(
+    id,
+    version,
+    approvalAssignees[id].trim(),
+    approvalComments[id]
+  ).then(() => undefined));
+}
+
+async function cancelApproval(id: string, version: number) {
+  if (!approvalCancelComments[id]?.trim()) {
+    localError.value = "Для отмены укажите причину.";
+    return;
+  }
+  await guarded(() => automationStore.cancelApproval(
+    id,
+    version,
+    approvalCancelComments[id].trim()
+  ).then(() => undefined));
+}
+
+async function toggleApprovalHistory(id: string) {
+  openApprovalHistory[id] = !openApprovalHistory[id];
+  if (!openApprovalHistory[id] || automationStore.approvalHistory.value[id]) return;
+  await guarded(() => automationStore.refreshApprovalHistory(id).then(() => undefined));
+}
+
 async function markOutbox(id: string, status: "sent" | "failed" | "cancelled") {
   if (status === "failed" && !outboxErrors[id]?.trim()) {
     localError.value = "Для статуса failed укажите ошибку.";
@@ -373,12 +407,43 @@ function dateTime(value: string | null) {
 
       <section v-else-if="activeTab === 'runs'" class="panel automation-list">
         <p v-if="!automationStore.canManageAutomations.value" class="automation-denied">Нет права <code>automations:manage</code>.</p>
-        <template v-else><header class="list-head"><div><h2>Журнал запусков</h2><p>Idempotency контролируется backend через event key.</p></div><select v-model="runFilter" @change="automationStore.refreshRuns(runFilter)"><option value="">Все статусы</option><option value="succeeded">Успешно</option><option value="failed">Ошибки</option><option value="running">Выполняется</option></select></header><article v-for="run in automationStore.runs.value" :key="run.id" class="automation-card run-card"><div><strong>{{ workflowName(run.workflow_id) }}</strong><small>{{ run.trigger_type }} · {{ run.entity_type }} · {{ run.entity_id }}</small><small>{{ dateTime(run.started_at) }} · event: {{ run.event_key }}</small><p v-if="run.error" class="run-error">{{ run.error }}</p><details v-if="run.result.length"><summary>Результат действий</summary><pre>{{ JSON.stringify(run.result, null, 2) }}</pre></details></div><span class="status-pill" :class="`status-${run.status}`">{{ statusLabel(run.status, "automation") }}</span></article><p v-if="!automationStore.runs.value.length" class="empty">Запусков нет.</p></template>
+        <template v-else><header class="list-head"><div><h2>Журнал запусков</h2><p>Idempotency контролируется backend через event key.</p></div><select v-model="runFilter" @change="automationStore.refreshRuns(runFilter)"><option value="">Все статусы</option><option value="succeeded">Успешно</option><option value="failed">Ошибки</option><option value="running">Выполняется</option><option value="waiting_approval">Ожидает согласования</option></select></header><article v-for="run in automationStore.runs.value" :key="run.id" class="automation-card run-card"><div><strong>{{ workflowName(run.workflow_id) }}</strong><small>{{ run.trigger_type }} · {{ run.entity_type }} · {{ run.entity_id }}</small><small>{{ dateTime(run.started_at) }} · event: {{ run.event_key }}</small><p v-if="run.error" class="run-error">{{ run.error }}</p><details v-if="run.result.length"><summary>Результат действий</summary><pre>{{ JSON.stringify(run.result, null, 2) }}</pre></details></div><span class="status-pill" :class="`status-${run.status}`">{{ statusLabel(run.status, "automation") }}</span></article><p v-if="!automationStore.runs.value.length" class="empty">Запусков нет.</p></template>
       </section>
 
       <section v-else-if="activeTab === 'approvals'" class="panel automation-list">
         <p v-if="!automationStore.canManageApprovals.value" class="automation-denied">Нет права <code>approvals:manage</code>.</p>
-        <template v-else><header class="list-head"><div><h2>Согласования</h2><p>Сценарий приостановлен до решения; версия защищает от двойного ответа.</p></div><select v-model="approvalFilter" @change="automationStore.refreshApprovals(approvalFilter)"><option value="">Все статусы</option><option value="pending">Ожидают</option><option value="approved">Согласованы</option><option value="rejected">Отклонены</option><option value="cancelled">Отменены</option><option value="expired">Просрочены</option></select></header><article v-for="item in automationStore.approvals.value" :key="item.id" class="automation-card approval-card"><div><strong>{{ item.title }}</strong><small>{{ item.entity_type }} · {{ item.entity_id }} · {{ dateTime(item.created_at) }}</small><small>Приоритет: {{ item.priority }} · SLA: {{ item.due_at ? dateTime(item.due_at) : "не задан" }} · версия {{ item.version }}</small><p v-if="item.reason">{{ item.reason }}</p><p v-if="item.decision_comment">Комментарий: {{ item.decision_comment }}</p><textarea v-if="item.status === 'pending'" v-model="approvalComments[item.id]" rows="2" placeholder="Комментарий к решению (обязателен при отклонении)"></textarea></div><span class="status-pill" :class="`status-${item.status}`">{{ statusLabel(item.status, "approval") }}</span><div v-if="item.status === 'pending'" class="card-actions"><button type="button" @click="decide(item.id, item.version, 'approved')">Согласовать</button><button class="danger-quiet" type="button" @click="decide(item.id, item.version, 'rejected')">Отклонить</button></div></article><p v-if="!automationStore.approvals.value.length" class="empty">Согласований нет.</p></template>
+        <template v-else>
+          <header class="list-head"><div><h2>Согласования</h2><p>Сценарий приостановлен до решения; версия защищает от двойного ответа.</p></div><select v-model="approvalFilter" @change="automationStore.refreshApprovals(approvalFilter)"><option value="">Все статусы</option><option value="pending">Ожидают</option><option value="approved">Согласованы</option><option value="rejected">Отклонены</option><option value="cancelled">Отменены</option><option value="expired">Просрочены</option></select></header>
+          <article v-for="item in automationStore.approvals.value" :key="item.id" class="automation-card approval-card">
+            <div class="approval-main">
+              <strong>{{ item.title }}</strong>
+              <small>{{ item.entity_type }} · {{ item.entity_id }} · {{ dateTime(item.created_at) }}</small>
+              <small>Приоритет: {{ statusLabel(item.priority, "priority") }} · срок: {{ item.due_at ? dateTime(item.due_at) : "не задан" }} · версия {{ item.version }}</small>
+              <small>Согласующий: {{ item.assigned_to_id || "не назначен" }}</small>
+              <p v-if="item.reason">{{ item.reason }}</p>
+              <p v-if="item.decision_comment">Комментарий: {{ item.decision_comment }}</p>
+              <template v-if="item.status === 'pending'">
+                <textarea v-model="approvalComments[item.id]" rows="2" placeholder="Комментарий к решению (обязателен при отклонении)"></textarea>
+                <div class="approval-reassign">
+                  <input v-model="approvalAssignees[item.id]" placeholder="ID нового согласующего" />
+                  <button class="secondary" type="button" :disabled="automationStore.loading.value" @click="reassignApproval(item.id, item.version)">Переназначить</button>
+                </div>
+                <div v-if="automationStore.canManageAutomations.value" class="approval-cancel">
+                  <input v-model="approvalCancelComments[item.id]" placeholder="Причина отмены" />
+                  <button class="danger-quiet" type="button" :disabled="automationStore.loading.value" @click="cancelApproval(item.id, item.version)">Отменить</button>
+                </div>
+              </template>
+              <button class="secondary history-button" type="button" :disabled="automationStore.loading.value" @click="toggleApprovalHistory(item.id)">{{ openApprovalHistory[item.id] ? "Скрыть историю" : "Показать историю" }}</button>
+              <ol v-if="openApprovalHistory[item.id]" class="approval-history">
+                <li v-for="entry in automationStore.approvalHistory.value[item.id] ?? []" :key="entry.id"><strong>{{ entry.action }}</strong><span v-if="entry.from_status || entry.to_status">{{ entry.from_status || "—" }} → {{ entry.to_status || "—" }}</span><small>{{ dateTime(entry.created_at) }}<template v-if="entry.actor_id"> · {{ entry.actor_id }}</template></small><p v-if="entry.comment">{{ entry.comment }}</p></li>
+                <li v-if="!(automationStore.approvalHistory.value[item.id]?.length)">История пуста.</li>
+              </ol>
+            </div>
+            <span class="status-pill" :class="`status-${item.status}`">{{ statusLabel(item.status, "approval") }}</span>
+            <div v-if="item.status === 'pending'" class="card-actions"><button type="button" :disabled="automationStore.loading.value" @click="decide(item.id, item.version, 'approved')">Согласовать</button><button class="danger-quiet" type="button" :disabled="automationStore.loading.value" @click="decide(item.id, item.version, 'rejected')">Отклонить</button></div>
+          </article>
+          <p v-if="!automationStore.approvals.value.length" class="empty">Согласований нет.</p>
+        </template>
       </section>
 
       <section v-else class="panel automation-list">
@@ -392,4 +457,5 @@ function dateTime(value: string | null) {
 <style scoped>
 .automation-page{padding-bottom:38px}.automation-hero,.automation-form>header,.list-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.automation-hero h2,.automation-form h2,.automation-list h2{margin:3px 0 6px}.automation-hero p:last-child,.list-head p{margin:0;color:var(--muted)}.hero-actions,.card-actions{display:flex;flex-wrap:wrap;gap:8px}.automation-tabs{display:flex;gap:4px;overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-card);padding:4px;background:var(--surface)}.automation-tabs button{min-height:36px;color:var(--muted);background:transparent;white-space:nowrap}.automation-tabs button.active{color:var(--text);background:#fff;box-shadow:0 1px 5px rgb(0 0 0/10%)}.automation-denied{border:1px solid #efc2c2;border-radius:var(--radius-card);padding:17px;color:#8f2525;background:#fff6f6}.alert.info{color:#24547b;border-color:#bddcf4;background:#eff8ff}.automation-grid{display:grid;grid-template-columns:minmax(330px,430px) minmax(0,1fr);gap:16px;align-items:start}.automation-form{display:grid;gap:13px}.automation-form label{margin:0}.automation-form fieldset{display:grid;gap:9px;border:1px solid var(--line);border-radius:9px;padding:12px}.automation-form legend{padding:0 5px;font-weight:700}.mini{min-height:28px;padding:4px 8px}.form-pair{display:grid;grid-template-columns:1fr 120px;gap:9px}.builder-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,.6fr) auto;gap:7px}.condition-row{grid-template-columns:minmax(110px,1fr) 100px minmax(100px,1fr) auto}.action-builder{display:grid;gap:6px;border-top:1px solid var(--line-soft);padding-top:9px}.remove-button{width:34px;padding:0;color:#9b2929;background:#fff4f4}.check-row{display:flex;align-items:center;gap:8px}.automation-list{display:grid;gap:10px}.automation-card{display:grid;grid-template-columns:minmax(180px,1fr) auto auto;gap:12px;align-items:start;border:1px solid var(--line);border-radius:var(--radius-card);padding:14px}.automation-card>div:first-child{display:grid;gap:5px}.automation-card small{color:var(--muted)}.automation-card p{margin:2px 0;white-space:pre-wrap}.status-pill{display:inline-flex;border-radius:var(--radius-pill);padding:5px 8px;color:#17663a;background:#e9f8ef;font-size:11px;font-weight:700;white-space:nowrap}.status-pill.inactive,.status-cancelled,.status-rejected{color:#76515b;background:#f3edef}.status-failed{color:#992a2a;background:#fff0f0}.status-pending,.status-running,.status-sending{color:#76500c;background:#fff5d9}.run-error{color:#992a2a!important}.automation-card details{margin-top:5px}.automation-card pre{max-width:100%;overflow:auto;border-radius:var(--radius-control);padding:9px;background:#f6f8fa;font-size:11px}.danger-quiet{color:#a02929;border-color:#efc2c2;background:#fff6f6}@media(max-width:980px){.automation-grid{grid-template-columns:1fr}.automation-card{grid-template-columns:minmax(0,1fr) auto}.automation-card .card-actions{grid-column:1/-1}}@media(max-width:650px){.automation-hero,.list-head{flex-direction:column}.hero-actions{width:100%}.hero-actions button{flex:1}.form-pair,.builder-row,.condition-row,.automation-card{grid-template-columns:1fr}.automation-card>*{grid-column:1!important}}
 .action-builder{display:grid;gap:10px;border:1px solid var(--color-border);border-radius:var(--radius-control);padding:12px;background:var(--color-surface-subtle)}.action-builder>header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.action-builder>header div{display:grid;gap:2px}.action-builder>header small,.action-builder label small{color:var(--color-text-muted);font-size:var(--font-size-meta);font-weight:400}.action-fields{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.approval-main{min-width:0}.approval-reassign,.approval-cancel{display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:8px}.history-button{justify-self:start}.approval-history{display:grid;gap:7px;margin:4px 0 0;padding:0;list-style:none}.approval-history li{display:grid;gap:2px;border-left:2px solid var(--color-border);padding:6px 10px}.approval-history p{color:var(--color-text-muted)}.status-waiting_approval{color:var(--color-warning-text);background:var(--color-warning-soft)}@media(max-width:650px){.approval-reassign,.approval-cancel{grid-template-columns:1fr}}
 </style>

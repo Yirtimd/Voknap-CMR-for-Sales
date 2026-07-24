@@ -139,8 +139,9 @@ function selectImportFile(event: Event) {
           </label>
         </div>
         <div class="preview-table"><table><thead><tr><th v-for="header in crmStore.importPreview.value.headers" :key="header">{{ header }}</th></tr></thead><tbody><tr v-for="(row, index) in crmStore.importPreview.value.rows.slice(0, 5)" :key="index"><td v-for="header in crmStore.importPreview.value.headers" :key="header">{{ row[header] }}</td></tr></tbody></table></div>
-        <UiButton @click="crmStore.enqueueIntegrationImport">Импортировать в фоне</UiButton>
+        <UiButton :loading="crmStore.isLoading.value" @click="crmStore.enqueueIntegrationImport">Импортировать в фоне</UiButton>
       </template>
+      <UiAlert v-if="crmStore.importStatus.value" tone="info">{{ crmStore.importStatus.value }}</UiAlert>
     </section>
 
     <form class="panel settings-card" @submit.prevent="crmStore.createWebhookEndpoint">

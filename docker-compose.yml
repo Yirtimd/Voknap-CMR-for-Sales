@@ -47,6 +47,8 @@ services:
       KNOWLEDGE_STORAGE_BACKEND: s3
       S3_ENDPOINT_URL: http://minio:9000
       S3_USE_SSL: "false"
+      FRONTEND_URL: http://localhost:5173
+      PUBLIC_API_BASE_URL: http://localhost:8000
     command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     ports:
       - "8000:8000"
@@ -61,6 +63,26 @@ services:
       timeout: 5s
       retries: 12
 
+  frontend:
+    profiles: ["production"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: cmr_frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
   integration-worker:
     profiles: ["production"]
     build:
@@ -71,7 +93,33 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://cmr:cmr@postgres:5432/cmr
-    command: ["python", "scripts/run_integration_worker.py"]
+    command: ["python", "-m", "scripts.run_integration_worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  automation-scheduler:
+    profiles: ["production"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cmr_automation_scheduler
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://cmr:cmr@postgres:5432/cmr
+    command:
+      [
+        "python",
+        "-m",
+        "scripts.run_automations",
+        "--loop",
+        "--interval",
+        "60",
+      ]
     depends_on:
       postgres:
         condition: service_healthy

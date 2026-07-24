@@ -1,7 +1,8 @@
 import { computed, ref } from "vue";
 
-import { ApiError, api, post } from "../api";
+import { api, apiErrorMessage, post } from "../api";
 import type {
+  ApprovalHistory,
   ApprovalRequest,
   AutomationAction,
   AutomationCondition,
@@ -18,6 +19,7 @@ const workflows = ref<AutomationWorkflow[]>([]);
 const templates = ref<AutomationMessageTemplate[]>([]);
 const runs = ref<AutomationRun[]>([]);
 const approvals = ref<ApprovalRequest[]>([]);
+const approvalHistory = ref<Record<string, ApprovalHistory[]>>({});
 const outbox = ref<AutomationOutboxItem[]>([]);
 const loading = ref(false);
 const error = ref("");
@@ -57,6 +59,12 @@ async function refreshApprovals(status?: string) {
   if (!canManageApprovals.value) return void (approvals.value = []);
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   approvals.value = await api<ApprovalRequest[]>(`/automations/approvals${query}`, {}, ...auth());
+}
+
+async function refreshApprovalHistory(id: string) {
+  const rows = await api<ApprovalHistory[]>(`/automations/approvals/${id}/history`, {}, ...auth());
+  approvalHistory.value = { ...approvalHistory.value, [id]: rows };
+  return rows;
 }
 
 async function refreshOutbox(status?: string) {
@@ -219,19 +227,7 @@ async function mutate<T>(action: () => Promise<T>, message: string): Promise<T> 
 }
 
 function errorMessage(caught: unknown) {
-  if (!(caught instanceof ApiError)) return caught instanceof Error ? caught.message : "Неизвестная ошибка";
-  const detail = typeof caught.detail === "string"
-    ? caught.detail
-    : caught.detail && typeof caught.detail === "object" && "message" in caught.detail
-      ? String(caught.detail.message)
-      : caught.message;
-  const labels: Record<number, string> = {
-    403: "Недостаточно прав",
-    404: "Объект не найден",
-    409: "Конфликт версии или финальный статус",
-    422: "Проверьте настройки сценария"
-  };
-  return `${labels[caught.status] ?? `HTTP ${caught.status}`}: ${detail}`;
+  return apiErrorMessage(caught, "Неизвестная ошибка");
 }
 
 function clearMessages() {
@@ -244,6 +240,7 @@ export const automationStore = {
   templates,
   runs,
   approvals,
+  approvalHistory,
   outbox,
   loading,
   error,
@@ -255,6 +252,7 @@ export const automationStore = {
   refreshTemplates,
   refreshRuns,
   refreshApprovals,
+  refreshApprovalHistory,
   refreshOutbox,
   refreshAll,
   createWorkflow,

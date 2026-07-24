@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 
-import { api, apiBlob, emptyToNull, post } from "../api";
+import { api, apiBlob, apiErrorMessage, emptyToNull, post } from "../api";
 import type {
   AgentAction,
   AgentChatResponse,
@@ -73,6 +73,8 @@ const webhookEndpoints = ref<WebhookEndpoint[]>([]);
 const publicApiKeys = ref<PublicApiKey[]>([]);
 const importPreview = ref<ImportPreview | null>(null);
 const importFile = ref<File | null>(null);
+const importIdempotencyKey = ref("");
+const importStatus = ref("");
 const revealedWebhookSecret = ref("");
 const revealedApiKey = ref("");
 const communicationEvents = ref<CommunicationEvent[]>([]);
@@ -244,7 +246,7 @@ async function run(action: () => Promise<void>, success: string) {
     await action();
     ok.value = success;
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : "Unknown error";
+    error.value = apiErrorMessage(caught);
   } finally {
     isLoading.value = false;
   }
@@ -739,6 +741,8 @@ async function previewIntegrationImport(file: File) {
       tenantId.value
     );
     importFile.value = file;
+    importIdempotencyKey.value = crypto.randomUUID();
+    importStatus.value = "";
     importMapping.value = { ...importPreview.value.suggested_mapping };
   }, "Preview готов");
 }
@@ -749,14 +753,42 @@ async function enqueueIntegrationImport() {
     const body = new FormData();
     body.append("file", importFile.value as File);
     body.append("mapping_json", JSON.stringify(importMapping.value));
-    body.append("idempotency_key", crypto.randomUUID());
-    await api<{ job: IntegrationJob }>(
+    importIdempotencyKey.value ||= crypto.randomUUID();
+    body.append("idempotency_key", importIdempotencyKey.value);
+    const response = await api<{ job: IntegrationJob }>(
       "/connectors/imports",
       { method: "POST", body },
       token.value,
       tenantId.value
     );
-    await refreshConnectors();
+    importStatus.value = "Задание ожидает background worker…";
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const jobs = await api<IntegrationJob[]>(
+        "/connectors/jobs",
+        {},
+        token.value,
+        tenantId.value
+      );
+      integrationJobs.value = jobs;
+      const job = jobs.find((item) => item.id === response.job.id);
+      if (job?.status === "succeeded") {
+        const created = Number(job.result.created ?? 0);
+        const failed = Number(job.result.failed ?? 0);
+        importStatus.value = `Импорт завершён: создано ${created}, ошибок ${failed}.`;
+        await refreshAll();
+        importPreview.value = null;
+        importFile.value = null;
+        return;
+      }
+      if (job?.status === "dead") {
+        throw new Error(job.last_error || "Импорт завершился с ошибкой");
+      }
+      importStatus.value = job?.status === "running"
+        ? "Импорт выполняется…"
+        : "Задание ожидает background worker…";
+      await new Promise((resolve) => window.setTimeout(resolve, 500));
+    }
+    importStatus.value = "Импорт продолжает выполняться в фоне. Статус доступен в журнале заданий.";
   }, "Импорт добавлен в очередь");
 }
 
@@ -1164,6 +1196,7 @@ export const crmStore = {
   webhookEndpoints,
   publicApiKeys,
   importPreview,
+  importStatus,
   importMapping,
   revealedWebhookSecret,
   revealedApiKey,

@@ -8,7 +8,7 @@ ALEMBIC := .venv/bin/alembic
 help:
 	@echo "CRM Sales App"
 	@echo "  make dev   - start database, backend, and frontend"
-	@echo "  make production - start PostgreSQL, MinIO, and OCR-ready backend"
+	@echo "  make production - build and start the full production stack"
 	@echo "  make seed  - recreate demo workspace data"
 	@echo "  make automation-run - process scheduled CRM automations once"
 	@echo "  make integrations-run - process integration jobs once"
@@ -44,7 +44,8 @@ dev:
 
 production:
 	@docker info >/dev/null 2>&1 || (echo "Docker is not running. Start Docker Desktop and retry." && exit 1)
-	docker compose --profile production up -d --build --wait backend
+	docker compose --profile production up -d --build --wait \
+		postgres minio backend frontend integration-worker automation-scheduler
 
 seed: check db-ready migrate
 	$(PYTHON) scripts/seed_demo.py

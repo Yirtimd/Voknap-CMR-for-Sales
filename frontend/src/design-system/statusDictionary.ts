@@ -118,6 +118,7 @@ const dictionaries: Record<StatusDomain, Record<string, StatusMeta>> = {
   },
   automation: {
     running: { label: "Выполняется", tone: "info" },
+    waiting_approval: { label: "Ожидает согласования", tone: "warning" },
     succeeded: { label: "Успешно", tone: "success" },
     failed: { label: "Ошибка", tone: "danger" },
     skipped: { label: "Пропущено", tone: "neutral" },
@@ -127,6 +128,7 @@ const dictionaries: Record<StatusDomain, Record<string, StatusMeta>> = {
     pending: { label: "Ожидает решения", tone: "warning" },
     approved: { label: "Согласовано", tone: "success" },
     rejected: { label: "Отклонено", tone: "danger" },
+    cancelled: { label: "Отменено", tone: "neutral" },
     expired: { label: "Срок истёк", tone: "neutral" }
   },
   outbox: {
@@ -154,6 +156,7 @@ const dictionaries: Record<StatusDomain, Record<string, StatusMeta>> = {
     normal: { label: "Средний", tone: "info" },
     medium: { label: "Средний", tone: "info" },
     high: { label: "Высокий", tone: "warning" },
+    critical: { label: "Критический", tone: "danger" },
     urgent: { label: "Срочный", tone: "danger" }
   },
   role: {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, api, apiPage, buildQuery, emptyToNull, post } from "./api";
+import { ApiError, api, apiErrorMessage, apiPage, buildQuery, emptyToNull, post } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -111,5 +111,13 @@ describe("API client", () => {
       method: "PATCH",
       body: '{"title":"Deal"}'
     });
+  });
+
+  it("turns validation, permission, and version failures into actionable messages", () => {
+    expect(apiErrorMessage(new ApiError(422, [
+      { loc: ["body", "stages", 0, "code"], msg: "String should match pattern" }
+    ]))).toContain("stages.0.code");
+    expect(apiErrorMessage(new ApiError(403, "Forbidden"))).toBe("Недостаточно прав для этого действия.");
+    expect(apiErrorMessage(new ApiError(409, { message: "Version conflict" }, 6))).toContain("Обновите объект");
   });
 });

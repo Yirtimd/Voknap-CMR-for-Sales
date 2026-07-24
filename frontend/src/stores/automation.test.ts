@@ -46,6 +46,7 @@ beforeEach(() => {
   automationStore.templates.value = [];
   automationStore.runs.value = [];
   automationStore.approvals.value = [];
+  automationStore.approvalHistory.value = {};
   automationStore.outbox.value = [];
   automationStore.clearMessages();
 });
@@ -125,6 +126,35 @@ describe("automation store", () => {
 
     expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({ version: 2, decision: "approved", comment: "OK" });
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("reassigns, cancels, and loads approval history with versions", async () => {
+    const pending = { id: "approval-1", status: "pending", version: 3 };
+    const cancelled = { ...pending, status: "cancelled", version: 4 };
+    const history = [{ id: "history-1", approval_id: "approval-1", action: "cancelled" }];
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(pending))
+      .mockResolvedValueOnce(response([pending]))
+      .mockResolvedValueOnce(response(cancelled))
+      .mockResolvedValueOnce(response([cancelled]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response(history));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await automationStore.reassignApproval("approval-1", 2, "user-2", "Передано руководителю");
+    await automationStore.cancelApproval("approval-1", 3, "Запрос больше не актуален");
+    await automationStore.refreshApprovalHistory("approval-1");
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({
+      version: 2,
+      assigned_to_id: "user-2",
+      comment: "Передано руководителю"
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1].body))).toEqual({
+      version: 3,
+      comment: "Запрос больше не актуален"
+    });
+    expect(automationStore.approvalHistory.value["approval-1"]).toEqual(history);
   });
 
   it("runs scheduled scan and exposes normalized conflicts", async () => {

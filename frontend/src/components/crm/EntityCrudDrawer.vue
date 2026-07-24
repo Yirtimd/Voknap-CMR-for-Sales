@@ -5,7 +5,7 @@ import UiIcon from "../ui/UiIcon.vue";
 import { ENTITY_CONFIG, type LifecycleField } from "../../lifecycleConfig";
 import { crmStore } from "../../stores/crm";
 import { lifecycleStore, type LifecycleRecord } from "../../stores/lifecycle";
-import type { EntityType, FieldChange, Lead } from "../../types";
+import type { DuplicateCandidate, EntityType, FieldChange, Lead } from "../../types";
 
 const props = withDefaults(defineProps<{
   entityType: EntityType;
@@ -30,7 +30,7 @@ const ok = ref("");
 const ownerId = ref("");
 const disqualificationReason = ref("");
 const conversion = reactive({ stage_id: "", title: "", amount: "" });
-const mergeIds = ref<string[]>([]);
+const duplicateRecords = ref<Record<string, LifecycleRecord>>({});
 
 const config = computed(() => ENTITY_CONFIG[props.entityType]);
 const fields = computed(() => config.value.fields.filter((field) => mode.value === "create" ? field.create : field.edit));
@@ -39,9 +39,12 @@ const canWriteRecord = computed(() => {
   if (crmStore.me.value?.role !== "sales_rep") return true;
   return recordOwner(current.value) === crmStore.me.value.user_id;
 });
-const mergeCandidates = computed(() => {
-  if (!current.value || !config.value.merge) return [];
-  return crmList(props.entityType).filter((item) => item.id !== current.value?.id && item.company_id === current.value?.company_id && !item.is_archived && !item.deleted_at);
+const duplicateCandidates = computed(() => {
+  if (!current.value || !["contacts", "leads", "deals"].includes(props.entityType)) return [];
+  return lifecycleStore.duplicateCandidates.value.filter((candidate) =>
+    candidate.entity_type === props.entityType &&
+    (candidate.record_a_id === current.value?.id || candidate.record_b_id === current.value?.id)
+  );
 });
 
 onMounted(async () => {
@@ -49,6 +52,13 @@ onMounted(async () => {
   await lifecycleStore.loadMembers();
   resetDraft(current.value ?? undefined);
   ownerId.value = current.value ? recordOwner(current.value) ?? "" : "";
+  if (current.value && ["contacts", "leads", "deals"].includes(props.entityType)) {
+    try {
+      await loadDuplicateCandidates();
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : "Не удалось загрузить кандидатов в дубли";
+    }
+  }
 });
 
 function crmList(type: EntityType): LifecycleRecord[] {
@@ -199,15 +209,59 @@ async function convert() {
   });
 }
 
-async function mergeRecords() {
-  if (!current.value || !mergeIds.value.length || !["contacts", "leads", "deals"].includes(props.entityType)) return;
-  if (!window.confirm(`Объединить ${mergeIds.value.length} записей? Целевая запись сохранится.`)) return;
-  const sources = mergeCandidates.value.filter((item) => mergeIds.value.includes(item.id));
+function duplicateRecordId(candidate: DuplicateCandidate) {
+  return candidate.record_a_id === current.value?.id ? candidate.record_b_id : candidate.record_a_id;
+}
+
+function duplicateTitle(candidate: DuplicateCandidate) {
+  const record = duplicateRecords.value[duplicateRecordId(candidate)];
+  return record ? title(record) : duplicateRecordId(candidate);
+}
+
+async function loadDuplicateCandidates() {
+  if (!current.value || !["contacts", "leads", "deals"].includes(props.entityType)) return;
+  const type = props.entityType as "contacts" | "leads" | "deals";
+  await lifecycleStore.loadDuplicateCandidates(type);
+  const ids = lifecycleStore.duplicateCandidates.value
+    .filter((candidate) => candidate.entity_type === type && (candidate.record_a_id === current.value?.id || candidate.record_b_id === current.value?.id))
+    .map(duplicateRecordId);
+  const loaded = await Promise.allSettled(ids.map((id) => lifecycleStore.loadDuplicateRecord(type, id)));
+  loaded.forEach((result, index) => {
+    if (result.status === "fulfilled") duplicateRecords.value[ids[index]] = result.value;
+  });
+}
+
+async function scanDuplicates() {
+  if (!["contacts", "leads", "deals"].includes(props.entityType)) return;
   await run(async () => {
-    await lifecycleStore.merge(props.entityType as "contacts" | "leads" | "deals", current.value!, sources);
-    mergeIds.value = [];
-    emit("saved", current.value!);
+    await lifecycleStore.scanDuplicates(props.entityType as "contacts" | "leads" | "deals");
+    await loadDuplicateCandidates();
+    return duplicateCandidates.value.length ? `Найдено кандидатов: ${duplicateCandidates.value.length}` : "Дубли не найдены";
+  });
+}
+
+async function mergeCandidate(candidate: DuplicateCandidate) {
+  if (!current.value || !["contacts", "leads", "deals"].includes(props.entityType)) return;
+  const source = duplicateRecords.value[duplicateRecordId(candidate)];
+  if (!source) {
+    error.value = "Не удалось загрузить карточку кандидата. Обновите данные.";
+    return;
+  }
+  if (!window.confirm(`Объединить «${duplicateTitle(candidate)}» с текущей записью? Текущая запись сохранится.`)) return;
+  await run(async () => {
+    const result = await lifecycleStore.merge(props.entityType as "contacts" | "leads" | "deals", current.value!, [source]);
+    current.value = { ...current.value!, version: result.version } as LifecycleRecord;
+    await loadDuplicateCandidates();
+    emit("saved", current.value);
     return "Записи объединены";
+  });
+}
+
+async function dismissCandidate(candidate: DuplicateCandidate) {
+  await run(async () => {
+    await lifecycleStore.dismissDuplicate(candidate, "Пользователь отметил пару как не дубль");
+    await loadDuplicateCandidates();
+    return "Кандидат исключён";
   });
 }
 
@@ -277,7 +331,14 @@ function recordOwner(record: LifecycleRecord) {
 
         <section v-if="props.entityType === 'leads' && canWriteRecord && !current.deleted_at" class="crud-tool"><h3>Lifecycle лида</h3><p>Статус: <strong>{{ (current as Lead).status }}</strong></p><template v-if="(current as Lead).status !== 'converted'"><button type="button" @click="qualify(true)">Квалифицировать</button><input v-model="disqualificationReason" placeholder="Причина отказа" /><button class="secondary" type="button" @click="qualify(false)">Дисквалифицировать</button></template><div v-if="(current as Lead).status === 'qualified'" class="crud-convert"><select v-model="conversion.stage_id"><option value="">Этап сделки</option><option v-for="stage in crmStore.allStages.value" :key="stage.id" :value="stage.id">{{ stage.name }}</option></select><input v-model="conversion.title" placeholder="Название сделки" /><input v-model="conversion.amount" type="number" min="0" placeholder="Сумма" /><button type="button" @click="convert">Конвертировать</button></div><RouterLink v-if="(current as Lead).converted_deal_id" class="secondary-link" :to="`/deals?deal=${(current as Lead).converted_deal_id}`">Открыть сделку</RouterLink></section>
 
-        <section v-if="canWriteRecord && config.merge && mergeCandidates.length" class="crud-tool"><h3>Объединение дублей</h3><p>Целевая запись сохранится, связи дублей будут перенесены.</p><label v-for="candidate in mergeCandidates" :key="candidate.id" class="crud-check"><input v-model="mergeIds" type="checkbox" :value="candidate.id" />{{ title(candidate) }}</label><button type="button" :disabled="!mergeIds.length" @click="mergeRecords">Объединить</button></section>
+        <section v-if="canWriteRecord && config.merge" class="crud-tool">
+          <div class="duplicate-heading"><div><h3>Поиск дублей</h3><p>Показываются только пары, найденные backend.</p></div><button v-if="lifecycleStore.canManageSales.value" class="secondary" type="button" :disabled="busy" @click="scanDuplicates">Найти дубли</button></div>
+          <article v-for="candidate in duplicateCandidates" :key="candidate.id" class="duplicate-candidate">
+            <div><strong>{{ duplicateTitle(candidate) }}</strong><small>Совпадение {{ candidate.score }}% · {{ candidate.matched_fields.join(", ") || "совпавшие поля не указаны" }}</small></div>
+            <div class="duplicate-actions"><button type="button" :disabled="busy || !duplicateRecords[duplicateRecordId(candidate)]" @click="mergeCandidate(candidate)">Объединить</button><button v-if="lifecycleStore.canManageSales.value" class="secondary" type="button" :disabled="busy" @click="dismissCandidate(candidate)">Не дубль</button></div>
+          </article>
+          <p v-if="!duplicateCandidates.length" class="empty">Кандидатов в дубли нет.</p>
+        </section>
 
         <section v-if="historyOpen" class="crud-tool crud-history"><h3>История полей</h3><ol><li v-for="change in historyRows" :key="change.id"><strong>{{ change.field_name }}</strong><span>{{ displayValue(change.field_name, change.old_value) }} → {{ displayValue(change.field_name, change.new_value) }}</span><small>v{{ change.entity_version }} · {{ new Date(change.created_at).toLocaleString('ru-RU') }}</small></li></ol><p v-if="!historyRows.length">Изменений пока нет.</p></section>
       </template>
@@ -289,5 +350,5 @@ function recordOwner(record: LifecycleRecord) {
 </template>
 
 <style scoped>
-.entity-crud-backdrop{position:fixed;inset:0;z-index:120;background:rgb(15 23 42/35%);backdrop-filter:blur(2px)}.entity-crud-drawer{position:absolute;top:0;right:0;width:min(590px,100%);height:100%;overflow-y:auto;padding:24px;background:#fff;box-shadow:-20px 0 55px rgb(15 23 42/20%)}.entity-crud-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.entity-crud-head h2{margin:3px 0 0;font-size:24px;overflow-wrap:anywhere}.crud-close{width:38px;padding:0;font-size:23px}.entity-crud-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:22px}.entity-crud-form label{margin:0}.entity-crud-form label:has(textarea),.entity-crud-form .crud-buttons{grid-column:1/-1}.crud-buttons{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}.crud-danger{color:#a02929;border-color:#efc2c2;background:#fff6f6}.crud-status{display:flex;gap:10px;margin:18px 0;color:var(--muted);font-size:13px}.crud-status span:first-child{border-radius:99px;padding:5px 8px;color:#17663a;background:#e9f8ef;font-weight:700}.crud-fields{display:grid;grid-template-columns:150px minmax(0,1fr);margin:0}.crud-fields dt,.crud-fields dd{margin:0;border-bottom:1px solid var(--line-soft);padding:10px 0;overflow-wrap:anywhere}.crud-fields dt{color:var(--muted)}.crud-tool{display:grid;gap:9px;margin-top:18px;border-top:1px solid var(--line-soft);padding-top:18px}.crud-tool h3,.crud-tool p{margin:0}.crud-tool p{color:var(--muted);font-size:13px}.crud-convert{display:grid;gap:8px}.crud-check{display:flex;align-items:center;gap:8px;margin:0}.crud-history ol{display:grid;gap:8px;margin:0;padding:0;list-style:none}.crud-history li{display:grid;gap:3px;border:1px solid var(--line);border-radius:8px;padding:10px}.crud-history small{color:var(--muted)}.crud-conflict{position:absolute;top:50%;left:50%;z-index:2;width:min(420px,calc(100% - 32px));border-radius:14px;padding:24px;background:#fff;box-shadow:0 22px 60px rgb(15 23 42/25%);transform:translate(-50%,-50%)}.crud-conflict h2{margin-top:0}.crud-conflict button{margin:4px}@media(max-width:620px){.entity-crud-backdrop{height:100dvh}.entity-crud-drawer{width:100dvw;height:100dvh;padding:calc(18px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));box-shadow:none}.entity-crud-form{grid-template-columns:1fr}.crud-fields{grid-template-columns:110px minmax(0,1fr)}.crud-buttons{position:sticky;bottom:0;z-index:2;margin-inline:-16px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:#fff}.crud-buttons button{min-height:44px;flex:1}}
+.entity-crud-backdrop{position:fixed;inset:0;z-index:120;background:rgb(15 23 42/35%);backdrop-filter:blur(2px)}.entity-crud-drawer{position:absolute;top:0;right:0;width:min(590px,100%);height:100%;overflow-y:auto;padding:24px;background:var(--color-surface);box-shadow:-20px 0 55px rgb(15 23 42/20%)}.entity-crud-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.entity-crud-head h2{margin:3px 0 0;font-size:24px;overflow-wrap:anywhere}.crud-close{width:38px;padding:0;font-size:23px}.entity-crud-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:22px}.entity-crud-form label{margin:0}.entity-crud-form label:has(textarea),.entity-crud-form .crud-buttons{grid-column:1/-1}.crud-buttons{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}.crud-danger{color:var(--color-danger-text);border-color:var(--color-danger);background:var(--color-danger-soft)}.crud-status{display:flex;gap:10px;margin:18px 0;color:var(--muted);font-size:13px}.crud-status span:first-child{border-radius:99px;padding:5px 8px;color:var(--color-success-text);background:var(--color-success-soft);font-weight:700}.crud-fields{display:grid;grid-template-columns:150px minmax(0,1fr);margin:0}.crud-fields dt,.crud-fields dd{margin:0;border-bottom:1px solid var(--line-soft);padding:10px 0;overflow-wrap:anywhere}.crud-fields dt{color:var(--muted)}.crud-tool{display:grid;gap:9px;margin-top:18px;border-top:1px solid var(--line-soft);padding-top:18px}.crud-tool h3,.crud-tool p{margin:0}.crud-tool p{color:var(--muted);font-size:13px}.crud-convert{display:grid;gap:8px}.crud-check{display:flex;align-items:center;gap:8px;margin:0}.duplicate-heading,.duplicate-candidate,.duplicate-actions{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.duplicate-candidate{border:1px solid var(--color-border);border-radius:var(--radius-control);padding:10px}.duplicate-candidate>div:first-child{display:grid;gap:3px;min-width:0}.duplicate-candidate small{color:var(--color-text-muted);overflow-wrap:anywhere}.duplicate-actions{flex-shrink:0}.crud-history ol{display:grid;gap:8px;margin:0;padding:0;list-style:none}.crud-history li{display:grid;gap:3px;border:1px solid var(--line);border-radius:8px;padding:10px}.crud-history small{color:var(--muted)}.crud-conflict{position:absolute;top:50%;left:50%;z-index:2;width:min(420px,calc(100% - 32px));border-radius:14px;padding:24px;background:var(--color-surface);box-shadow:0 22px 60px rgb(15 23 42/25%);transform:translate(-50%,-50%)}.crud-conflict h2{margin-top:0}.crud-conflict button{margin:4px}@media(max-width:620px){.entity-crud-backdrop{height:100dvh}.entity-crud-drawer{width:100dvw;height:100dvh;padding:calc(18px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));box-shadow:none}.entity-crud-form{grid-template-columns:1fr}.crud-fields{grid-template-columns:110px minmax(0,1fr)}.crud-buttons{position:sticky;bottom:0;z-index:2;margin-inline:-16px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--color-surface)}.crud-buttons button{min-height:44px;flex:1}.duplicate-heading,.duplicate-candidate{align-items:stretch;flex-direction:column}.duplicate-actions button{flex:1}}
 </style>
